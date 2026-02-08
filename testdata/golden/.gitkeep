@@ -1,0 +1,2 @@
+# Golden files for CLI output testing
+# Run `task test:update-golden` to regenerate

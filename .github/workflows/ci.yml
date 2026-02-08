@@ -1,0 +1,57 @@
+name: Mush CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Build, Lint, and Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+
+      - name: Install Tools
+        run: |
+          go install mvdan.cc/gofumpt@v0.7.0
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+
+      # Format check using gofumpt
+      - name: Check Formatting
+        run: |
+          if [ -n "$(gofumpt -l .)" ]; then
+            echo "Code is not formatted. Run 'gofumpt -w .'"
+            gofumpt -d .
+            exit 1
+          fi
+
+      # golangci-lint via official action
+      - name: Lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.8.0
+
+      # Vulnerability scanning
+      - name: Security Scan
+        run: govulncheck ./...
+
+      # Tests with race detection
+      - name: Test
+        run: go test -v -race -coverprofile=coverage.txt ./...
+
+      # Optional: Upload coverage
+      - name: Upload Coverage
+        uses: codecov/codecov-action@v5
+        with:
+          files: coverage.txt
+        if: github.event_name == 'push'

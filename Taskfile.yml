@@ -1,0 +1,162 @@
+# Mush CLI Taskfile
+# Usage: task [task-name]
+# List tasks: task --list
+#
+# This Taskfile can be used standalone (from this directory) or via the root
+# Taskfile with namespace: task mush:[task-name]
+
+version: '3'
+
+vars:
+  BINARY: mush
+  MODULE: github.com/musher-dev/mush
+
+tasks:
+  # ===========================================================================
+  # Setup
+  # ===========================================================================
+
+  setup:
+    desc: Install dependencies and tools
+    cmds:
+      - go mod download
+      - task: setup:tools
+
+  setup:tools:
+    desc: Install required Go tools
+    cmds:
+      # Note: With Go 1.25+, these can be replaced with `tool` directive in go.mod
+      - go install mvdan.cc/gofumpt@v0.7.0
+      - go install golang.org/x/vuln/cmd/govulncheck@latest
+      - go install github.com/golangci/golangci-lint/cmd/golangci-lint@v2.8.0
+
+  # ===========================================================================
+  # Development
+  # ===========================================================================
+
+  build:
+    desc: Build the mush binary
+    cmds:
+      - go build -o {{.BINARY}} ./cmd/mush
+
+  build:all:
+    desc: Build for all platforms
+    cmds:
+      - GOOS=darwin GOARCH=amd64 go build -o {{.BINARY}}-darwin-amd64 ./cmd/mush
+      - GOOS=darwin GOARCH=arm64 go build -o {{.BINARY}}-darwin-arm64 ./cmd/mush
+      - GOOS=linux GOARCH=amd64 go build -o {{.BINARY}}-linux-amd64 ./cmd/mush
+      - GOOS=linux GOARCH=arm64 go build -o {{.BINARY}}-linux-arm64 ./cmd/mush
+      - GOOS=windows GOARCH=amd64 go build -o {{.BINARY}}-windows-amd64.exe ./cmd/mush
+
+  run:
+    desc: Run mush with arguments
+    cmds:
+      - go run ./cmd/mush {{.CLI_ARGS}}
+
+  # ===========================================================================
+  # Code Generation
+  # ===========================================================================
+
+  generate:
+    desc: Generate API client from OpenAPI spec
+    cmds:
+      - |
+        if [ -f ../api/openapi.json ]; then
+          oapi-codegen -package client -generate types,client \
+            ../api/openapi.json > internal/client/generated.go
+          echo "Generated API client from OpenAPI spec"
+        else
+          echo "OpenAPI spec not found at ../api/openapi.json"
+          echo "Run 'task api:dev' first to generate the spec"
+        fi
+
+  # ===========================================================================
+  # Code Quality
+  # ===========================================================================
+
+  check:
+    desc: Run all checks (fmt + lint + vuln + test)
+    cmds:
+      - task: check:fmt
+      - task: check:lint
+      - task: check:vuln
+      - task: check:test
+
+  # Quick aliases for common operations
+  test:
+    desc: Run tests (alias for check:test)
+    cmds:
+      - go test -v -race ./...
+
+  lint:
+    desc: Run linter (alias for check:lint)
+    cmds:
+      - golangci-lint run ./...
+
+  check:fmt:
+    desc: Check code formatting (gofumpt)
+    cmds:
+      # Note: With Go 1.25+, use `go tool gofumpt` instead
+      - test -z "$(gofumpt -l .)" || (gofumpt -d . && exit 1)
+
+  check:lint:
+    desc: Run golangci-lint v2
+    cmds:
+      - golangci-lint run ./...
+
+  check:vuln:
+    desc: Run govulncheck
+    cmds:
+      # Note: With Go 1.25+, use `go tool govulncheck` instead
+      - govulncheck ./...
+
+  check:test:
+    desc: Run tests with race detection
+    cmds:
+      - go test -v -race ./...
+
+  check:test-cover:
+    desc: Run tests with coverage
+    cmds:
+      - go test -v -race -coverprofile=coverage.out ./...
+      - go tool cover -html=coverage.out -o coverage.html
+
+  # ===========================================================================
+  # Formatting
+  # ===========================================================================
+
+  fmt:
+    desc: Format code
+    cmds:
+      # Note: With Go 1.25+, use `go tool gofumpt` instead
+      - gofumpt -w .
+      - go mod tidy
+
+  # ===========================================================================
+  # Golden File Testing
+  # ===========================================================================
+
+  test:update-golden:
+    desc: Update golden files
+    cmds:
+      - UPDATE_GOLDEN=1 go test ./...
+
+  # ===========================================================================
+  # Utilities
+  # ===========================================================================
+
+  clean:
+    desc: Clean build artifacts
+    cmds:
+      - rm -f {{.BINARY}} {{.BINARY}}-*
+      - rm -f coverage.out coverage.html
+
+  version:
+    desc: Show version info
+    cmds:
+      - go run ./cmd/mush version
+
+  help:
+    desc: Show mush help
+    cmds:
+      - go run ./cmd/mush --help

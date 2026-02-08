@@ -1,0 +1,76 @@
+# GoReleaser configuration for Mush CLI
+# Documentation: https://goreleaser.com
+
+version: 2
+
+project_name: mush
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: mush
+    main: ./cmd/mush
+    binary: mush
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+
+archives:
+  - id: default
+    format: tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - README.md
+      - LICENSE*
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - "^ci:"
+
+release:
+  github:
+    owner: musher-dev
+    name: mush
+  draft: true
+  prerelease: auto
+  name_template: "Mush v{{.Version}}"
+
+brews:
+  - name: mush
+    repository:
+      owner: musher-dev
+      name: homebrew-tap
+    commit_author:
+      name: musher-bot
+      email: bot@musher.dev
+    homepage: https://musher.dev
+    description: Local worker runtime for the Musher platform
+    license: MIT
+    install: |
+      bin.install "mush"
+    test: |
+      system "#{bin}/mush", "version"

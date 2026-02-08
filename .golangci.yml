@@ -1,0 +1,67 @@
+# golangci-lint v2 configuration
+# https://golangci-lint.run/usage/configuration/
+
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  default: none
+  enable:
+    - govet           # Official Go vet
+    - errcheck        # Ensure errors are handled
+    - staticcheck     # Advanced static analysis (includes gosimple)
+    - unused          # Unused code detection
+    - ineffassign     # Unused assignments
+    - revive          # Style linter (golint replacement)
+    - bodyclose       # HTTP response body closure
+    - noctx           # HTTP requests with context
+    - gocritic        # Additional checks
+  settings:
+    govet:
+      enable:
+        - shadow        # Variable shadowing detection
+    errcheck:
+      check-type-assertions: true
+      check-blank: false
+      exclude-functions:
+        # CLI output functions - errors are non-recoverable
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+        - (*github.com/fatih/color.Color).Fprint
+        - (*github.com/fatih/color.Color).Fprintf
+        - (*github.com/fatih/color.Color).Fprintln
+        # HTTP response body close - Body returns io.ReadCloser
+        - (io.ReadCloser).Close
+        - (io.Closer).Close
+    revive:
+      severity: error
+      rules:
+        - name: exported
+          disabled: false
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - style
+        - performance
+  exclusions:
+    rules:
+      # Test files can have unchecked errors
+      - path: _test\.go
+        linters:
+          - errcheck
+      # Allow fmt.Print* in main package for CLI output
+      - path: cmd/mush/
+        linters:
+          - forbidigo
+
+formatters:
+  enable:
+    - gofumpt         # Strict formatting
+    - goimports       # Import management
+  settings:
+    gofumpt:
+      extra-rules: true
