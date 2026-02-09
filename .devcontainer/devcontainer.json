@@ -30,8 +30,8 @@
         "eamodio.gitlens",
         "redhat.vscode-yaml",
         "tamasfe.even-better-toml",
-        "github.copilot",
-        "github.copilot-chat",
+        "github.copilot@1.388.0",
+        "github.copilot-chat@0.36.2",
         "github.vscode-pull-request-github@0.126.0"
       ]
     }
