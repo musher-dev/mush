@@ -29,7 +29,9 @@ func newAuthCmd() *cobra.Command {
 }
 
 func newAuthLoginCmd() *cobra.Command {
-	return &cobra.Command{
+	var apiKeyFlag string
+
+	cmd := &cobra.Command{
 		Use:   "login",
 		Short: "Authenticate with your API key",
 		Long: `Authenticate with the Musher platform.
@@ -49,15 +51,20 @@ You can also set the MUSHER_API_KEY environment variable.`,
 				out.Println()
 			}
 
-			// Check if prompts are available
-			if !p.CanPrompt() {
-				return clierrors.CannotPrompt("MUSHER_API_KEY")
-			}
+			var apiKey string
+			if apiKeyFlag != "" {
+				apiKey = apiKeyFlag
+			} else {
+				// Interactive flow: prompt for API key
+				if !p.CanPrompt() {
+					return clierrors.CannotPrompt("MUSHER_API_KEY")
+				}
 
-			// Prompt for API key
-			apiKey, err := p.Password("Enter your Musher API key")
-			if err != nil {
-				return err
+				var err error
+				apiKey, err = p.Password("Enter your Musher API key")
+				if err != nil {
+					return err
+				}
 			}
 
 			if apiKey == "" {
@@ -87,6 +94,9 @@ You can also set the MUSHER_API_KEY environment variable.`,
 			return nil
 		},
 	}
+
+	cmd.Flags().StringVar(&apiKeyFlag, "api-key", "", "API key for non-interactive login")
+	return cmd
 }
 
 // AuthStatus represents authentication status for JSON output.

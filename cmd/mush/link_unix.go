@@ -58,15 +58,6 @@ Examples:
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := output.FromContext(cmd.Context())
 
-			term := terminal.Detect()
-			if !term.IsTTY {
-				return &clierrors.CLIError{
-					Message: "Watch mode requires a terminal (TTY)",
-					Hint:    "Run this command directly in a terminal, not in a pipe or script",
-					Code:    clierrors.ExitUsage,
-				}
-			}
-
 			// Validate agent type if specified
 			var supportedAgents []string
 			if agentType != "" {
@@ -166,6 +157,16 @@ Examples:
 				out.Println()
 				out.Success("Dry run mode: connection verified, not claiming jobs")
 				return nil
+			}
+
+			// Watch mode requires a terminal for the harness UI
+			term := terminal.Detect()
+			if !term.IsTTY {
+				return &clierrors.CLIError{
+					Message: "Watch mode requires a terminal (TTY)",
+					Hint:    "Run this command directly in a terminal, not in a pipe or script",
+					Code:    clierrors.ExitUsage,
+				}
 			}
 
 			// Setup graceful shutdown

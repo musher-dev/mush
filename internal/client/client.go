@@ -341,8 +341,10 @@ func (c *Client) ValidateKey(ctx context.Context) (*Identity, error) {
 
 	// Any 2xx means the key is valid
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		// Extract identity from the API key prefix if possible
-		// For now, return a placeholder identity
+		// TODO: Replace placeholder with real identity from a server endpoint
+		// (e.g. GET /api/v1/runner/identity) that returns serviceAccountId,
+		// serviceAccountName, workspaceId, and workspaceName. Currently the API
+		// has no endpoint accessible to SA keys that returns this information.
 		return &Identity{
 			Email:     "service-account",
 			Workspace: "default",
