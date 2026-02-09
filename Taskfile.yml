@@ -28,7 +28,7 @@ tasks:
       # Note: With Go 1.25+, these can be replaced with `tool` directive in go.mod
       - go install mvdan.cc/gofumpt@v0.7.0
       - go install golang.org/x/vuln/cmd/govulncheck@latest
-      - go install github.com/golangci/golangci-lint/cmd/golangci-lint@v2.8.0
+      - go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.8.0
 
   # ===========================================================================
   # Development
