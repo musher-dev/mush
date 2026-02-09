@@ -51,6 +51,7 @@ fi
 ensure_writable_dir "$HOME/.claude" || true
 ensure_writable_dir "$HOME/.claude/downloads" || true
 ensure_writable_dir "$HOME/.codex" || true
+ensure_writable_dir "$HOME/.config/gh" || true
 
 echo "==> Installing Claude (native)..."
 export PATH="$HOME/.local/bin:$PATH"
@@ -82,7 +83,7 @@ echo "==> Installing Go tools..."
 
 go install mvdan.cc/gofumpt@v0.7.0
 go install golang.org/x/vuln/cmd/govulncheck@latest
-go install github.com/golangci/golangci-lint/cmd/golangci-lint@v2.8.0
+go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.8.0
 
 echo "==> Downloading Go modules..."
 go mod download
