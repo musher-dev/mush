@@ -24,7 +24,8 @@
         "eamodio.gitlens",
         "redhat.vscode-yaml",
         "tamasfe.even-better-toml",
-        "github.copilot"
+        "github.copilot",
+        "github.vscode-pull-request-github@0.126.0"
       ]
     }
   }
