@@ -5,18 +5,24 @@
     "ghcr.io/devcontainers/features/common-utils:2": {},
     "ghcr.io/devcontainers/features/git:1": {},
     "ghcr.io/devcontainers/features/github-cli:1": {},
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "22"
+    },
     "ghcr.io/devcontainers/features/go:1": {
       "version": "1.25"
     },
     "ghcr.io/devcontainers/features/docker-in-docker:2": {},
-    "ghcr.io/devcontainers-extra/features/go-task:1": {},
-    "ghcr.io/anthropics/devcontainer-features/claude-code:1": {}
+    "ghcr.io/devcontainers-extra/features/go-task:1": {}
   },
   "mounts": [
     "source=musher-mush-gh-config,target=/home/vscode/.config/gh,type=volume",
-    "source=musher-mush-claude-config,target=/home/vscode/.claude,type=volume"
+    "source=musher-mush-claude-config,target=/home/vscode/.claude,type=volume",
+    "source=musher-mush-codex-config,target=/home/vscode/.codex,type=volume"
   ],
-  "postCreateCommand": ".devcontainer/scripts/post-create.sh",
+  "remoteEnv": {
+    "PATH": "/home/vscode/.local/bin:${containerEnv:PATH}"
+  },
+  "postCreateCommand": "bash -lc 'shopt -s nullglob; for f in .devcontainer/scripts/*.sh; do sed -i \"s/\\r$//\" \"$f\"; chmod +x \"$f\"; done; .devcontainer/scripts/post-create.sh'",
   "customizations": {
     "vscode": {
       "extensions": [
@@ -25,6 +31,7 @@
         "redhat.vscode-yaml",
         "tamasfe.even-better-toml",
         "github.copilot",
+        "github.copilot-chat",
         "github.vscode-pull-request-github@0.126.0"
       ]
     }
