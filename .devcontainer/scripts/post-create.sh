@@ -85,6 +85,13 @@ go install mvdan.cc/gofumpt@v0.7.0
 go install golang.org/x/vuln/cmd/govulncheck@latest
 go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.8.0
 
+echo "==> Installing GoReleaser..."
+if ! command -v goreleaser >/dev/null 2>&1; then
+  go install github.com/goreleaser/goreleaser/v2@latest || {
+    echo "WARN: GoReleaser installation failed. Continuing." >&2
+  }
+fi
+
 echo "==> Downloading Go modules..."
 go mod download
 

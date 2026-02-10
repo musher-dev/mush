@@ -5,27 +5,46 @@ import (
 	"testing"
 )
 
+// unsetEnvForTest unsets an environment variable and registers cleanup to
+// restore its original state (including distinguishing "unset" from "set to
+// empty string").
+func unsetEnvForTest(t *testing.T, key string) {
+	t.Helper()
+	orig, wasSet := os.LookupEnv(key)
+	os.Unsetenv(key)
+	t.Cleanup(func() {
+		if wasSet {
+			os.Setenv(key, orig)
+		} else {
+			os.Unsetenv(key)
+		}
+	})
+}
+
+// setEnvForTest sets an environment variable and registers cleanup to restore
+// its original state.
+func setEnvForTest(t *testing.T, key, value string) {
+	t.Helper()
+	orig, wasSet := os.LookupEnv(key)
+	os.Setenv(key, value)
+	t.Cleanup(func() {
+		if wasSet {
+			os.Setenv(key, orig)
+		} else {
+			os.Unsetenv(key)
+		}
+	})
+}
+
 func TestLoad_Defaults(t *testing.T) {
 	// Create a temporary directory without any config file
 	tmpDir := t.TempDir()
-	originalHome := os.Getenv("HOME")
-	defer os.Setenv("HOME", originalHome)
-	os.Setenv("HOME", tmpDir)
+	setEnvForTest(t, "HOME", tmpDir)
 
 	// Clear any environment variables that might interfere
-	envVars := []string{"MUSH_API_URL", "MUSH_WORKER_POLL_INTERVAL", "MUSH_WORKER_HEARTBEAT_INTERVAL"}
-	origValues := make(map[string]string)
-	for _, env := range envVars {
-		origValues[env] = os.Getenv(env)
-		os.Unsetenv(env)
-	}
-	defer func() {
-		for _, env := range envVars {
-			if v := origValues[env]; v != "" {
-				os.Setenv(env, v)
-			}
-		}
-	}()
+	unsetEnvForTest(t, "MUSH_API_URL")
+	unsetEnvForTest(t, "MUSH_WORKER_POLL_INTERVAL")
+	unsetEnvForTest(t, "MUSH_WORKER_HEARTBEAT_INTERVAL")
 
 	cfg := Load()
 
@@ -102,16 +121,7 @@ func TestLoad_FromEnv(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Save original and set test value
-			orig := os.Getenv(tt.envVar)
-			os.Setenv(tt.envVar, tt.envVal)
-			defer func() {
-				if orig != "" {
-					os.Setenv(tt.envVar, orig)
-				} else {
-					os.Unsetenv(tt.envVar)
-				}
-			}()
+			setEnvForTest(t, tt.envVar, tt.envVal)
 
 			cfg := Load()
 
@@ -133,9 +143,11 @@ func TestLoad_FromEnv(t *testing.T) {
 
 func TestConfig_All(t *testing.T) {
 	tmpDir := t.TempDir()
-	originalHome := os.Getenv("HOME")
-	defer os.Setenv("HOME", originalHome)
-	os.Setenv("HOME", tmpDir)
+	setEnvForTest(t, "HOME", tmpDir)
+
+	unsetEnvForTest(t, "MUSH_API_URL")
+	unsetEnvForTest(t, "MUSH_WORKER_POLL_INTERVAL")
+	unsetEnvForTest(t, "MUSH_WORKER_HEARTBEAT_INTERVAL")
 
 	cfg := Load()
 	all := cfg.All()
@@ -155,9 +167,8 @@ func TestConfig_All(t *testing.T) {
 
 func TestConfig_Get(t *testing.T) {
 	tmpDir := t.TempDir()
-	originalHome := os.Getenv("HOME")
-	defer os.Setenv("HOME", originalHome)
-	os.Setenv("HOME", tmpDir)
+	setEnvForTest(t, "HOME", tmpDir)
+	unsetEnvForTest(t, "MUSH_API_URL")
 
 	cfg := Load()
 
@@ -197,23 +208,13 @@ func TestConfig_APIURL(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tmpDir := t.TempDir()
-			originalHome := os.Getenv("HOME")
-			defer os.Setenv("HOME", originalHome)
-			os.Setenv("HOME", tmpDir)
+			setEnvForTest(t, "HOME", tmpDir)
 
-			orig := os.Getenv("MUSH_API_URL")
 			if tt.envVal != "" {
-				os.Setenv("MUSH_API_URL", tt.envVal)
+				setEnvForTest(t, "MUSH_API_URL", tt.envVal)
 			} else {
-				os.Unsetenv("MUSH_API_URL")
+				unsetEnvForTest(t, "MUSH_API_URL")
 			}
-			defer func() {
-				if orig != "" {
-					os.Setenv("MUSH_API_URL", orig)
-				} else {
-					os.Unsetenv("MUSH_API_URL")
-				}
-			}()
 
 			cfg := Load()
 			got := cfg.APIURL()
@@ -246,23 +247,13 @@ func TestConfig_PollInterval(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tmpDir := t.TempDir()
-			originalHome := os.Getenv("HOME")
-			defer os.Setenv("HOME", originalHome)
-			os.Setenv("HOME", tmpDir)
+			setEnvForTest(t, "HOME", tmpDir)
 
-			orig := os.Getenv("MUSH_WORKER_POLL_INTERVAL")
 			if tt.envVal != "" {
-				os.Setenv("MUSH_WORKER_POLL_INTERVAL", tt.envVal)
+				setEnvForTest(t, "MUSH_WORKER_POLL_INTERVAL", tt.envVal)
 			} else {
-				os.Unsetenv("MUSH_WORKER_POLL_INTERVAL")
+				unsetEnvForTest(t, "MUSH_WORKER_POLL_INTERVAL")
 			}
-			defer func() {
-				if orig != "" {
-					os.Setenv("MUSH_WORKER_POLL_INTERVAL", orig)
-				} else {
-					os.Unsetenv("MUSH_WORKER_POLL_INTERVAL")
-				}
-			}()
 
 			cfg := Load()
 			got := cfg.PollInterval()
@@ -295,23 +286,13 @@ func TestConfig_HeartbeatInterval(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tmpDir := t.TempDir()
-			originalHome := os.Getenv("HOME")
-			defer os.Setenv("HOME", originalHome)
-			os.Setenv("HOME", tmpDir)
+			setEnvForTest(t, "HOME", tmpDir)
 
-			orig := os.Getenv("MUSH_WORKER_HEARTBEAT_INTERVAL")
 			if tt.envVal != "" {
-				os.Setenv("MUSH_WORKER_HEARTBEAT_INTERVAL", tt.envVal)
+				setEnvForTest(t, "MUSH_WORKER_HEARTBEAT_INTERVAL", tt.envVal)
 			} else {
-				os.Unsetenv("MUSH_WORKER_HEARTBEAT_INTERVAL")
+				unsetEnvForTest(t, "MUSH_WORKER_HEARTBEAT_INTERVAL")
 			}
-			defer func() {
-				if orig != "" {
-					os.Setenv("MUSH_WORKER_HEARTBEAT_INTERVAL", orig)
-				} else {
-					os.Unsetenv("MUSH_WORKER_HEARTBEAT_INTERVAL")
-				}
-			}()
 
 			cfg := Load()
 			got := cfg.HeartbeatInterval()

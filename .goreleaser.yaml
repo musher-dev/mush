@@ -30,11 +30,11 @@ builds:
 
 archives:
   - id: default
-    format: tar.gz
+    formats: [ 'tar.gz' ]
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     format_overrides:
       - goos: windows
-        format: zip
+        formats: [ 'zip' ]
     files:
       - README.md
       - LICENSE*
@@ -43,34 +43,13 @@ checksum:
   name_template: "checksums.txt"
 
 changelog:
-  sort: asc
-  filters:
-    exclude:
-      - "^docs:"
-      - "^test:"
-      - "^chore:"
-      - "^ci:"
+  disable: true
 
 release:
   github:
     owner: musher-dev
     name: mush
-  draft: true
+  draft: false
+  mode: keep-existing
   prerelease: auto
   name_template: "Mush v{{.Version}}"
-
-brews:
-  - name: mush
-    repository:
-      owner: musher-dev
-      name: homebrew-tap
-    commit_author:
-      name: musher-bot
-      email: bot@musher.dev
-    homepage: https://musher.dev
-    description: Local worker runtime for the Musher platform
-    license: MIT
-    install: |
-      bin.install "mush"
-    test: |
-      system "#{bin}/mush", "version"
