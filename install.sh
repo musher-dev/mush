@@ -49,12 +49,6 @@ yellow() {
   fi
 }
 
-need_cmd() {
-  if ! command -v "$1" > /dev/null 2>&1; then
-    err "Required command '$1' not found"
-  fi
-}
-
 # ── Argument parsing ─────────────────────────────────────────────────────────
 
 VERSION=""
@@ -155,19 +149,6 @@ download() {
   fi
 }
 
-# Fetch URL content to stdout
-fetch() {
-  url="$1"
-
-  if has_curl; then
-    curl --proto '=https' --tlsv1.2 -fsSL "$url"
-  elif has_wget; then
-    wget --https-only -q -O - "$url"
-  else
-    err "Neither curl nor wget found. Please install one and try again."
-  fi
-}
-
 # ── Version resolution ───────────────────────────────────────────────────────
 
 resolve_latest_version() {
@@ -199,7 +180,7 @@ verify_checksum() {
   checksums_file="$2"
   archive_name="$3"
 
-  expected=$(grep "$archive_name" "$checksums_file" | awk '{print $1}')
+  expected=$(awk -v name="$archive_name" '$2 == name { print $1; exit }' "$checksums_file")
   [ -n "$expected" ] || err "Archive '$archive_name' not found in checksums file"
 
   if command -v sha256sum > /dev/null 2>&1; then
@@ -221,15 +202,28 @@ This could indicate a corrupted download or a tampered file."
 # ── Sudo helpers ─────────────────────────────────────────────────────────────
 
 maybe_sudo() {
-  if [ -w "$1" ] || [ -w "$(dirname "$1")" ]; then
-    # Directory (or parent) is writable — no sudo needed
+  target="$1"
+
+  # Find the nearest existing directory up the path hierarchy
+  dir="$target"
+  while [ ! -d "$dir" ]; do
+    parent="$(dirname "$dir")"
+    # Stop if we reached the root (dirname is unchanged)
+    if [ "$parent" = "$dir" ]; then
+      break
+    fi
+    dir="$parent"
+  done
+
+  if [ -w "$dir" ]; then
+    # Nearest existing ancestor is writable — no sudo needed
     return
   fi
 
   if command -v sudo > /dev/null 2>&1; then
     echo "sudo"
   else
-    err "Cannot write to $1 and sudo is not available. Try: --prefix ~/.local"
+    err "Cannot write to $target and sudo is not available. Try: --prefix ~/.local"
   fi
 }
 
