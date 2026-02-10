@@ -21,8 +21,6 @@ import (
 )
 
 const (
-	// DefaultBaseURL is the default API endpoint.
-	DefaultBaseURL = "http://localhost:17200"
 	// DefaultTimeout is the default HTTP request timeout.
 	DefaultTimeout = 60 * time.Second
 	// DefaultLeaseDurationMs is the default job lease duration (45s to allow margin over 30s heartbeat).
@@ -291,21 +289,15 @@ func (j *Job) GetDisplayName() string {
 	return "Job"
 }
 
-// New creates a new API client.
-func New(apiKey string) *Client {
+// New creates a new API client with the given base URL and API key.
+func New(baseURL, apiKey string) *Client {
 	return &Client{
-		baseURL: DefaultBaseURL,
+		baseURL: baseURL,
 		apiKey:  apiKey,
 		httpClient: &http.Client{
 			Timeout: DefaultTimeout,
 		},
 	}
-}
-
-// WithBaseURL sets a custom base URL.
-func (c *Client) WithBaseURL(url string) *Client {
-	c.baseURL = url
-	return c
 }
 
 // BaseURL returns the configured base URL.
