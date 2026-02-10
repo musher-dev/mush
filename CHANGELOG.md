@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1](https://github.com/musher-dev/mush/compare/v1.0.0...v1.0.1) (2026-02-10)
+
+
+### Documentation
+
+* add community files and GitHub templates for open-source readiness ([#10](https://github.com/musher-dev/mush/issues/10)) ([55caa02](https://github.com/musher-dev/mush/commit/55caa02e8ab95f7700bc7b2e087810eb7ba684ef))
+
 ## 1.0.0 (2026-02-10)
 
 
