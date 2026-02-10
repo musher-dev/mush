@@ -222,6 +222,13 @@ func checkCLIVersion(ctx context.Context) Result {
 		}
 	}
 
+	if update.IsDisabled() {
+		return Result{
+			Status:  StatusPass,
+			Message: fmt.Sprintf("v%s (update checks disabled)", current),
+		}
+	}
+
 	checkCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 

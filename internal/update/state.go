@@ -72,11 +72,13 @@ func SaveState(s *State) error {
 		return err
 	}
 
-	// Atomic write: temp file + rename
+	// Atomic write: temp file + rename.
+	// Remove destination first for Windows compatibility (os.Rename fails if dest exists on Windows).
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, data, 0o600); err != nil {
 		return err
 	}
+	_ = os.Remove(path)
 	return os.Rename(tmp, path)
 }
 

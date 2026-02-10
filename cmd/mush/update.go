@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -62,8 +61,7 @@ func runUpdate(cmd *cobra.Command, out *output.Writer, targetVersion string, for
 
 	updater, err := update.NewUpdater()
 	if err != nil {
-		out.Failure("Failed to initialize updater: %v", err)
-		return nil
+		return fmt.Errorf("failed to initialize updater: %w", err)
 	}
 
 	// Specific version mode
@@ -82,7 +80,7 @@ func runUpdate(cmd *cobra.Command, out *output.Writer, targetVersion string, for
 		if strings.Contains(err.Error(), "403") {
 			out.Info("Set GITHUB_TOKEN to avoid rate limits")
 		}
-		return nil
+		return fmt.Errorf("update check failed: %w", err)
 	}
 
 	// JSON output mode — print check result and exit without applying
@@ -97,7 +95,11 @@ func runUpdate(cmd *cobra.Command, out *output.Writer, targetVersion string, for
 		return nil
 	}
 
-	spin.StopWithSuccess(fmt.Sprintf("Update available: v%s → v%s", currentVersion, info.LatestVersion))
+	if info.UpdateAvailable {
+		spin.StopWithSuccess(fmt.Sprintf("Update available: v%s → v%s", currentVersion, info.LatestVersion))
+	} else {
+		spin.StopWithSuccess(fmt.Sprintf("Reinstalling v%s", info.LatestVersion))
+	}
 
 	// Check write permissions and re-exec with sudo if needed
 	execPath, err := selfupdate.ExecutablePath()
@@ -111,7 +113,7 @@ func runUpdate(cmd *cobra.Command, out *output.Writer, targetVersion string, for
 
 	if err := updater.Apply(ctx, info.Release); err != nil {
 		spin.StopWithFailure(fmt.Sprintf("Update failed: %v", err))
-		return nil
+		return fmt.Errorf("update failed: %w", err)
 	}
 
 	spin.StopWithSuccess(fmt.Sprintf("Updated to v%s", info.LatestVersion))
@@ -140,7 +142,7 @@ func updateToVersion(ctx context.Context, out *output.Writer, updater *update.Up
 		if strings.Contains(err.Error(), "not found") {
 			out.Info("Check available versions at https://github.com/musher-dev/mush/releases")
 		}
-		return nil
+		return fmt.Errorf("install failed: %w", err)
 	}
 
 	spin.StopWithSuccess(fmt.Sprintf("Installed v%s", release.Version()))
@@ -158,6 +160,5 @@ func saveCheckState(current, latest, releaseURL string) {
 }
 
 func isUpdateDisabled() bool {
-	v := os.Getenv("MUSH_UPDATE_DISABLED")
-	return v == "1" || strings.EqualFold(v, "true")
+	return update.IsDisabled()
 }

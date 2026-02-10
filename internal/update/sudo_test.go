@@ -18,6 +18,10 @@ func TestNeedsElevation_WritableDir(t *testing.T) {
 }
 
 func TestNeedsElevation_ReadOnlyDir(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("skipping: root can write to read-only directories")
+	}
+
 	tmp := t.TempDir()
 	readOnly := filepath.Join(tmp, "readonly")
 	if err := os.MkdirAll(readOnly, 0o555); err != nil {

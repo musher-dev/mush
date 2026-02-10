@@ -134,7 +134,7 @@ Get started:
 			cmd.SetContext(out.WithContext(cmd.Context()))
 
 			// Launch background update check (fire-and-forget)
-			if shouldBackgroundCheck(version, quiet, jsonOutput) {
+			if shouldBackgroundCheck(cmd, version, quiet, jsonOutput) {
 				go backgroundUpdateCheck(version)
 			}
 
@@ -207,19 +207,20 @@ func newVersionCmd() *cobra.Command {
 	}
 }
 
-// skipUpdateNoticeCommands are commands that should not show update notifications.
-var skipUpdateNoticeCommands = map[string]bool{
+// skipUpdateCommands are commands that should not trigger background checks or show update notifications.
+var skipUpdateCommands = map[string]bool{
 	"update":     true,
 	"version":    true,
 	"completion": true,
+	"doctor":     true,
 }
 
 // shouldBackgroundCheck returns true if a background update check should be launched.
-func shouldBackgroundCheck(ver string, quiet, jsonOut bool) bool {
+func shouldBackgroundCheck(cmd *cobra.Command, ver string, quiet, jsonOut bool) bool {
 	if ver == "dev" || quiet || jsonOut || isUpdateDisabled() {
 		return false
 	}
-	return true
+	return !skipUpdateCommands[cmd.Name()]
 }
 
 // backgroundUpdateCheck performs the update check in a goroutine and saves state.
@@ -255,11 +256,7 @@ func shouldShowUpdateNotice(cmd *cobra.Command, ver string, quiet, jsonOut bool)
 	if ver == "dev" || quiet || jsonOut || isUpdateDisabled() {
 		return false
 	}
-	name := cmd.Name()
-	if cmd.HasParent() {
-		name = cmd.Name()
-	}
-	return !skipUpdateNoticeCommands[name]
+	return !skipUpdateCommands[cmd.Name()]
 }
 
 // showUpdateNotice reads the cached state and prints an update notice if available.

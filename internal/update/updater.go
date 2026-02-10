@@ -9,12 +9,19 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"strings"
 
 	"github.com/Masterminds/semver/v3"
 	selfupdate "github.com/creativeprojects/go-selfupdate"
 )
 
 const repoSlug = "musher-dev/mush"
+
+// IsDisabled returns true if update checks are disabled via MUSH_UPDATE_DISABLED.
+func IsDisabled() bool {
+	v := os.Getenv("MUSH_UPDATE_DISABLED")
+	return v == "1" || strings.EqualFold(v, "true")
+}
 
 // Info holds the result of a version check.
 type Info struct {
@@ -71,13 +78,13 @@ func (u *Updater) CheckLatest(ctx context.Context, currentVersion string) (*Info
 	}
 
 	info.LatestVersion = latest.Version()
-	info.ReleaseURL = latest.ReleaseNotes // URL or notes from the release
+	info.ReleaseURL = latest.URL
+	info.Release = latest
 
 	current, err := semver.NewVersion(currentVersion)
 	if err != nil {
 		// Can't parse current version (e.g. "dev"), treat as needing update
 		info.UpdateAvailable = true
-		info.Release = latest
 		return info, nil
 	}
 
@@ -88,7 +95,6 @@ func (u *Updater) CheckLatest(ctx context.Context, currentVersion string) (*Info
 
 	if latestSemver.GreaterThan(current) {
 		info.UpdateAvailable = true
-		info.Release = latest
 	}
 
 	return info, nil

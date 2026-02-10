@@ -3,14 +3,23 @@ package update
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 )
 
+// setTestHome overrides all home-related env vars for cross-platform test isolation.
+func setTestHome(t *testing.T, dir string) {
+	t.Helper()
+	t.Setenv("HOME", dir)
+	if runtime.GOOS == "windows" {
+		t.Setenv("USERPROFILE", dir)
+	}
+}
+
 func TestLoadState_NoFile(t *testing.T) {
-	// Override home to a temp dir with no state file
 	tmp := t.TempDir()
-	t.Setenv("HOME", tmp)
+	setTestHome(t, tmp)
 
 	state, err := LoadState()
 	if err != nil {
@@ -26,7 +35,7 @@ func TestLoadState_NoFile(t *testing.T) {
 
 func TestSaveAndLoadState(t *testing.T) {
 	tmp := t.TempDir()
-	t.Setenv("HOME", tmp)
+	setTestHome(t, tmp)
 
 	now := time.Now().Truncate(time.Second)
 	original := &State{
@@ -62,6 +71,29 @@ func TestSaveAndLoadState(t *testing.T) {
 	}
 	if loaded.ReleaseURL != "https://example.com/release" {
 		t.Errorf("ReleaseURL: got %q, want %q", loaded.ReleaseURL, "https://example.com/release")
+	}
+}
+
+func TestSaveState_OverwritesExisting(t *testing.T) {
+	tmp := t.TempDir()
+	setTestHome(t, tmp)
+
+	first := &State{LatestVersion: "1.0.0", LastCheckedAt: time.Now()}
+	if err := SaveState(first); err != nil {
+		t.Fatalf("first SaveState: %v", err)
+	}
+
+	second := &State{LatestVersion: "2.0.0", LastCheckedAt: time.Now()}
+	if err := SaveState(second); err != nil {
+		t.Fatalf("second SaveState: %v", err)
+	}
+
+	loaded, err := LoadState()
+	if err != nil {
+		t.Fatalf("LoadState: %v", err)
+	}
+	if loaded.LatestVersion != "2.0.0" {
+		t.Errorf("expected 2.0.0 after overwrite, got %q", loaded.LatestVersion)
 	}
 }
 
@@ -153,7 +185,7 @@ func TestHasUpdate(t *testing.T) {
 
 func TestLoadState_CorruptedFile(t *testing.T) {
 	tmp := t.TempDir()
-	t.Setenv("HOME", tmp)
+	setTestHome(t, tmp)
 
 	dir := filepath.Join(tmp, ".config", "mush")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
