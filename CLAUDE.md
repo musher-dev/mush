@@ -14,6 +14,7 @@ mush/
 │   ├── auth.go         # auth login/status/logout commands
 │   ├── config.go       # config list/get/set commands
 │   ├── init.go         # Onboarding wizard
+│   ├── update.go       # Self-update command
 │   └── doctor.go       # Diagnostic command
 ├── internal/
 │   ├── auth/           # Credential storage (keyring + file fallback)
@@ -24,6 +25,7 @@ mush/
 │   ├── output/         # CLI output handling (colors, spinners, TTY)
 │   ├── terminal/       # TTY detection and capabilities
 │   ├── prompt/         # Interactive user prompts
+│   ├── update/         # Self-update from GitHub Releases
 │   ├── wizard/         # Init wizard flow
 │   └── doctor/         # Diagnostic check framework
 ├── go.mod
@@ -38,6 +40,7 @@ Mush uses **Resource-First (Noun-Verb)** command taxonomy:
 ```bash
 mush init               # Onboarding wizard
 mush doctor             # Diagnostic checks
+mush update             # Self-update to latest version
 
 mush link               # Link to a habitat and start processing jobs (watch mode)
 mush link status        # Check authentication/connectivity
@@ -176,6 +179,7 @@ Core dependencies:
 - `github.com/zalando/go-keyring` — Secure credential storage
 - `github.com/fatih/color` — Colored terminal output
 - `github.com/briandowns/spinner` — Terminal spinners
+- `github.com/creativeprojects/go-selfupdate` — Self-update from GitHub Releases
 
 ## Build & Release
 
@@ -194,4 +198,5 @@ goreleaser release --clean
 - **Binary**: `mush`
 - **Config dir**: `~/.config/mush/`
 - **Credentials**: OS Keyring or `~/.config/mush/credentials`
+- **Update state**: `~/.config/mush/update-check`
 - **API endpoint**: Configured via `api.url` or `MUSH_API_URL`
