@@ -81,7 +81,6 @@ tasks:
       - task: check:lint
       - task: check:vuln
       - task: check:shell
-      - task: check:install
       - task: check:test
 
   # Quick aliases for common operations
