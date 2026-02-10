@@ -98,7 +98,7 @@ func TestResolveQueue_WithFlag(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c := client.New("test-key").WithBaseURL(server.URL)
+	c := client.New(server.URL, "test-key")
 	out := output.NewWriter(io.Discard, io.Discard, &terminal.Info{})
 
 	queue, err := resolveQueue(context.Background(), c, "hab-1", "q-1", out)
@@ -116,7 +116,7 @@ func TestResolveQueue_WithInvalidFlag(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c := client.New("test-key").WithBaseURL(server.URL)
+	c := client.New(server.URL, "test-key")
 	out := output.NewWriter(io.Discard, io.Discard, &terminal.Info{})
 
 	_, err := resolveQueue(context.Background(), c, "hab-1", "q-missing", out)
@@ -131,7 +131,7 @@ func TestResolveQueue_NoQueuesForHabitat(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c := client.New("test-key").WithBaseURL(server.URL)
+	c := client.New(server.URL, "test-key")
 	out := output.NewWriter(io.Discard, io.Discard, &terminal.Info{})
 
 	_, err := resolveQueue(context.Background(), c, "hab-1", "", out)
@@ -146,7 +146,7 @@ func TestResolveQueue_AutoSelectSingle(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c := client.New("test-key").WithBaseURL(server.URL)
+	c := client.New(server.URL, "test-key")
 	out := output.NewWriter(io.Discard, io.Discard, &terminal.Info{})
 	out.NoInput = true
 
@@ -168,7 +168,7 @@ func TestResolveQueue_NoInputMultipleQueues(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c := client.New("test-key").WithBaseURL(server.URL)
+	c := client.New(server.URL, "test-key")
 	out := output.NewWriter(io.Discard, io.Discard, &terminal.Info{})
 	out.NoInput = true
 
@@ -191,7 +191,7 @@ func TestResolveHabitatID_AutoSelectSingle(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c := client.New("test-key").WithBaseURL(server.URL)
+	c := client.New(server.URL, "test-key")
 	out := output.NewWriter(io.Discard, io.Discard, &terminal.Info{})
 	out.NoInput = true
 
@@ -213,7 +213,7 @@ func TestResolveHabitatID_NoInputMultipleHabitats(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c := client.New("test-key").WithBaseURL(server.URL)
+	c := client.New(server.URL, "test-key")
 	out := output.NewWriter(io.Discard, io.Discard, &terminal.Info{})
 	out.NoInput = true
 

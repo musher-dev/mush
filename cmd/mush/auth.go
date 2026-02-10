@@ -76,7 +76,7 @@ You can also set the MUSHER_API_KEY environment variable.`,
 			spin.Start()
 
 			cfg := config.Load()
-			c := client.New(apiKey).WithBaseURL(cfg.APIURL())
+			c := client.New(cfg.APIURL(), apiKey)
 			identity, err := c.ValidateKey(cmd.Context())
 			if err != nil {
 				spin.StopWithFailure("Invalid API key")

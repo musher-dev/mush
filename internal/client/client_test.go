@@ -10,25 +10,18 @@ import (
 )
 
 func TestNew(t *testing.T) {
+	baseURL := "https://custom.api.com"
 	apiKey := "test-api-key"
-	c := New(apiKey)
+	c := New(baseURL, apiKey)
 
 	if c.apiKey != apiKey {
 		t.Errorf("apiKey = %q, want %q", c.apiKey, apiKey)
 	}
-	if c.baseURL != DefaultBaseURL {
-		t.Errorf("baseURL = %q, want %q", c.baseURL, DefaultBaseURL)
+	if c.baseURL != baseURL {
+		t.Errorf("baseURL = %q, want %q", c.baseURL, baseURL)
 	}
 	if c.httpClient == nil {
 		t.Error("httpClient should not be nil")
-	}
-}
-
-func TestClient_WithBaseURL(t *testing.T) {
-	c := New("key").WithBaseURL("https://custom.api.com")
-
-	if c.baseURL != "https://custom.api.com" {
-		t.Errorf("baseURL = %q, want %q", c.baseURL, "https://custom.api.com")
 	}
 }
 
@@ -76,7 +69,7 @@ func TestClient_ValidateKey(t *testing.T) {
 			}))
 			defer server.Close()
 
-			c := New("test-key").WithBaseURL(server.URL)
+			c := New(server.URL, "test-key")
 			_, err := c.ValidateKey(context.Background())
 
 			if (err != nil) != tt.wantErr {
@@ -147,7 +140,7 @@ func TestClient_ClaimJob(t *testing.T) {
 			}))
 			defer server.Close()
 
-			c := New("test-key").WithBaseURL(server.URL)
+			c := New(server.URL, "test-key")
 			job, err := c.ClaimJob(context.Background(), "habitat-123", "", 30)
 
 			if (err != nil) != tt.wantErr {
@@ -211,7 +204,7 @@ func TestClient_ListQueues(t *testing.T) {
 			}))
 			defer server.Close()
 
-			c := New("test-key").WithBaseURL(server.URL)
+			c := New(server.URL, "test-key")
 			queues, err := c.ListQueues(context.Background(), "hab-1")
 			if (err != nil) != tt.wantErr {
 				t.Errorf("ListQueues() error = %v, wantErr %v", err, tt.wantErr)
@@ -246,7 +239,7 @@ func TestClient_HeartbeatJob(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c := New("test-key").WithBaseURL(server.URL)
+	c := New(server.URL, "test-key")
 	job, err := c.HeartbeatJob(context.Background(), "job-123")
 	if err != nil {
 		t.Errorf("HeartbeatJob() error = %v", err)
@@ -274,7 +267,7 @@ func TestClient_CompleteJob(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c := New("test-key").WithBaseURL(server.URL)
+	c := New(server.URL, "test-key")
 	err := c.CompleteJob(context.Background(), "job-123", map[string]interface{}{"result": "success"})
 	if err != nil {
 		t.Errorf("CompleteJob() error = %v", err)
@@ -305,7 +298,7 @@ func TestClient_FailJob(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c := New("test-key").WithBaseURL(server.URL)
+	c := New(server.URL, "test-key")
 	err := c.FailJob(context.Background(), "job-123", "execution_error", "test error", true)
 	if err != nil {
 		t.Errorf("FailJob() error = %v", err)
@@ -336,7 +329,7 @@ func TestClient_RegisterLink(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c := New("test-key").WithBaseURL(server.URL)
+	c := New(server.URL, "test-key")
 	resp, err := c.RegisterLink(context.Background(), &RegisterLinkRequest{
 		InstanceID: "instance-1",
 		LinkType:   "agent",
@@ -374,7 +367,7 @@ func TestClient_HeartbeatLink(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c := New("test-key").WithBaseURL(server.URL)
+	c := New(server.URL, "test-key")
 	resp, err := c.HeartbeatLink(context.Background(), "link-123", "job-123")
 	if err != nil {
 		t.Errorf("HeartbeatLink() error = %v", err)
@@ -411,7 +404,7 @@ func TestClient_DeregisterLink(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c := New("test-key").WithBaseURL(server.URL)
+	c := New(server.URL, "test-key")
 	err := c.DeregisterLink(context.Background(), "link-123", DeregisterLinkRequest{
 		Reason:        "graceful_shutdown",
 		JobsCompleted: 5,
@@ -435,7 +428,7 @@ func TestClient_ReleaseJob(t *testing.T) {
 		}))
 		defer server.Close()
 
-		c := New("test-key").WithBaseURL(server.URL)
+		c := New(server.URL, "test-key")
 		err := c.ReleaseJob(context.Background(), "job-123")
 		if err != nil {
 			t.Errorf("ReleaseJob() error = %v", err)
@@ -449,7 +442,7 @@ func TestClient_ReleaseJob(t *testing.T) {
 		}))
 		defer server.Close()
 
-		c := New("test-key").WithBaseURL(server.URL)
+		c := New(server.URL, "test-key")
 		err := c.ReleaseJob(context.Background(), "job-123")
 		if err == nil {
 			t.Error("ReleaseJob() should return error on 409")

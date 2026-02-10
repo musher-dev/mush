@@ -112,7 +112,7 @@ func checkAPIConnectivity(ctx context.Context) Result {
 	start := time.Now()
 
 	// Create a simple HTTP client to test connectivity
-	c := client.New("test-key").WithBaseURL(apiURL)
+	c := client.New(apiURL, "test-key")
 
 	// We expect this to fail auth, but succeed at connecting
 	_, err := c.ValidateKey(ctx)
@@ -156,7 +156,7 @@ func checkAuthentication(ctx context.Context) Result {
 
 	// Validate the key
 	cfg := config.Load()
-	c := client.New(apiKey).WithBaseURL(cfg.APIURL())
+	c := client.New(cfg.APIURL(), apiKey)
 
 	identity, err := c.ValidateKey(ctx)
 	if err != nil {

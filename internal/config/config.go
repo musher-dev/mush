@@ -17,7 +17,7 @@ import (
 
 const (
 	// DefaultAPIURL is the default Musher API endpoint.
-	DefaultAPIURL = "http://localhost:17200"
+	DefaultAPIURL = "https://api.musher.dev"
 	// DefaultPollInterval is the default poll interval in seconds.
 	DefaultPollInterval = 30
 	// DefaultHeartbeatInterval is the default heartbeat interval in seconds.

@@ -103,7 +103,7 @@ func (w *Wizard) Run(ctx context.Context) error {
 	spin.Start()
 
 	cfg := config.Load()
-	c := client.New(apiKey).WithBaseURL(cfg.APIURL())
+	c := client.New(cfg.APIURL(), apiKey)
 
 	identity, err := c.ValidateKey(ctx)
 	if err != nil {

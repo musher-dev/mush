@@ -14,13 +14,13 @@ import (
 //
 //	source, apiKey := auth.GetCredentials()
 //	cfg := config.Load()
-//	c := client.New(apiKey).WithBaseURL(cfg.APIURL())
+//	c := client.New(cfg.APIURL(), apiKey)
 func newAPIClient() (auth.CredentialSource, *client.Client, error) {
 	source, apiKey := auth.GetCredentials()
 	if apiKey == "" {
 		return "", nil, clierrors.NotAuthenticated()
 	}
 	cfg := config.Load()
-	c := client.New(apiKey).WithBaseURL(cfg.APIURL())
+	c := client.New(cfg.APIURL(), apiKey)
 	return source, c, nil
 }
