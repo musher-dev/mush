@@ -16,7 +16,6 @@ import (
 	clierrors "github.com/musher-dev/mush/internal/errors"
 	"github.com/musher-dev/mush/internal/harness"
 	"github.com/musher-dev/mush/internal/output"
-	"github.com/musher-dev/mush/internal/terminal"
 )
 
 func newLinkCmd() *cobra.Command {
@@ -160,8 +159,7 @@ Examples:
 			}
 
 			// Watch mode requires a terminal for the harness UI
-			term := terminal.Detect()
-			if !term.IsTTY {
+			if !out.Terminal().IsTTY {
 				return &clierrors.CLIError{
 					Message: "Watch mode requires a terminal (TTY)",
 					Hint:    "Run this command directly in a terminal, not in a pipe or script",

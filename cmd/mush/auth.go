@@ -95,7 +95,7 @@ You can also set the MUSHER_API_KEY environment variable.`,
 		},
 	}
 
-	cmd.Flags().StringVar(&apiKeyFlag, "api-key", "", "API key for non-interactive login")
+	cmd.Flags().StringVar(&apiKeyFlag, "api-key", "", "API key for non-interactive login (prefer MUSHER_API_KEY env var to avoid shell history exposure)")
 	return cmd
 }
 

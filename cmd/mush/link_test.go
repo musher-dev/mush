@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/musher-dev/mush/internal/client"
@@ -12,6 +13,81 @@ import (
 	"github.com/musher-dev/mush/internal/output"
 	"github.com/musher-dev/mush/internal/terminal"
 )
+
+// linkMockServer creates a test server that handles all API calls needed by
+// the link command up to the dry-run / TTY check point.
+func linkMockServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/api/v1/runner/habitats" && r.Method == "GET":
+			_, _ = w.Write([]byte(`[{"id":"hab-1","slug":"local","name":"Local","status":"online","habitatType":"local"}]`))
+		case r.URL.Path == "/api/v1/queues" && r.Method == "GET":
+			_, _ = w.Write([]byte(`{"data":[{"id":"q-1","slug":"default","name":"Default","status":"active","habitatId":"hab-1"}]}`))
+		case strings.HasPrefix(r.URL.Path, "/api/v1/runner/queues/") && strings.HasSuffix(r.URL.Path, "/instruction-availability"):
+			_, _ = w.Write([]byte(`{"queueId":"q-1","hasActiveInstruction":true}`))
+		default:
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+			http.Error(w, "not found", http.StatusNotFound)
+		}
+	}))
+}
+
+func TestLinkDryRun_SucceedsWithoutTTY(t *testing.T) {
+	server := linkMockServer(t)
+	defer server.Close()
+
+	// Non-TTY terminal
+	term := &terminal.Info{IsTTY: false}
+	out := output.NewWriter(io.Discard, io.Discard, term)
+	out.NoInput = true
+
+	t.Setenv("MUSHER_API_KEY", "test-key")
+	t.Setenv("MUSH_API_URL", server.URL)
+
+	cmd := newLinkCmd()
+	cmd.SetArgs([]string{"--dry-run", "--habitat", "local", "--queue-id", "q-1"})
+	ctx := out.WithContext(context.Background())
+	cmd.SetContext(ctx)
+
+	err := cmd.Execute()
+	if err != nil {
+		t.Fatalf("dry-run should succeed without TTY, got error: %v", err)
+	}
+}
+
+func TestLinkNoDryRun_RequiresTTY(t *testing.T) {
+	server := linkMockServer(t)
+	defer server.Close()
+
+	// Non-TTY terminal
+	term := &terminal.Info{IsTTY: false}
+	out := output.NewWriter(io.Discard, io.Discard, term)
+	out.NoInput = true
+
+	t.Setenv("MUSHER_API_KEY", "test-key")
+	t.Setenv("MUSH_API_URL", server.URL)
+
+	cmd := newLinkCmd()
+	cmd.SetArgs([]string{"--habitat", "local", "--queue-id", "q-1"})
+	ctx := out.WithContext(context.Background())
+	cmd.SetContext(ctx)
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected TTY error for non-dry-run without terminal")
+	}
+	var cliErr *clierrors.CLIError
+	if !clierrors.As(err, &cliErr) {
+		t.Fatalf("expected CLIError, got %T: %v", err, err)
+	}
+	if cliErr.Code != clierrors.ExitUsage {
+		t.Fatalf("error code = %d, want %d (ExitUsage)", cliErr.Code, clierrors.ExitUsage)
+	}
+	if !strings.Contains(cliErr.Message, "TTY") {
+		t.Fatalf("error message = %q, want to contain 'TTY'", cliErr.Message)
+	}
+}
 
 func TestResolveQueue_WithFlag(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
