@@ -36,10 +36,12 @@ type Client struct {
 
 // Identity represents the authenticated service account identity.
 type Identity struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	Email     string `json:"email"`     // For display purposes
-	Workspace string `json:"workspace"` // Workspace name
+	CredentialType string `json:"credentialType"`
+	CredentialID   string `json:"credentialId"`
+	CredentialName string `json:"credentialName"`
+	WorkerID       string `json:"workerId"`
+	WorkspaceID    string `json:"workspaceId"`
+	WorkspaceName  string `json:"workspaceName"`
 }
 
 // JobClaimRequest is the request body for claiming a job.
@@ -306,11 +308,8 @@ func (c *Client) BaseURL() string {
 }
 
 // ValidateKey validates the API key and returns the service account identity.
-// Uses the habitats endpoint to validate credentials without requiring a specific habitat.
 func (c *Client) ValidateKey(ctx context.Context) (*Identity, error) {
-	// Use the runner habitats endpoint to validate credentials
-	// This endpoint returns 401 if the key is invalid and doesn't require a habitat ID
-	req, err := http.NewRequestWithContext(ctx, "GET", c.baseURL+"/api/v1/runner/habitats", http.NoBody)
+	req, err := http.NewRequestWithContext(ctx, "GET", c.baseURL+"/api/v1/runner/me", http.NoBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -331,19 +330,16 @@ func (c *Client) ValidateKey(ctx context.Context) (*Identity, error) {
 		return nil, fmt.Errorf("API key does not have runner permissions")
 	}
 
-	// Any 2xx means the key is valid
-	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		// TODO: Replace placeholder with real identity from a server endpoint
-		// (e.g. GET /api/v1/runner/identity) that returns serviceAccountId,
-		// serviceAccountName, workspaceId, and workspaceName. Currently the API
-		// has no endpoint accessible to SA keys that returns this information.
-		return &Identity{
-			Email:     "service-account",
-			Workspace: "default",
-		}, nil
+	if resp.StatusCode != http.StatusOK {
+		return nil, unexpectedStatus("validate key", resp.StatusCode, resp.Body)
 	}
 
-	return nil, unexpectedStatus("validate key", resp.StatusCode, resp.Body)
+	var identity Identity
+	if err := json.NewDecoder(resp.Body).Decode(&identity); err != nil {
+		return nil, fmt.Errorf("failed to parse identity: %w", err)
+	}
+
+	return &identity, nil
 }
 
 // ClaimJob attempts to claim a job from the queue.

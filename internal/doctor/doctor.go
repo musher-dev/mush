@@ -169,7 +169,7 @@ func checkAuthentication(ctx context.Context) Result {
 
 	return Result{
 		Status:  StatusPass,
-		Message: fmt.Sprintf("%s (via %s)", identity.Email, source),
+		Message: fmt.Sprintf("%s (via %s)", identity.CredentialName, source),
 	}
 }
 

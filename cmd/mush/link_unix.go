@@ -126,7 +126,7 @@ Examples:
 			}
 
 			spin.StopWithSuccess("Connected to " + apiURL)
-			out.Print("Authenticated as: %s (Workspace: %s)\n", identity.Email, identity.Workspace)
+			out.Print("Authenticated as: %s (Workspace: %s)\n", identity.CredentialName, identity.WorkspaceName)
 
 			// Resolve habitat ID
 			habitatID, err := resolveHabitatID(cmd.Context(), c, habitat, out)

@@ -113,8 +113,8 @@ func (w *Wizard) Run(ctx context.Context) error {
 	}
 
 	spin.StopWithSuccess("Authenticated")
-	w.out.Print("User:      %s\n", identity.Email)
-	w.out.Print("Workspace: %s\n", identity.Workspace)
+	w.out.Print("Credential: %s\n", identity.CredentialName)
+	w.out.Print("Workspace:  %s\n", identity.WorkspaceName)
 
 	// Store credentials before habitat selection (so they persist even if user cancels)
 	w.out.Println()

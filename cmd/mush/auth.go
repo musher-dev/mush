@@ -90,7 +90,7 @@ You can also set the MUSHER_API_KEY environment variable.`,
 				return clierrors.ConfigFailed("store credentials", err)
 			}
 
-			out.Success("Authenticated as %s (Workspace: %s)", identity.Email, identity.Workspace)
+			out.Success("Authenticated as %s (Workspace: %s)", identity.CredentialName, identity.WorkspaceName)
 			return nil
 		},
 	}
@@ -101,9 +101,9 @@ You can also set the MUSHER_API_KEY environment variable.`,
 
 // AuthStatus represents authentication status for JSON output.
 type AuthStatus struct {
-	Source    string `json:"source"`
-	User      string `json:"user"`
-	Workspace string `json:"workspace"`
+	Source     string `json:"source"`
+	Credential string `json:"credential"`
+	Workspace  string `json:"workspace"`
 }
 
 func newAuthStatusCmd() *cobra.Command {
@@ -132,15 +132,15 @@ func newAuthStatusCmd() *cobra.Command {
 
 			if out.JSON {
 				return out.PrintJSON(AuthStatus{
-					Source:    string(source),
-					User:      identity.Email,
-					Workspace: identity.Workspace,
+					Source:     string(source),
+					Credential: identity.CredentialName,
+					Workspace:  identity.WorkspaceName,
 				})
 			}
 
-			out.Print("Source:    %s\n", source)
-			out.Print("User:      %s\n", identity.Email)
-			out.Print("Workspace: %s\n", identity.Workspace)
+			out.Print("Source:     %s\n", source)
+			out.Print("Credential: %s\n", identity.CredentialName)
+			out.Print("Workspace:  %s\n", identity.WorkspaceName)
 			return nil
 		},
 	}
