@@ -320,6 +320,51 @@ func TestDetectArch(t *testing.T) {
 	}
 }
 
+// ── Group 2b: Version resolution ───────────────────────────────────────────
+
+func TestResolveLatestVersion(t *testing.T) {
+	t.Run("follows redirect and extracts tag", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/releases/latest" {
+				http.Redirect(w, r, "/releases/tag/v1.2.3", http.StatusFound)
+				return
+			}
+			// curl follows the redirect and lands here
+			fmt.Fprint(w, "")
+		}))
+		defer server.Close()
+
+		result := runFunction(t, "resolve_latest_version", []string{
+			"MUSH_INSTALL_BASE_URL=" + server.URL,
+			"MUSH_INSTALL_INSECURE=1",
+		})
+
+		if result.exitCode != 0 {
+			t.Fatalf("exit code = %d, want 0\nstderr: %s", result.exitCode, result.stderr)
+		}
+		got := strings.TrimSpace(result.stdout)
+		if got != "v1.2.3" {
+			t.Errorf("resolved version = %q, want %q", got, "v1.2.3")
+		}
+	})
+
+	t.Run("server error", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+		}))
+		defer server.Close()
+
+		result := runFunction(t, "resolve_latest_version", []string{
+			"MUSH_INSTALL_BASE_URL=" + server.URL,
+			"MUSH_INSTALL_INSECURE=1",
+		})
+
+		if result.exitCode == 0 {
+			t.Error("expected non-zero exit code for server error")
+		}
+	})
+}
+
 // ── Group 3: Checksum verification ─────────────────────────────────────────
 
 func TestVerifyChecksum(t *testing.T) {
