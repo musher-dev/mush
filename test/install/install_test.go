@@ -17,6 +17,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 // scriptPath returns the absolute path to install.sh.
@@ -39,11 +40,26 @@ type runResult struct {
 	exitCode int
 }
 
+// testContext returns a context bounded by the test's deadline (from go test -timeout)
+// with a small margin, falling back to a 30s timeout if no deadline is set.
+func testContext(t *testing.T) context.Context {
+	t.Helper()
+	const fallback = 30 * time.Second
+	if dl, ok := t.Deadline(); ok {
+		ctx, cancel := context.WithDeadline(context.Background(), dl.Add(-time.Second))
+		t.Cleanup(cancel)
+		return ctx
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), fallback)
+	t.Cleanup(cancel)
+	return ctx
+}
+
 // runScript runs install.sh with the given arguments and environment overrides.
 func runScript(t *testing.T, args, env []string) runResult {
 	t.Helper()
 	cmdArgs := append([]string{scriptPath(t)}, args...)
-	cmd := exec.CommandContext(context.Background(), "sh", cmdArgs...)
+	cmd := exec.CommandContext(testContext(t), "sh", cmdArgs...)
 	cmd.Env = append(os.Environ(), env...)
 
 	var stdout, stderr bytes.Buffer
@@ -70,7 +86,7 @@ func runScript(t *testing.T, args, env []string) runResult {
 func runFunction(t *testing.T, fnCall string, env []string) runResult {
 	t.Helper()
 	script := fmt.Sprintf(". '%s'\n%s", scriptPath(t), fnCall)
-	cmd := exec.CommandContext(context.Background(), "sh", "-c", script)
+	cmd := exec.CommandContext(testContext(t), "sh", "-c", script)
 	cmd.Env = append(os.Environ(), "INSTALL_SH_TESTING=1")
 	cmd.Env = append(cmd.Env, env...)
 
