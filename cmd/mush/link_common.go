@@ -113,10 +113,10 @@ func resolveQueue(
 
 // LinkStatus represents link status for JSON output.
 type LinkStatus struct {
-	Source    string `json:"source"`
-	User      string `json:"user"`
-	Workspace string `json:"workspace"`
-	Active    bool   `json:"active"`
+	Source     string `json:"source"`
+	Credential string `json:"credential"`
+	Workspace  string `json:"workspace"`
+	Active     bool   `json:"active"`
 }
 
 func newLinkStatusCmd() *cobra.Command {
@@ -147,17 +147,17 @@ func newLinkStatusCmd() *cobra.Command {
 
 			if out.JSON {
 				return out.PrintJSON(LinkStatus{
-					Source:    string(source),
-					User:      identity.Email,
-					Workspace: identity.Workspace,
-					Active:    false,
+					Source:     string(source),
+					Credential: identity.CredentialName,
+					Workspace:  identity.WorkspaceName,
+					Active:     false,
 				})
 			}
 
 			out.Println()
-			out.Print("Source:    %s\n", source)
-			out.Print("User:      %s\n", identity.Email)
-			out.Print("Workspace: %s\n", identity.Workspace)
+			out.Print("Source:     %s\n", source)
+			out.Print("Credential: %s\n", identity.CredentialName)
+			out.Print("Workspace:  %s\n", identity.WorkspaceName)
 
 			out.Println()
 			out.Muted("Link: Not active")

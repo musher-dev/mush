@@ -20,6 +20,8 @@ func linkMockServer(t *testing.T) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
+		case r.URL.Path == "/api/v1/runner/me" && r.Method == "GET":
+			_, _ = w.Write([]byte(`{"credentialType":"service_account","credentialId":"cred-1","credentialName":"test-sa","workerId":"sa_xxx","workspaceId":"ws-1","workspaceName":"Test Workspace"}`))
 		case r.URL.Path == "/api/v1/runner/habitats" && r.Method == "GET":
 			_, _ = w.Write([]byte(`[{"id":"hab-1","slug":"local","name":"Local","status":"online","habitatType":"local"}]`))
 		case r.URL.Path == "/api/v1/queues" && r.Method == "GET":

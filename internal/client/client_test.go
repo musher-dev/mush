@@ -26,20 +26,26 @@ func TestNew(t *testing.T) {
 }
 
 func TestClient_ValidateKey(t *testing.T) {
+	identityJSON := `{
+		"credentialType": "service_account",
+		"credentialId": "cred-123",
+		"credentialName": "my-ci-runner",
+		"workerId": "sa_xxx",
+		"workspaceId": "ws-456",
+		"workspaceName": "Acme Corp"
+	}`
+
 	tests := []struct {
 		name       string
 		statusCode int
+		body       string
 		wantErr    bool
 		errMsg     string
 	}{
 		{
 			name:       "valid key",
 			statusCode: http.StatusOK,
-			wantErr:    false,
-		},
-		{
-			name:       "no content is valid",
-			statusCode: http.StatusNoContent,
+			body:       identityJSON,
 			wantErr:    false,
 		},
 		{
@@ -59,6 +65,10 @@ func TestClient_ValidateKey(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/api/v1/runner/me" {
+					t.Errorf("path = %q, want %q", r.URL.Path, "/api/v1/runner/me")
+				}
+
 				// Verify auth header
 				auth := r.Header.Get("Authorization")
 				if auth != "Bearer test-key" {
@@ -66,11 +76,14 @@ func TestClient_ValidateKey(t *testing.T) {
 				}
 
 				w.WriteHeader(tt.statusCode)
+				if tt.body != "" {
+					w.Write([]byte(tt.body))
+				}
 			}))
 			defer server.Close()
 
 			c := New(server.URL, "test-key")
-			_, err := c.ValidateKey(context.Background())
+			identity, err := c.ValidateKey(context.Background())
 
 			if (err != nil) != tt.wantErr {
 				t.Errorf("ValidateKey() error = %v, wantErr %v", err, tt.wantErr)
@@ -78,6 +91,20 @@ func TestClient_ValidateKey(t *testing.T) {
 			if tt.wantErr && err != nil && tt.errMsg != "" {
 				if err.Error() != tt.errMsg {
 					t.Errorf("ValidateKey() error = %q, want %q", err.Error(), tt.errMsg)
+				}
+			}
+			if !tt.wantErr && identity != nil {
+				if identity.CredentialType != "service_account" {
+					t.Errorf("CredentialType = %q, want %q", identity.CredentialType, "service_account")
+				}
+				if identity.CredentialName != "my-ci-runner" {
+					t.Errorf("CredentialName = %q, want %q", identity.CredentialName, "my-ci-runner")
+				}
+				if identity.WorkspaceName != "Acme Corp" {
+					t.Errorf("WorkspaceName = %q, want %q", identity.WorkspaceName, "Acme Corp")
+				}
+				if identity.WorkspaceID != "ws-456" {
+					t.Errorf("WorkspaceID = %q, want %q", identity.WorkspaceID, "ws-456")
 				}
 			}
 		})
