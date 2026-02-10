@@ -144,8 +144,6 @@ For development, you can run mush without installing.
 ### Quick Start
 
 ```bash
-cd apps/platform/mush
-
 # Install dependencies
 go mod download
 
@@ -190,4 +188,4 @@ task check
 
 ## License
 
-Copyright 2024 Musher, Inc.
+MIT License — Copyright (c) 2026 musher-dev. See [LICENSE](./LICENSE).
