@@ -16,7 +16,6 @@ import (
 	clierrors "github.com/musher-dev/mush/internal/errors"
 	"github.com/musher-dev/mush/internal/harness"
 	"github.com/musher-dev/mush/internal/output"
-	"github.com/musher-dev/mush/internal/terminal"
 )
 
 func newLinkCmd() *cobra.Command {
@@ -57,15 +56,6 @@ Examples:
   mush link --dry-run        # Verify connection without claiming jobs`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := output.FromContext(cmd.Context())
-
-			term := terminal.Detect()
-			if !term.IsTTY {
-				return &clierrors.CLIError{
-					Message: "Watch mode requires a terminal (TTY)",
-					Hint:    "Run this command directly in a terminal, not in a pipe or script",
-					Code:    clierrors.ExitUsage,
-				}
-			}
 
 			// Validate agent type if specified
 			var supportedAgents []string
@@ -166,6 +156,15 @@ Examples:
 				out.Println()
 				out.Success("Dry run mode: connection verified, not claiming jobs")
 				return nil
+			}
+
+			// Watch mode requires a terminal for the harness UI
+			if !out.Terminal().IsTTY {
+				return &clierrors.CLIError{
+					Message: "Watch mode requires a terminal (TTY)",
+					Hint:    "Run this command directly in a terminal, not in a pipe or script",
+					Code:    clierrors.ExitUsage,
+				}
 			}
 
 			// Setup graceful shutdown
