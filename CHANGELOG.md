@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.0](https://github.com/musher-dev/mush/compare/v1.0.1...v1.1.0) (2026-02-10)
+
+
+### Features
+
+* **client:** consume GET /api/v1/runner/me for real SA identity ([#16](https://github.com/musher-dev/mush/issues/16)) ([bbaf3c1](https://github.com/musher-dev/mush/commit/bbaf3c10180ceda6d77bebff94ce140eb31407cc))
+
 ## [1.0.1](https://github.com/musher-dev/mush/compare/v1.0.0...v1.0.1) (2026-02-10)
 
 
