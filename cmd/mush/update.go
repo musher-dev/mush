@@ -70,13 +70,18 @@ func runUpdate(cmd *cobra.Command, out *output.Writer, targetVersion string, for
 		return updateToVersion(ctx, out, updater, targetVersion)
 	}
 
-	// Check for latest
-	spin := out.Spinner("Checking for updates")
-	spin.Start()
+	// Check for latest (skip spinner in JSON mode to avoid corrupting stdout)
+	var spin *output.Spinner
+	if !out.JSON {
+		spin = out.Spinner("Checking for updates")
+		spin.Start()
+	}
 
 	info, err := updater.CheckLatest(ctx, currentVersion)
 	if err != nil {
-		spin.StopWithFailure(fmt.Sprintf("Failed to check for updates: %v", err))
+		if spin != nil {
+			spin.StopWithFailure(fmt.Sprintf("Failed to check for updates: %v", err))
+		}
 		if strings.Contains(err.Error(), "403") {
 			out.Info("Set GITHUB_TOKEN to avoid rate limits")
 		}
@@ -85,7 +90,6 @@ func runUpdate(cmd *cobra.Command, out *output.Writer, targetVersion string, for
 
 	// JSON output mode — print check result and exit without applying
 	if out.JSON {
-		spin.Stop()
 		return out.PrintJSON(info)
 	}
 
@@ -93,6 +97,12 @@ func runUpdate(cmd *cobra.Command, out *output.Writer, targetVersion string, for
 		spin.StopWithSuccess(fmt.Sprintf("Already up to date (v%s)", currentVersion))
 		saveCheckState(currentVersion, info.LatestVersion, info.ReleaseURL)
 		return nil
+	}
+
+	// Guard against nil Release (no matching platform assets found)
+	if info.Release == nil {
+		spin.StopWithFailure("No release found for this platform")
+		return fmt.Errorf("no release found for this platform")
 	}
 
 	if info.UpdateAvailable {

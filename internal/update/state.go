@@ -73,13 +73,24 @@ func SaveState(s *State) error {
 	}
 
 	// Atomic write: temp file + rename.
-	// Remove destination first for Windows compatibility (os.Rename fails if dest exists on Windows).
+	// Try rename first (atomic on Unix). If it fails (e.g. Windows where dest exists),
+	// fall back to remove + rename. Clean up temp file on failure.
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, data, 0o600); err != nil {
 		return err
 	}
-	_ = os.Remove(path)
-	return os.Rename(tmp, path)
+	if err := os.Rename(tmp, path); err != nil {
+		// Fallback for Windows: remove dest then retry rename
+		if removeErr := os.Remove(path); removeErr != nil && !os.IsNotExist(removeErr) {
+			_ = os.Remove(tmp) // best-effort cleanup
+			return err
+		}
+		if retryErr := os.Rename(tmp, path); retryErr != nil {
+			_ = os.Remove(tmp) // best-effort cleanup
+			return retryErr
+		}
+	}
+	return nil
 }
 
 // ShouldCheck returns true if enough time has passed since the last check.
