@@ -72,18 +72,29 @@ func SaveState(s *State) error {
 		return err
 	}
 
-	// Atomic write: temp file + rename.
+	// Atomic write: unique temp file + rename.
+	// Use CreateTemp to avoid clobbering from concurrent processes.
 	// Try rename first (atomic on Unix). If it fails (e.g. Windows where dest exists),
 	// fall back to remove + rename. Clean up temp file on failure.
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+	tmpFile, err := os.CreateTemp(dir, stateFileName+".*.tmp")
+	if err != nil {
 		return err
+	}
+	tmp := tmpFile.Name()
+	if _, writeErr := tmpFile.Write(data); writeErr != nil {
+		_ = tmpFile.Close()
+		_ = os.Remove(tmp)
+		return writeErr
+	}
+	if closeErr := tmpFile.Close(); closeErr != nil {
+		_ = os.Remove(tmp)
+		return closeErr
 	}
 	if err := os.Rename(tmp, path); err != nil {
 		// Fallback for Windows: remove dest then retry rename
 		if removeErr := os.Remove(path); removeErr != nil && !os.IsNotExist(removeErr) {
 			_ = os.Remove(tmp) // best-effort cleanup
-			return err
+			return removeErr
 		}
 		if retryErr := os.Rename(tmp, path); retryErr != nil {
 			_ = os.Remove(tmp) // best-effort cleanup

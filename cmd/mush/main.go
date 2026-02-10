@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/fatih/color"
@@ -133,14 +134,21 @@ Get started:
 			// Store writer in context for subcommands
 			cmd.SetContext(out.WithContext(cmd.Context()))
 
-			// Launch background update check (fire-and-forget)
+			// Launch background update check; tracked by updateWg so PostRunE
+			// can wait for the state file write before reading it.
 			if shouldBackgroundCheck(cmd, version, quiet, jsonOutput) {
-				go backgroundUpdateCheck(version)
+				updateWg.Go(func() {
+					backgroundUpdateCheck(version)
+				})
 			}
 
 			return nil
 		},
 		PersistentPostRunE: func(cmd *cobra.Command, args []string) error {
+			// Wait for the background update goroutine to finish writing
+			// the state file so we can read fresh results.
+			updateWg.Wait()
+
 			if shouldShowUpdateNotice(cmd, version, quiet, jsonOutput) {
 				showUpdateNotice(out, version)
 			}
@@ -206,6 +214,10 @@ func newVersionCmd() *cobra.Command {
 		},
 	}
 }
+
+// updateWg tracks the background update goroutine so PersistentPostRunE can
+// wait for it to finish writing the state file before reading it.
+var updateWg sync.WaitGroup
 
 // skipUpdateCommands are commands that should not trigger background checks or show update notifications.
 var skipUpdateCommands = map[string]bool{
