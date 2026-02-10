@@ -9,6 +9,27 @@ permissions:
   contents: read
 
 jobs:
+  shellcheck:
+    name: Lint Shell Scripts
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Get changed files
+        id: changed
+        uses: tj-actions/changed-files@v46
+        with:
+          files: |
+            **/*.sh
+
+      - name: Run ShellCheck
+        if: steps.changed.outputs.any_changed == 'true'
+        run: |
+          sudo apt-get update && sudo apt-get install -y shellcheck
+          echo "Checking: ${{ steps.changed.outputs.all_changed_files }}"
+          shellcheck ${{ steps.changed.outputs.all_changed_files }}
+
   quality:
     name: Build, Lint, and Test
     runs-on: ubuntu-latest

@@ -75,11 +75,12 @@ tasks:
   # ===========================================================================
 
   check:
-    desc: Run all checks (fmt + lint + vuln + test)
+    desc: Run all checks (fmt + lint + vuln + shell + test)
     cmds:
       - task: check:fmt
       - task: check:lint
       - task: check:vuln
+      - task: check:shell
       - task: check:test
 
   # Quick aliases for common operations
@@ -92,6 +93,16 @@ tasks:
     desc: Run linter (alias for check:lint)
     cmds:
       - golangci-lint run ./...
+
+  check:shell:
+    desc: Lint shell scripts with shellcheck
+    cmds:
+      - shellcheck install.sh .devcontainer/scripts/*.sh
+
+  check:install:
+    desc: Run install script integration tests
+    cmds:
+      - go test -v -count=1 ./test/install/...
 
   check:fmt:
     desc: Check code formatting (gofumpt)

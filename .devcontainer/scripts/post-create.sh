@@ -48,6 +48,12 @@ else
   fi
 fi
 
+echo "==> Installing shellcheck..."
+if ! command -v shellcheck >/dev/null 2>&1; then
+  sudo apt-get update
+  sudo apt-get install -y --no-install-recommends shellcheck
+fi
+
 ensure_writable_dir "$HOME/.claude" || true
 ensure_writable_dir "$HOME/.claude/downloads" || true
 ensure_writable_dir "$HOME/.codex" || true
