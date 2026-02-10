@@ -321,7 +321,7 @@ main() {
   fi
 
   # Create temp directory with cleanup trap
-  TMP_DIR="$(mktemp -d)"
+  TMP_DIR="$(mktemp -d 2>/dev/null || mktemp -d -t mush)"
   trap 'rm -rf "$TMP_DIR"' EXIT INT TERM
 
   # Download archive and checksums
