@@ -7,11 +7,11 @@ Mush connects your machine to the Musher job stream, claims jobs, executes handl
 ## Installation
 
 ```bash
-# macOS (Homebrew)
-brew install musher-dev/tap/mush
+# macOS / Linux (recommended)
+curl -sSL https://raw.githubusercontent.com/musher-dev/mush/main/install.sh | sh
 
-# Linux/macOS (direct download)
-curl -sSL https://get.mush.dev | bash
+# Install a specific version
+curl -sSL https://raw.githubusercontent.com/musher-dev/mush/main/install.sh | sh -s -- --version 0.2.0
 
 # From source
 go install github.com/musher-dev/mush/cmd/mush@latest
