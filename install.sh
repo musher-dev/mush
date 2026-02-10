@@ -13,6 +13,7 @@ set -eu
 REPO="musher-dev/mush"
 BINARY="mush"
 DEFAULT_PREFIX="$HOME/.local"
+BASE_URL="${MUSH_INSTALL_BASE_URL:-https://github.com/${REPO}}"
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -141,9 +142,17 @@ download() {
   output="$2"
 
   if has_curl; then
-    curl --proto '=https' --tlsv1.2 -fsSL -o "$output" "$url"
+    if [ "${MUSH_INSTALL_INSECURE:-}" = "1" ]; then
+      curl -fsSL -o "$output" "$url"
+    else
+      curl --proto '=https' --tlsv1.2 -fsSL -o "$output" "$url"
+    fi
   elif has_wget; then
-    wget --https-only -q -O "$output" "$url"
+    if [ "${MUSH_INSTALL_INSECURE:-}" = "1" ]; then
+      wget -q -O "$output" "$url"
+    else
+      wget --https-only -q -O "$output" "$url"
+    fi
   else
     err "Neither curl nor wget found. Please install one and try again."
   fi
@@ -154,14 +163,26 @@ download() {
 resolve_latest_version() {
   # GitHub redirects /releases/latest to /releases/tag/vX.Y.Z
   if has_curl; then
-    url=$(curl --proto '=https' --tlsv1.2 -fsSLI -o /dev/null -w '%{url_effective}' \
-      "https://github.com/${REPO}/releases/latest" 2>/dev/null) || \
-      err "Failed to resolve latest version. Check https://github.com/${REPO}/releases"
+    if [ "${MUSH_INSTALL_INSECURE:-}" = "1" ]; then
+      url=$(curl -fsSLI -o /dev/null -w '%{url_effective}' \
+        "${BASE_URL}/releases/latest" 2>/dev/null) || \
+        err "Failed to resolve latest version. Check ${BASE_URL}/releases"
+    else
+      url=$(curl --proto '=https' --tlsv1.2 -fsSLI -o /dev/null -w '%{url_effective}' \
+        "${BASE_URL}/releases/latest" 2>/dev/null) || \
+        err "Failed to resolve latest version. Check ${BASE_URL}/releases"
+    fi
   elif has_wget; then
-    # wget doesn't have a clean redirect-follow option; parse Location header
-    url=$(wget --https-only --max-redirect=0 -S \
-      "https://github.com/${REPO}/releases/latest" 2>&1 | \
-      sed -n 's/.*Location: *//p' | tr -d '\r') || true
+    if [ "${MUSH_INSTALL_INSECURE:-}" = "1" ]; then
+      url=$(wget --max-redirect=0 -S \
+        "${BASE_URL}/releases/latest" 2>&1 | \
+        sed -n 's/.*Location: *//p' | tr -d '\r') || true
+    else
+      # wget doesn't have a clean redirect-follow option; parse Location header
+      url=$(wget --https-only --max-redirect=0 -S \
+        "${BASE_URL}/releases/latest" 2>&1 | \
+        sed -n 's/.*Location: *//p' | tr -d '\r') || true
+    fi
     [ -n "$url" ] || err "Failed to resolve latest version."
   else
     err "Neither curl nor wget found."
@@ -282,8 +303,8 @@ main() {
   fi
 
   ARCHIVE_NAME="${BINARY}_${VERSION}_${OS}_${ARCH}.tar.gz"
-  ARCHIVE_URL="https://github.com/${REPO}/releases/download/${TAG}/${ARCHIVE_NAME}"
-  CHECKSUMS_URL="https://github.com/${REPO}/releases/download/${TAG}/checksums.txt"
+  ARCHIVE_URL="${BASE_URL}/releases/download/${TAG}/${ARCHIVE_NAME}"
+  CHECKSUMS_URL="${BASE_URL}/releases/download/${TAG}/checksums.txt"
 
   say "  Version:  ${TAG}"
   say "  Platform: ${OS}/${ARCH}"
@@ -335,4 +356,6 @@ main() {
   say "  mush init"
 }
 
-main
+if [ "${INSTALL_SH_TESTING:-}" != "1" ]; then
+  main
+fi

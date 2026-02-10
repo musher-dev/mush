@@ -81,6 +81,7 @@ tasks:
       - task: check:lint
       - task: check:vuln
       - task: check:shell
+      - task: check:install
       - task: check:test
 
   # Quick aliases for common operations
@@ -98,6 +99,11 @@ tasks:
     desc: Lint shell scripts with shellcheck
     cmds:
       - shellcheck install.sh .devcontainer/scripts/*.sh
+
+  check:install:
+    desc: Run install script integration tests
+    cmds:
+      - go test -v -count=1 ./test/install/...
 
   check:fmt:
     desc: Check code formatting (gofumpt)

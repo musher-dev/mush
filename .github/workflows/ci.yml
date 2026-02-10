@@ -70,6 +70,10 @@ jobs:
       - name: Test
         run: go test -v -race -coverprofile=coverage.txt ./...
 
+      # Install script integration tests (explicit step for visibility)
+      - name: Test Install Script
+        run: go test -v -count=1 ./test/install/...
+
       # Optional: Upload coverage
       - name: Upload Coverage
         uses: codecov/codecov-action@v5
