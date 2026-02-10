@@ -2,9 +2,11 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
@@ -12,6 +14,7 @@ import (
 	"github.com/musher-dev/mush/internal/buildinfo"
 	clierrors "github.com/musher-dev/mush/internal/errors"
 	"github.com/musher-dev/mush/internal/output"
+	"github.com/musher-dev/mush/internal/update"
 )
 
 // Version information (set via ldflags during build)
@@ -129,6 +132,18 @@ Get started:
 
 			// Store writer in context for subcommands
 			cmd.SetContext(out.WithContext(cmd.Context()))
+
+			// Launch background update check (fire-and-forget)
+			if shouldBackgroundCheck(version, quiet, jsonOutput) {
+				go backgroundUpdateCheck(version)
+			}
+
+			return nil
+		},
+		PersistentPostRunE: func(cmd *cobra.Command, args []string) error {
+			if shouldShowUpdateNotice(cmd, version, quiet, jsonOutput) {
+				showUpdateNotice(out, version)
+			}
 			return nil
 		},
 	}
@@ -155,6 +170,7 @@ Get started:
 	// Utility commands
 	rootCmd.AddCommand(newInitCmd())
 	rootCmd.AddCommand(newDoctorCmd())
+	rootCmd.AddCommand(newUpdateCmd())
 	rootCmd.AddCommand(newVersionCmd())
 	rootCmd.AddCommand(newCompletionCmd())
 
@@ -188,5 +204,74 @@ func newVersionCmd() *cobra.Command {
 			out.Print("  built:  %s\n", date)
 			return nil
 		},
+	}
+}
+
+// skipUpdateNoticeCommands are commands that should not show update notifications.
+var skipUpdateNoticeCommands = map[string]bool{
+	"update":     true,
+	"version":    true,
+	"completion": true,
+}
+
+// shouldBackgroundCheck returns true if a background update check should be launched.
+func shouldBackgroundCheck(ver string, quiet, jsonOut bool) bool {
+	if ver == "dev" || quiet || jsonOut || isUpdateDisabled() {
+		return false
+	}
+	return true
+}
+
+// backgroundUpdateCheck performs the update check in a goroutine and saves state.
+func backgroundUpdateCheck(currentVersion string) {
+	state, err := update.LoadState()
+	if err != nil || !state.ShouldCheck() {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	updater, err := update.NewUpdater()
+	if err != nil {
+		return
+	}
+
+	info, err := updater.CheckLatest(ctx, currentVersion)
+	if err != nil {
+		return
+	}
+
+	_ = update.SaveState(&update.State{
+		LastCheckedAt:  time.Now(),
+		LatestVersion:  info.LatestVersion,
+		CurrentVersion: currentVersion,
+		ReleaseURL:     info.ReleaseURL,
+	})
+}
+
+// shouldShowUpdateNotice returns true if an update notice should be shown after command execution.
+func shouldShowUpdateNotice(cmd *cobra.Command, ver string, quiet, jsonOut bool) bool {
+	if ver == "dev" || quiet || jsonOut || isUpdateDisabled() {
+		return false
+	}
+	name := cmd.Name()
+	if cmd.HasParent() {
+		name = cmd.Name()
+	}
+	return !skipUpdateNoticeCommands[name]
+}
+
+// showUpdateNotice reads the cached state and prints an update notice if available.
+func showUpdateNotice(out *output.Writer, currentVersion string) {
+	state, err := update.LoadState()
+	if err != nil {
+		return
+	}
+
+	if state.HasUpdate(currentVersion) {
+		out.Print("\n")
+		out.Info("A new version of mush is available: v%s → v%s", currentVersion, state.LatestVersion)
+		out.Muted("  Run 'mush update' to update")
 	}
 }

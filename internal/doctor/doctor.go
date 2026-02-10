@@ -15,10 +15,12 @@ import (
 	"time"
 
 	"github.com/musher-dev/mush/internal/auth"
+	"github.com/musher-dev/mush/internal/buildinfo"
 	"github.com/musher-dev/mush/internal/claude"
 	"github.com/musher-dev/mush/internal/client"
 	"github.com/musher-dev/mush/internal/config"
 	"github.com/musher-dev/mush/internal/output"
+	"github.com/musher-dev/mush/internal/update"
 )
 
 // Status represents the result of a diagnostic check.
@@ -63,6 +65,7 @@ func New(out *output.Writer) *Runner {
 	r.AddCheck("API Connectivity", checkAPIConnectivity)
 	r.AddCheck("Authentication", checkAuthentication)
 	r.AddCheck("Claude CLI", checkClaudeCLI)
+	r.AddCheck("CLI Version", checkCLIVersion)
 
 	return r
 }
@@ -205,6 +208,52 @@ func checkClaudeCLI(ctx context.Context) Result {
 	return Result{
 		Status:  StatusPass,
 		Message: fmt.Sprintf("%s at %s", version, path),
+	}
+}
+
+// checkCLIVersion checks the CLI version against the latest release.
+func checkCLIVersion(ctx context.Context) Result {
+	current := buildinfo.Version
+
+	if current == "dev" {
+		return Result{
+			Status:  StatusWarn,
+			Message: "Development build (version check skipped)",
+		}
+	}
+
+	checkCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	updater, err := update.NewUpdater()
+	if err != nil {
+		return Result{
+			Status:  StatusWarn,
+			Message: fmt.Sprintf("v%s (could not check for updates)", current),
+			Detail:  err.Error(),
+		}
+	}
+
+	info, err := updater.CheckLatest(checkCtx, current)
+	if err != nil {
+		return Result{
+			Status:  StatusWarn,
+			Message: fmt.Sprintf("v%s (could not check for updates)", current),
+			Detail:  err.Error(),
+		}
+	}
+
+	if info.UpdateAvailable {
+		return Result{
+			Status:  StatusWarn,
+			Message: fmt.Sprintf("v%s (v%s available)", current, info.LatestVersion),
+			Detail:  "Run 'mush update' to update",
+		}
+	}
+
+	return Result{
+		Status:  StatusPass,
+		Message: fmt.Sprintf("v%s (latest)", current),
 	}
 }
 
