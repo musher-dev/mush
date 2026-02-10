@@ -137,6 +137,20 @@ func TestConfig_All(t *testing.T) {
 	defer os.Setenv("HOME", originalHome)
 	os.Setenv("HOME", tmpDir)
 
+	envVars := []string{"MUSH_API_URL", "MUSH_WORKER_POLL_INTERVAL", "MUSH_WORKER_HEARTBEAT_INTERVAL"}
+	origValues := make(map[string]string)
+	for _, env := range envVars {
+		origValues[env] = os.Getenv(env)
+		os.Unsetenv(env)
+	}
+	defer func() {
+		for _, env := range envVars {
+			if v := origValues[env]; v != "" {
+				os.Setenv(env, v)
+			}
+		}
+	}()
+
 	cfg := Load()
 	all := cfg.All()
 
@@ -158,6 +172,14 @@ func TestConfig_Get(t *testing.T) {
 	originalHome := os.Getenv("HOME")
 	defer os.Setenv("HOME", originalHome)
 	os.Setenv("HOME", tmpDir)
+
+	orig := os.Getenv("MUSH_API_URL")
+	os.Unsetenv("MUSH_API_URL")
+	defer func() {
+		if orig != "" {
+			os.Setenv("MUSH_API_URL", orig)
+		}
+	}()
 
 	cfg := Load()
 
