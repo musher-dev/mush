@@ -238,7 +238,10 @@ func shouldBackgroundCheck(cmd *cobra.Command, ver string, quiet, jsonOut bool) 
 // backgroundUpdateCheck performs the update check in a goroutine and saves state.
 func backgroundUpdateCheck(currentVersion string) {
 	state, err := update.LoadState()
-	if err != nil || !state.ShouldCheck() {
+	if err != nil {
+		return
+	}
+	if !state.ShouldCheck() {
 		return
 	}
 

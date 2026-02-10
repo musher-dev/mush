@@ -143,19 +143,27 @@ func updateToVersion(ctx context.Context, out *output.Writer, updater *update.Up
 		return update.ReExecWithSudo()
 	}
 
-	spin := out.Spinner(fmt.Sprintf("Installing v%s", version))
-	spin.Start()
+	// Skip spinner in JSON mode to avoid corrupting stdout
+	var spin *output.Spinner
+	if !out.JSON {
+		spin = out.Spinner(fmt.Sprintf("Installing v%s", version))
+		spin.Start()
+	}
 
 	release, err := updater.ApplyVersion(ctx, version)
 	if err != nil {
-		spin.StopWithFailure(fmt.Sprintf("Failed to install v%s: %v", version, err))
+		if spin != nil {
+			spin.StopWithFailure(fmt.Sprintf("Failed to install v%s: %v", version, err))
+		}
 		if strings.Contains(err.Error(), "not found") {
 			out.Info("Check available versions at https://github.com/musher-dev/mush/releases")
 		}
 		return fmt.Errorf("install failed: %w", err)
 	}
 
-	spin.StopWithSuccess(fmt.Sprintf("Installed v%s", release.Version()))
+	if spin != nil {
+		spin.StopWithSuccess(fmt.Sprintf("Installed v%s", release.Version()))
+	}
 	return nil
 }
 
