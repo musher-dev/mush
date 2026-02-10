@@ -6,6 +6,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"crypto/sha256"
 	"fmt"
 	"net/http"
@@ -39,10 +40,10 @@ type runResult struct {
 }
 
 // runScript runs install.sh with the given arguments and environment overrides.
-func runScript(t *testing.T, args []string, env []string) runResult {
+func runScript(t *testing.T, args, env []string) runResult {
 	t.Helper()
 	cmdArgs := append([]string{scriptPath(t)}, args...)
-	cmd := exec.Command("sh", cmdArgs...)
+	cmd := exec.CommandContext(context.Background(), "sh", cmdArgs...)
 	cmd.Env = append(os.Environ(), env...)
 
 	var stdout, stderr bytes.Buffer
@@ -69,9 +70,9 @@ func runScript(t *testing.T, args []string, env []string) runResult {
 func runFunction(t *testing.T, fnCall string, env []string) runResult {
 	t.Helper()
 	script := fmt.Sprintf(". '%s'\n%s", scriptPath(t), fnCall)
-	cmd := exec.Command("sh", "-c", script)
-	baseEnv := append(os.Environ(), "INSTALL_SH_TESTING=1")
-	cmd.Env = append(baseEnv, env...)
+	cmd := exec.CommandContext(context.Background(), "sh", "-c", script)
+	cmd.Env = append(os.Environ(), "INSTALL_SH_TESTING=1")
+	cmd.Env = append(cmd.Env, env...)
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -95,7 +96,7 @@ func runFunction(t *testing.T, fnCall string, env []string) runResult {
 
 // makeFakeArchive creates a tar.gz containing a fake mush binary.
 // Returns the archive bytes and its SHA-256 hex digest.
-func makeFakeArchive(t *testing.T) ([]byte, string) {
+func makeFakeArchive(t *testing.T) (archiveData []byte, checksumHex string) {
 	t.Helper()
 
 	var buf bytes.Buffer
