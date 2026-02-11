@@ -9,6 +9,58 @@ import (
 	"path/filepath"
 )
 
+type settingsFile struct {
+	Hooks map[string][]hookEntry `json:"hooks,omitempty"`
+	extra map[string]json.RawMessage
+}
+
+func (s *settingsFile) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+
+	s.extra = raw
+	if rawHooks, ok := raw["hooks"]; ok {
+		var hooks map[string][]hookEntry
+		if err := json.Unmarshal(rawHooks, &hooks); err != nil {
+			return fmt.Errorf("settings.hooks must be an object")
+		}
+		s.Hooks = hooks
+		delete(s.extra, "hooks")
+	}
+
+	return nil
+}
+
+func (s settingsFile) MarshalJSON() ([]byte, error) {
+	raw := make(map[string]json.RawMessage, len(s.extra)+1)
+	for key, value := range s.extra {
+		raw[key] = value
+	}
+
+	if s.Hooks != nil {
+		encoded, err := json.Marshal(s.Hooks)
+		if err != nil {
+			return nil, err
+		}
+		raw["hooks"] = encoded
+	}
+
+	return json.Marshal(raw)
+}
+
+type hookEntry struct {
+	Matcher interface{}   `json:"matcher,omitempty"`
+	Hooks   []hookCommand `json:"hooks,omitempty"`
+	Command string        `json:"command,omitempty"`
+}
+
+type hookCommand struct {
+	Type    string `json:"type,omitempty"`
+	Command string `json:"command,omitempty"`
+}
+
 // installStopHook ensures a Stop hook is installed for completion signaling.
 // It returns a restore function to revert any changes on exit.
 func installStopHook(signalDir string) (func() error, error) {
@@ -25,103 +77,77 @@ func installStopHook(signalDir string) (func() error, error) {
 	var original []byte
 	originalExists := false
 
+	settings := settingsFile{}
 	if data, readErr := os.ReadFile(settingsPath); readErr == nil {
 		original = data
 		originalExists = true
+		if len(original) > 0 {
+			if unmarshalErr := json.Unmarshal(original, &settings); unmarshalErr != nil {
+				return nil, fmt.Errorf("failed to parse settings: %w", unmarshalErr)
+			}
+		}
 	} else if !os.IsNotExist(readErr) {
 		return nil, fmt.Errorf("failed to read settings: %w", readErr)
 	}
 
-	settings := map[string]interface{}{}
-	if originalExists && len(original) > 0 {
-		if unmarshalErr := json.Unmarshal(original, &settings); unmarshalErr != nil {
-			return nil, fmt.Errorf("failed to parse settings: %w", unmarshalErr)
-		}
+	if settings.Hooks == nil {
+		settings.Hooks = make(map[string][]hookEntry)
 	}
-
-	hooks := map[string]interface{}{}
-	if existingHooks, ok := settings["hooks"]; ok {
-		typedHooks, ok := existingHooks.(map[string]interface{})
-		if !ok {
-			return nil, fmt.Errorf("settings.hooks must be an object")
-		}
-		hooks = typedHooks
-	}
-
-	stopHooks := []interface{}{}
-	if existingStop, ok := hooks["Stop"]; ok {
-		typedStop, ok := existingStop.([]interface{})
-		if !ok {
-			return nil, fmt.Errorf("settings.hooks.Stop must be an array")
-		}
-		stopHooks = typedStop
-	}
+	stopHooks := settings.Hooks["Stop"]
 
 	command := fmt.Sprintf(
 		"sh -c \"if [ -n \\\"$MUSH_SIGNAL_DIR\\\" ]; then touch \\\"$MUSH_SIGNAL_DIR/%s\\\"; fi\"",
 		SignalFileName,
 	)
 
-	normalizedStopHooks := make([]interface{}, 0, len(stopHooks)+1)
+	normalizedStopHooks := make([]hookEntry, 0, len(stopHooks)+1)
 	alreadyPresent := false
 	for _, item := range stopHooks {
-		entry, ok := item.(map[string]interface{})
-		if !ok {
-			continue
-		}
-
 		// Normalize legacy hook entries:
 		// {"matcher":"*","command":"..."} -> {"hooks":[{"type":"command","command":"..."}]}
-		if cmd, ok := entry["command"].(string); ok {
-			entry = map[string]interface{}{
-				"hooks": []interface{}{
-					map[string]interface{}{
-						"type":    "command",
-						"command": cmd,
+		if item.Command != "" {
+			item = hookEntry{
+				Hooks: []hookCommand{
+					{
+						Type:    "command",
+						Command: item.Command,
 					},
 				},
 			}
 		} else {
 			// Stop hooks in current Claude schema do not require matcher.
 			// If matcher is malformed (e.g. object), drop it to avoid schema errors.
-			if rawMatcher, ok := entry["matcher"]; ok {
-				if _, isString := rawMatcher.(string); !isString {
-					delete(entry, "matcher")
+			if item.Matcher != nil {
+				if _, isString := item.Matcher.(string); !isString {
+					item.Matcher = nil
 				}
 			}
-			if _, ok := entry["hooks"].([]interface{}); !ok {
-				entry["hooks"] = []interface{}{}
-			}
-		}
-
-		if rawHooks, ok := entry["hooks"].([]interface{}); ok {
-			for _, rawHook := range rawHooks {
-				hook, ok := rawHook.(map[string]interface{})
-				if !ok {
-					continue
-				}
-				if hookCmd, ok := hook["command"].(string); ok && hookCmd == command {
-					alreadyPresent = true
-				}
+			if item.Hooks == nil {
+				item.Hooks = []hookCommand{}
 			}
 		}
 
-		normalizedStopHooks = append(normalizedStopHooks, entry)
+		for _, hook := range item.Hooks {
+			if hook.Command == command {
+				alreadyPresent = true
+			}
+		}
+
+		normalizedStopHooks = append(normalizedStopHooks, item)
 	}
 
 	if !alreadyPresent {
-		normalizedStopHooks = append(normalizedStopHooks, map[string]interface{}{
-			"hooks": []interface{}{
-				map[string]interface{}{
-					"type":    "command",
-					"command": command,
+		normalizedStopHooks = append(normalizedStopHooks, hookEntry{
+			Hooks: []hookCommand{
+				{
+					Type:    "command",
+					Command: command,
 				},
 			},
 		})
 	}
 
-	hooks["Stop"] = normalizedStopHooks
-	settings["hooks"] = hooks
+	settings.Hooks["Stop"] = normalizedStopHooks
 
 	if mkdirErr := os.MkdirAll(filepath.Dir(settingsPath), 0o755); mkdirErr != nil {
 		return nil, fmt.Errorf("failed to create .claude directory: %w", mkdirErr)

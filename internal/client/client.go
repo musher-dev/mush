@@ -15,6 +15,7 @@ import (
 	"io"
 	"net/http"
 	neturl "net/url"
+	"strings"
 	"time"
 
 	"github.com/musher-dev/mush/internal/buildinfo"
@@ -309,12 +310,10 @@ func (c *Client) BaseURL() string {
 
 // ValidateKey validates the API key and returns the service account identity.
 func (c *Client) ValidateKey(ctx context.Context) (*Identity, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", c.baseURL+"/api/v1/runner/me", http.NoBody)
+	req, err := c.newRequest(ctx, "GET", c.baseURL+"/api/v1/runner/me", http.NoBody)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+		return nil, err
 	}
-
-	c.setRequestHeaders(req)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -335,8 +334,8 @@ func (c *Client) ValidateKey(ctx context.Context) (*Identity, error) {
 	}
 
 	var identity Identity
-	if err := json.NewDecoder(resp.Body).Decode(&identity); err != nil {
-		return nil, fmt.Errorf("failed to parse identity: %w", err)
+	if err := decodeJSON(resp.Body, &identity, "failed to parse identity"); err != nil {
+		return nil, err
 	}
 
 	return &identity, nil
@@ -359,17 +358,15 @@ func (c *Client) ClaimJob(ctx context.Context, habitatID, queueID string, waitTi
 		HabitatID:       habitatID,
 		LeaseDurationMs: DefaultLeaseDurationMs,
 	}
-	jsonBody, err := json.Marshal(body)
+	jsonBody, err := encodeJSON(body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(jsonBody))
+	req, err := c.newRequest(ctx, "POST", url, bytes.NewReader(jsonBody))
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+		return nil, err
 	}
-
-	c.setRequestHeaders(req)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -414,12 +411,10 @@ func (c *Client) ClaimJob(ctx context.Context, habitatID, queueID string, waitTi
 func (c *Client) StartJob(ctx context.Context, jobID string) (*Job, error) {
 	url := fmt.Sprintf("%s/api/v1/runner/jobs/%s:start", c.baseURL, jobID)
 
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader([]byte(`{}`)))
+	req, err := c.newRequest(ctx, "POST", url, emptyJSONBody())
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+		return nil, err
 	}
-
-	c.setRequestHeaders(req)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -432,8 +427,8 @@ func (c *Client) StartJob(ctx context.Context, jobID string) (*Job, error) {
 	}
 
 	var job Job
-	if err := json.NewDecoder(resp.Body).Decode(&job); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
+	if err := decodeJSON(resp.Body, &job, "failed to parse response"); err != nil {
+		return nil, err
 	}
 
 	return &job, nil
@@ -443,12 +438,10 @@ func (c *Client) StartJob(ctx context.Context, jobID string) (*Job, error) {
 func (c *Client) HeartbeatJob(ctx context.Context, jobID string) (*Job, error) {
 	url := fmt.Sprintf("%s/api/v1/runner/jobs/%s:heartbeat", c.baseURL, jobID)
 
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader([]byte(`{}`)))
+	req, err := c.newRequest(ctx, "POST", url, emptyJSONBody())
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+		return nil, err
 	}
-
-	c.setRequestHeaders(req)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -461,8 +454,8 @@ func (c *Client) HeartbeatJob(ctx context.Context, jobID string) (*Job, error) {
 	}
 
 	var job Job
-	if err := json.NewDecoder(resp.Body).Decode(&job); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
+	if err := decodeJSON(resp.Body, &job, "failed to parse response"); err != nil {
+		return nil, err
 	}
 
 	return &job, nil
@@ -475,17 +468,15 @@ func (c *Client) CompleteJob(ctx context.Context, jobID string, output map[strin
 	body := JobCompleteRequest{
 		OutputData: output,
 	}
-	jsonBody, err := json.Marshal(body)
+	jsonBody, err := encodeJSON(body)
 	if err != nil {
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(jsonBody))
+	req, err := c.newRequest(ctx, "POST", url, bytes.NewReader(jsonBody))
 	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
+		return err
 	}
-
-	c.setRequestHeaders(req)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -509,17 +500,15 @@ func (c *Client) FailJob(ctx context.Context, jobID, errorCode, errorMsg string,
 		ErrorMessage: errorMsg,
 		ShouldRetry:  shouldRetry,
 	}
-	jsonBody, err := json.Marshal(body)
+	jsonBody, err := encodeJSON(body)
 	if err != nil {
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(jsonBody))
+	req, err := c.newRequest(ctx, "POST", url, bytes.NewReader(jsonBody))
 	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
+		return err
 	}
-
-	c.setRequestHeaders(req)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -538,12 +527,10 @@ func (c *Client) FailJob(ctx context.Context, jobID, errorCode, errorMsg string,
 func (c *Client) ReleaseJob(ctx context.Context, jobID string) error {
 	url := fmt.Sprintf("%s/api/v1/runner/jobs/%s:release", c.baseURL, jobID)
 
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader([]byte(`{}`)))
+	req, err := c.newRequest(ctx, "POST", url, emptyJSONBody())
 	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
+		return err
 	}
-
-	c.setRequestHeaders(req)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -564,6 +551,30 @@ func (c *Client) setRequestHeaders(req *http.Request) {
 	req.Header.Set("User-Agent", "mush/"+buildinfo.Version)
 }
 
+func (c *Client) newRequest(ctx context.Context, method, url string, body io.Reader) (*http.Request, error) {
+	req, err := http.NewRequestWithContext(ctx, method, url, body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	c.setRequestHeaders(req)
+	return req, nil
+}
+
+func encodeJSON(v interface{}) ([]byte, error) {
+	return json.Marshal(v)
+}
+
+func decodeJSON(body io.Reader, dst interface{}, msg string) error {
+	if err := json.NewDecoder(body).Decode(dst); err != nil {
+		return fmt.Errorf("%s: %w", msg, err)
+	}
+	return nil
+}
+
+func emptyJSONBody() io.Reader {
+	return strings.NewReader("{}")
+}
+
 // unexpectedStatus creates a formatted error from an unexpected HTTP status code.
 func unexpectedStatus(operation string, statusCode int, body io.Reader) error {
 	respBody, readErr := io.ReadAll(body)
@@ -578,17 +589,15 @@ func unexpectedStatus(operation string, statusCode int, body io.Reader) error {
 func (c *Client) RegisterLink(ctx context.Context, req *RegisterLinkRequest) (*RegisterLinkResponse, error) {
 	url := c.baseURL + "/api/v1/runner/links:register"
 
-	jsonBody, err := json.Marshal(req)
+	jsonBody, err := encodeJSON(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(jsonBody))
+	httpReq, err := c.newRequest(ctx, "POST", url, bytes.NewReader(jsonBody))
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+		return nil, err
 	}
-
-	c.setRequestHeaders(httpReq)
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
@@ -601,8 +610,8 @@ func (c *Client) RegisterLink(ctx context.Context, req *RegisterLinkRequest) (*R
 	}
 
 	var result RegisterLinkResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
+	if err := decodeJSON(resp.Body, &result, "failed to parse response"); err != nil {
+		return nil, err
 	}
 
 	return &result, nil
@@ -616,17 +625,15 @@ func (c *Client) HeartbeatLink(ctx context.Context, linkID, currentJobID string)
 	req := LinkHeartbeatRequest{
 		CurrentJobID: currentJobID,
 	}
-	jsonBody, err := json.Marshal(req)
+	jsonBody, err := encodeJSON(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(jsonBody))
+	httpReq, err := c.newRequest(ctx, "POST", url, bytes.NewReader(jsonBody))
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+		return nil, err
 	}
-
-	c.setRequestHeaders(httpReq)
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
@@ -639,8 +646,8 @@ func (c *Client) HeartbeatLink(ctx context.Context, linkID, currentJobID string)
 	}
 
 	var result LinkHeartbeatResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
+	if err := decodeJSON(resp.Body, &result, "failed to parse response"); err != nil {
+		return nil, err
 	}
 
 	return &result, nil
@@ -651,17 +658,15 @@ func (c *Client) HeartbeatLink(ctx context.Context, linkID, currentJobID string)
 func (c *Client) DeregisterLink(ctx context.Context, linkID string, req DeregisterLinkRequest) error {
 	url := fmt.Sprintf("%s/api/v1/runner/links/%s:deregister", c.baseURL, linkID)
 
-	jsonBody, err := json.Marshal(req)
+	jsonBody, err := encodeJSON(req)
 	if err != nil {
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(jsonBody))
+	httpReq, err := c.newRequest(ctx, "POST", url, bytes.NewReader(jsonBody))
 	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
+		return err
 	}
-
-	c.setRequestHeaders(httpReq)
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
@@ -680,12 +685,10 @@ func (c *Client) DeregisterLink(ctx context.Context, linkID string, req Deregist
 func (c *Client) ListHabitats(ctx context.Context) ([]HabitatSummary, error) {
 	url := c.baseURL + "/api/v1/runner/habitats"
 
-	req, err := http.NewRequestWithContext(ctx, "GET", url, http.NoBody)
+	req, err := c.newRequest(ctx, "GET", url, http.NoBody)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+		return nil, err
 	}
-
-	c.setRequestHeaders(req)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -698,8 +701,8 @@ func (c *Client) ListHabitats(ctx context.Context) ([]HabitatSummary, error) {
 	}
 
 	var habitats []HabitatSummary
-	if err := json.NewDecoder(resp.Body).Decode(&habitats); err != nil {
-		return nil, fmt.Errorf("failed to parse habitats: %w", err)
+	if err := decodeJSON(resp.Body, &habitats, "failed to parse habitats"); err != nil {
+		return nil, err
 	}
 
 	return habitats, nil
@@ -720,12 +723,10 @@ func (c *Client) ListQueues(ctx context.Context, habitatID string) ([]QueueSumma
 	}
 	endpoint.RawQuery = query.Encode()
 
-	req, err := http.NewRequestWithContext(ctx, "GET", endpoint.String(), http.NoBody)
+	req, err := c.newRequest(ctx, "GET", endpoint.String(), http.NoBody)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+		return nil, err
 	}
-
-	c.setRequestHeaders(req)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -738,8 +739,8 @@ func (c *Client) ListQueues(ctx context.Context, habitatID string) ([]QueueSumma
 	}
 
 	var response queueListResponse
-	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
-		return nil, fmt.Errorf("failed to parse queues: %w", err)
+	if err := decodeJSON(resp.Body, &response, "failed to parse queues"); err != nil {
+		return nil, err
 	}
 
 	return response.Data, nil
@@ -749,12 +750,10 @@ func (c *Client) ListQueues(ctx context.Context, habitatID string) ([]QueueSumma
 func (c *Client) GetQueueInstructionAvailability(ctx context.Context, queueID string) (*InstructionAvailability, error) {
 	url := fmt.Sprintf("%s/api/v1/runner/queues/%s/instruction-availability", c.baseURL, queueID)
 
-	req, err := http.NewRequestWithContext(ctx, "GET", url, http.NoBody)
+	req, err := c.newRequest(ctx, "GET", url, http.NoBody)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+		return nil, err
 	}
-
-	c.setRequestHeaders(req)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -771,8 +770,8 @@ func (c *Client) GetQueueInstructionAvailability(ctx context.Context, queueID st
 	}
 
 	var availability InstructionAvailability
-	if err := json.NewDecoder(resp.Body).Decode(&availability); err != nil {
-		return nil, fmt.Errorf("failed to parse instruction availability: %w", err)
+	if err := decodeJSON(resp.Body, &availability, "failed to parse instruction availability"); err != nil {
+		return nil, err
 	}
 
 	return &availability, nil
