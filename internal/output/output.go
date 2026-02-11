@@ -149,9 +149,9 @@ func (w *Writer) Debug(format string, args ...interface{}) {
 	}
 }
 
-func (w *Writer) writeStatus(writer io.Writer, color *color.Color, prefix, message string) {
+func (w *Writer) writeStatus(writer io.Writer, tone *color.Color, prefix, message string) {
 	if w.terminal.ColorEnabled() {
-		color.Fprint(writer, prefix+" ")
+		tone.Fprint(writer, prefix+" ")
 		fmt.Fprintln(writer, message)
 	} else {
 		fmt.Fprintln(writer, prefix+" "+message)
