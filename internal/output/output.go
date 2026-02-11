@@ -149,29 +149,28 @@ func (w *Writer) Debug(format string, args ...interface{}) {
 	}
 }
 
+func (w *Writer) writeStatus(writer io.Writer, color *color.Color, prefix, message string) {
+	if w.terminal.ColorEnabled() {
+		color.Fprint(writer, prefix+" ")
+		fmt.Fprintln(writer, message)
+	} else {
+		fmt.Fprintln(writer, prefix+" "+message)
+	}
+}
+
 // Success writes a success message with a checkmark.
 func (w *Writer) Success(format string, args ...interface{}) {
 	if w.Quiet {
 		return
 	}
 	msg := fmt.Sprintf(format, args...)
-	if w.terminal.ColorEnabled() {
-		w.successColor.Fprint(w.Out, CheckMark+" ")
-		fmt.Fprintln(w.Out, msg)
-	} else {
-		fmt.Fprintln(w.Out, CheckMark+" "+msg)
-	}
+	w.writeStatus(w.Out, w.successColor, CheckMark, msg)
 }
 
 // Failure writes an error message with an X mark.
 func (w *Writer) Failure(format string, args ...interface{}) {
 	msg := fmt.Sprintf(format, args...)
-	if w.terminal.ColorEnabled() {
-		w.errorColor.Fprint(w.Err, XMark+" ")
-		fmt.Fprintln(w.Err, msg)
-	} else {
-		fmt.Fprintln(w.Err, XMark+" "+msg)
-	}
+	w.writeStatus(w.Err, w.errorColor, XMark, msg)
 }
 
 // Warning writes a warning message.
@@ -180,12 +179,7 @@ func (w *Writer) Warning(format string, args ...interface{}) {
 		return
 	}
 	msg := fmt.Sprintf(format, args...)
-	if w.terminal.ColorEnabled() {
-		w.warningColor.Fprint(w.Out, WarningMark+" ")
-		fmt.Fprintln(w.Out, msg)
-	} else {
-		fmt.Fprintln(w.Out, WarningMark+" "+msg)
-	}
+	w.writeStatus(w.Out, w.warningColor, WarningMark, msg)
 }
 
 // Info writes an info message.
@@ -194,12 +188,7 @@ func (w *Writer) Info(format string, args ...interface{}) {
 		return
 	}
 	msg := fmt.Sprintf(format, args...)
-	if w.terminal.ColorEnabled() {
-		w.infoColor.Fprint(w.Out, InfoMark+" ")
-		fmt.Fprintln(w.Out, msg)
-	} else {
-		fmt.Fprintln(w.Out, InfoMark+" "+msg)
-	}
+	w.writeStatus(w.Out, w.infoColor, InfoMark, msg)
 }
 
 // Muted writes muted/gray text.

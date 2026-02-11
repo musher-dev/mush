@@ -38,4 +38,9 @@ Thumbs.db
 .env
 
 # Claude Code runtime artifacts
+.claude/settings.local.json
+
+# Local tooling/cache (workspace-specific)
+.tools/
+.cache/
 .claude/

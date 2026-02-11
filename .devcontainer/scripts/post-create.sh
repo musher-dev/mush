@@ -87,13 +87,13 @@ fi
 
 echo "==> Installing Go tools..."
 
-go install mvdan.cc/gofumpt@v0.7.0
-go install golang.org/x/vuln/cmd/govulncheck@latest
-go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.8.0
+go install mvdan.cc/gofumpt@v0.9.2
+go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
+go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.9.0
 
 echo "==> Installing GoReleaser..."
 if ! command -v goreleaser >/dev/null 2>&1; then
-  go install github.com/goreleaser/goreleaser/v2@latest || {
+  go install github.com/goreleaser/goreleaser/v2@v2.13.3 || {
     echo "WARN: GoReleaser installation failed. Continuing." >&2
   }
 fi

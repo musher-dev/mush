@@ -138,7 +138,7 @@ For development, you can run mush without installing.
 
 ### Prerequisites
 
-- Go 1.25+
+- Go 1.26+
 - [Task](https://taskfile.dev) (optional, for convenience commands)
 
 ### Quick Start

@@ -4,7 +4,7 @@ Thanks for your interest in contributing to Mush! This guide will help you get s
 
 ## Prerequisites
 
-- **Go 1.25+** — [install](https://go.dev/dl/)
+- **Go 1.26+** — [install](https://go.dev/dl/)
 - **Task** — [install](https://taskfile.dev/installation/) (build automation)
 
 ## Setup

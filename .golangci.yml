@@ -48,6 +48,9 @@ linters:
         - style
         - performance
   exclusions:
+    paths:
+      - .tools
+      - .cache
     rules:
       # Test files can have unchecked errors
       - path: _test\.go
