@@ -2,8 +2,6 @@ module github.com/musher-dev/mush
 
 go 1.26.0
 
-toolchain go1.26.0
-
 require (
 	github.com/Masterminds/semver/v3 v3.4.0
 	github.com/briandowns/spinner v1.23.2

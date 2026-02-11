@@ -109,7 +109,8 @@ tasks:
     cmds:
       # Note: With Go 1.26+, use `go tool gofumpt` instead
       - |
-        files="$(rg --files -g '*.go' -g '!**/.tools/**' -g '!**/.cache/**' -g '!**/dist/**')"
+        files="$(find . -type f -name '*.go' ! -path './.tools/*' ! -path './.cache/*' ! -path './dist/*')"
+        test -z "$files" && exit 0
         test -z "$(gofumpt -l $files)" || (gofumpt -d $files && exit 1)
 
   check:lint:
