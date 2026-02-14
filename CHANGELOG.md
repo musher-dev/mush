@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.0](https://github.com/musher-dev/mush/compare/v1.1.0...v1.2.0) (2026-02-14)
+
+
+### Features
+
+* **harness:** add MCP server provisioning with credential rotation ([#19](https://github.com/musher-dev/mush/issues/19)) ([2b5413d](https://github.com/musher-dev/mush/commit/2b5413d1cc31ec27ef8587dbd49de3b7abd0e6ab))
+
 ## [1.1.0](https://github.com/musher-dev/mush/compare/v1.0.1...v1.1.0) (2026-02-10)
 
 
