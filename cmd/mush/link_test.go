@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"net/http"
@@ -17,11 +18,17 @@ import (
 // linkMockServer creates a test server that handles all API calls needed by
 // the link command up to the dry-run / TTY check point.
 func linkMockServer(t *testing.T) *httptest.Server {
+	return linkMockServerWithConfig(t, `{"configVersion":"1","workspaceId":"ws-1","generatedAt":"2026-02-13T12:00:00Z","refreshAfterSeconds":300,"providers":{}}`)
+}
+
+func linkMockServerWithConfig(t *testing.T, runnerConfig string) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == "/api/v1/runner/me" && r.Method == "GET":
 			_, _ = w.Write([]byte(`{"credentialType":"service_account","credentialId":"cred-1","credentialName":"test-sa","workerId":"sa_xxx","workspaceId":"ws-1","workspaceName":"Test Workspace"}`))
+		case r.URL.Path == "/api/v1/runner/config" && r.Method == "GET":
+			_, _ = w.Write([]byte(runnerConfig))
 		case r.URL.Path == "/api/v1/runner/habitats" && r.Method == "GET":
 			_, _ = w.Write([]byte(`[{"id":"hab-1","slug":"local","name":"Local","status":"online","habitatType":"local"}]`))
 		case r.URL.Path == "/api/v1/queues" && r.Method == "GET":
@@ -88,6 +95,73 @@ func TestLinkNoDryRun_RequiresTTY(t *testing.T) {
 	}
 	if !strings.Contains(cliErr.Message, "TTY") {
 		t.Fatalf("error message = %q, want to contain 'TTY'", cliErr.Message)
+	}
+}
+
+func TestLinkDryRun_PrintsMCPServers(t *testing.T) {
+	server := linkMockServerWithConfig(t, `{
+		"configVersion":"1",
+		"workspaceId":"ws-1",
+		"generatedAt":"2026-02-13T12:00:00Z",
+		"refreshAfterSeconds":300,
+		"providers":{
+			"linear":{
+				"status":"active",
+				"credential":{"accessToken":"tok","tokenType":"bearer","expiresAt":"2099-12-31T23:59:59Z"},
+				"flags":{"mcp":true},
+				"mcp":{"url":"https://mcp.linear.app/mcp","transport":"streamable-http"}
+			}
+		}
+	}`)
+	defer server.Close()
+
+	var outBuf bytes.Buffer
+	term := &terminal.Info{IsTTY: false}
+	out := output.NewWriter(&outBuf, io.Discard, term)
+	out.NoInput = true
+
+	t.Setenv("MUSHER_API_KEY", "test-key")
+	t.Setenv("MUSH_API_URL", server.URL)
+
+	cmd := newLinkCmd()
+	cmd.SetArgs([]string{"--dry-run", "--habitat", "local", "--queue-id", "q-1", "--agent", "claude"})
+	ctx := out.WithContext(context.Background())
+	cmd.SetContext(ctx)
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("dry-run should succeed, got error: %v", err)
+	}
+
+	got := outBuf.String()
+	if !strings.Contains(got, "MCP servers: linear") {
+		t.Fatalf("output = %q, expected MCP servers line", got)
+	}
+}
+
+func TestLinkDryRun_BashAgentOmitsMCPServers(t *testing.T) {
+	server := linkMockServer(t)
+	defer server.Close()
+
+	var outBuf bytes.Buffer
+	term := &terminal.Info{IsTTY: false}
+	out := output.NewWriter(&outBuf, io.Discard, term)
+	out.NoInput = true
+
+	t.Setenv("MUSHER_API_KEY", "test-key")
+	t.Setenv("MUSH_API_URL", server.URL)
+
+	cmd := newLinkCmd()
+	cmd.SetArgs([]string{"--dry-run", "--habitat", "local", "--queue-id", "q-1", "--agent", "bash"})
+	ctx := out.WithContext(context.Background())
+	cmd.SetContext(ctx)
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("dry-run should succeed, got error: %v", err)
+	}
+
+	got := outBuf.String()
+	if strings.Contains(got, "MCP servers:") {
+		t.Fatalf("output = %q, expected no MCP servers line for bash-only agent", got)
 	}
 }
 

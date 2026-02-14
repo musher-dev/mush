@@ -15,6 +15,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"time"
 
 	"golang.org/x/term"
 
@@ -28,6 +29,7 @@ type Config struct {
 	QueueID         string
 	SupportedAgents []string
 	InstanceID      string
+	RunnerConfig    *client.RunnerConfigResponse
 }
 
 // Run starts the harness TUI.
@@ -40,4 +42,9 @@ func Run(ctx context.Context, cfg *Config) error {
 	// Create and run the harness
 	model := NewRootModel(ctx, cfg)
 	return model.Run()
+}
+
+// LoadedMCPServers returns the names of MCP providers that are effectively loaded.
+func LoadedMCPServers(cfg *client.RunnerConfigResponse, now time.Time) []string {
+	return loadedMCPProviderNames(cfg, now)
 }

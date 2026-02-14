@@ -45,6 +45,50 @@ type Identity struct {
 	WorkspaceName  string `json:"workspaceName"`
 }
 
+// RunnerConfigResponse is the generic runner configuration payload.
+type RunnerConfigResponse struct {
+	ConfigVersion       string                          `json:"configVersion"`
+	WorkspaceID         string                          `json:"workspaceId"`
+	GeneratedAt         time.Time                       `json:"generatedAt"`
+	RefreshAfterSeconds int                             `json:"refreshAfterSeconds"`
+	Providers           map[string]RunnerProviderConfig `json:"providers"`
+	Errors              []RunnerConfigError             `json:"errors,omitempty"`
+}
+
+// RunnerProviderConfig contains provider-specific runner configuration.
+type RunnerProviderConfig struct {
+	Status     string                    `json:"status"`
+	Credential *RunnerProviderCredential `json:"credential,omitempty"`
+	Flags      RunnerProviderFlags       `json:"flags,omitempty"`
+	MCP        *RunnerProviderMCP        `json:"mcp,omitempty"`
+	Metadata   map[string]any            `json:"metadata,omitempty"`
+}
+
+// RunnerProviderCredential contains provider credentials for runtime use.
+type RunnerProviderCredential struct {
+	AccessToken string     `json:"accessToken"`
+	TokenType   string     `json:"tokenType,omitempty"`
+	ExpiresAt   *time.Time `json:"expiresAt,omitempty"`
+}
+
+// RunnerProviderFlags contains feature flags for a provider.
+type RunnerProviderFlags struct {
+	MCP bool `json:"mcp"`
+}
+
+// RunnerProviderMCP contains MCP endpoint metadata for a provider.
+type RunnerProviderMCP struct {
+	URL       string `json:"url"`
+	Transport string `json:"transport,omitempty"`
+}
+
+// RunnerConfigError contains partial error details for provider config resolution.
+type RunnerConfigError struct {
+	Provider string `json:"provider"`
+	Code     string `json:"code"`
+	Message  string `json:"message"`
+}
+
 // JobClaimRequest is the request body for claiming a job.
 type JobClaimRequest struct {
 	QueueID         string `json:"queueId,omitempty"`
@@ -54,25 +98,25 @@ type JobClaimRequest struct {
 
 // JobCompleteRequest is the request body for completing a job.
 type JobCompleteRequest struct {
-	OutputData map[string]interface{} `json:"outputData,omitempty"`
+	OutputData map[string]any `json:"outputData,omitempty"`
 }
 
 // JobFailRequest is the request body for failing a job.
 type JobFailRequest struct {
-	ErrorCode    string                 `json:"errorCode,omitempty"`
-	ErrorMessage string                 `json:"errorMessage,omitempty"`
-	ErrorDetails map[string]interface{} `json:"errorDetails,omitempty"`
-	ShouldRetry  bool                   `json:"shouldRetry"`
+	ErrorCode    string         `json:"errorCode,omitempty"`
+	ErrorMessage string         `json:"errorMessage,omitempty"`
+	ErrorDetails map[string]any `json:"errorDetails,omitempty"`
+	ShouldRetry  bool           `json:"shouldRetry"`
 }
 
 // RegisterLinkRequest is the request body for registering a link.
 type RegisterLinkRequest struct {
-	InstanceID     string                 `json:"instanceId"`
-	HabitatID      string                 `json:"habitatId"`
-	Name           string                 `json:"name,omitempty"`
-	LinkType       string                 `json:"linkType"`
-	ClientVersion  string                 `json:"clientVersion,omitempty"`
-	ClientMetadata map[string]interface{} `json:"clientMetadata,omitempty"`
+	InstanceID     string         `json:"instanceId"`
+	HabitatID      string         `json:"habitatId"`
+	Name           string         `json:"name,omitempty"`
+	LinkType       string         `json:"linkType"`
+	ClientVersion  string         `json:"clientVersion,omitempty"`
+	ClientMetadata map[string]any `json:"clientMetadata,omitempty"`
 }
 
 // RegisterLinkResponse is the response from registering a link.
@@ -213,49 +257,49 @@ type InstructionAvailability struct {
 
 // Job represents a job claimed from the queue.
 type Job struct {
-	ID                  string                 `json:"id"`
-	WorkspaceID         string                 `json:"workspaceId"`
-	JobType             string                 `json:"jobType"`
-	CeType              string                 `json:"ceType"`
-	CeSource            string                 `json:"ceSource"`
-	CeSubject           string                 `json:"ceSubject,omitempty"`
-	Data                map[string]interface{} `json:"data,omitempty"`
-	RouteID             string                 `json:"routeId,omitempty"`
-	QueueID             string                 `json:"queueId,omitempty"`
-	HabitatID           string                 `json:"habitatId,omitempty"`
-	Priority            string                 `json:"priority"`
-	Status              string                 `json:"status"`
-	StatusReason        string                 `json:"statusReason,omitempty"`
-	WorkerID            string                 `json:"workerId,omitempty"`
-	ClaimedAt           *time.Time             `json:"claimedAt,omitempty"`
-	HeartbeatDeadlineAt *time.Time             `json:"heartbeatDeadlineAt,omitempty"`
-	AttemptNumber       int                    `json:"attemptNumber"`
-	MaxAttempts         int                    `json:"maxAttempts"`
-	NextRetryAt         *time.Time             `json:"nextRetryAt,omitempty"`
-	InputData           map[string]interface{} `json:"inputData,omitempty"`
-	OutputData          map[string]interface{} `json:"outputData,omitempty"`
-	ErrorCode           string                 `json:"errorCode,omitempty"`
-	ErrorMessage        string                 `json:"errorMessage,omitempty"`
-	ErrorDetails        map[string]interface{} `json:"errorDetails,omitempty"`
-	StartedAt           *time.Time             `json:"startedAt,omitempty"`
-	CompletedAt         *time.Time             `json:"completedAt,omitempty"`
-	DurationMs          *int                   `json:"durationMs,omitempty"`
-	CreatedAt           time.Time              `json:"createdAt"`
-	UpdatedAt           *time.Time             `json:"updatedAt,omitempty"`
+	ID                  string         `json:"id"`
+	WorkspaceID         string         `json:"workspaceId"`
+	JobType             string         `json:"jobType"`
+	CeType              string         `json:"ceType"`
+	CeSource            string         `json:"ceSource"`
+	CeSubject           string         `json:"ceSubject,omitempty"`
+	Data                map[string]any `json:"data,omitempty"`
+	RouteID             string         `json:"routeId,omitempty"`
+	QueueID             string         `json:"queueId,omitempty"`
+	HabitatID           string         `json:"habitatId,omitempty"`
+	Priority            string         `json:"priority"`
+	Status              string         `json:"status"`
+	StatusReason        string         `json:"statusReason,omitempty"`
+	WorkerID            string         `json:"workerId,omitempty"`
+	ClaimedAt           *time.Time     `json:"claimedAt,omitempty"`
+	HeartbeatDeadlineAt *time.Time     `json:"heartbeatDeadlineAt,omitempty"`
+	AttemptNumber       int            `json:"attemptNumber"`
+	MaxAttempts         int            `json:"maxAttempts"`
+	NextRetryAt         *time.Time     `json:"nextRetryAt,omitempty"`
+	InputData           map[string]any `json:"inputData,omitempty"`
+	OutputData          map[string]any `json:"outputData,omitempty"`
+	ErrorCode           string         `json:"errorCode,omitempty"`
+	ErrorMessage        string         `json:"errorMessage,omitempty"`
+	ErrorDetails        map[string]any `json:"errorDetails,omitempty"`
+	StartedAt           *time.Time     `json:"startedAt,omitempty"`
+	CompletedAt         *time.Time     `json:"completedAt,omitempty"`
+	DurationMs          *int           `json:"durationMs,omitempty"`
+	CreatedAt           time.Time      `json:"createdAt"`
+	UpdatedAt           *time.Time     `json:"updatedAt,omitempty"`
 
-	Instruction    *InstructionConfig     `json:"-"`
-	Execution      *ExecutionConfig       `json:"-"`
-	WebhookConfig  map[string]interface{} `json:"-"`
-	ExecutionError string                 `json:"-"`
+	Instruction    *InstructionConfig `json:"-"`
+	Execution      *ExecutionConfig   `json:"-"`
+	WebhookConfig  map[string]any     `json:"-"`
+	ExecutionError string             `json:"-"`
 }
 
 // JobClaimResponse wraps the claim response payload.
 type JobClaimResponse struct {
-	Job            Job                    `json:"job"`
-	WebhookConfig  map[string]interface{} `json:"webhookConfig,omitempty"`
-	Instruction    *InstructionConfig     `json:"instruction,omitempty"`
-	Execution      *ExecutionConfig       `json:"execution,omitempty"`
-	ExecutionError string                 `json:"executionError,omitempty"`
+	Job            Job                `json:"job"`
+	WebhookConfig  map[string]any     `json:"webhookConfig,omitempty"`
+	Instruction    *InstructionConfig `json:"instruction,omitempty"`
+	Execution      *ExecutionConfig   `json:"execution,omitempty"`
+	ExecutionError string             `json:"executionError,omitempty"`
 }
 
 // GetAgentType returns the agent type for this job, checking multiple sources.
@@ -339,6 +383,31 @@ func (c *Client) ValidateKey(ctx context.Context) (*Identity, error) {
 	}
 
 	return &identity, nil
+}
+
+// GetRunnerConfig fetches runner runtime configuration for startup provisioning.
+func (c *Client) GetRunnerConfig(ctx context.Context) (*RunnerConfigResponse, error) {
+	req, err := c.newRequest(ctx, "GET", c.baseURL+"/api/v1/runner/config", http.NoBody)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch runner config: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, unexpectedStatus("runner config", resp.StatusCode, resp.Body)
+	}
+
+	var cfg RunnerConfigResponse
+	if err := decodeJSON(resp.Body, &cfg, "failed to parse runner config"); err != nil {
+		return nil, err
+	}
+
+	return &cfg, nil
 }
 
 // ClaimJob attempts to claim a job from the queue.
@@ -462,7 +531,7 @@ func (c *Client) HeartbeatJob(ctx context.Context, jobID string) (*Job, error) {
 }
 
 // CompleteJob marks a job as successfully completed.
-func (c *Client) CompleteJob(ctx context.Context, jobID string, output map[string]interface{}) error {
+func (c *Client) CompleteJob(ctx context.Context, jobID string, output map[string]any) error {
 	url := fmt.Sprintf("%s/api/v1/runner/jobs/%s:complete", c.baseURL, jobID)
 
 	body := JobCompleteRequest{
@@ -560,11 +629,11 @@ func (c *Client) newRequest(ctx context.Context, method, url string, body io.Rea
 	return req, nil
 }
 
-func encodeJSON(v interface{}) ([]byte, error) {
+func encodeJSON(v any) ([]byte, error) {
 	return json.Marshal(v)
 }
 
-func decodeJSON(body io.Reader, dst interface{}, msg string) error {
+func decodeJSON(body io.Reader, dst any, msg string) error {
 	if err := json.NewDecoder(body).Decode(dst); err != nil {
 		return fmt.Errorf("%s: %w", msg, err)
 	}

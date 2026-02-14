@@ -6,8 +6,10 @@ import (
 	"context"
 	"os"
 	"os/signal"
+	"slices"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -128,6 +130,12 @@ Examples:
 			spin.StopWithSuccess("Connected to " + apiURL)
 			out.Print("Authenticated as: %s (Workspace: %s)\n", identity.CredentialName, identity.WorkspaceName)
 
+			var runnerConfig *client.RunnerConfigResponse
+			runnerConfig, err = c.GetRunnerConfig(cmd.Context())
+			if err != nil {
+				out.Warning("Runner config unavailable, continuing without MCP provisioning: %v", err)
+			}
+
 			// Resolve habitat ID
 			habitatID, err := resolveHabitatID(cmd.Context(), c, habitat, out)
 			if err != nil {
@@ -151,6 +159,14 @@ Examples:
 			out.Print("Surface: watch\n")
 			out.Print("Agents: %s\n", strings.Join(supportedAgents, ", "))
 			out.Print("Queue ID: %s\n", queueID)
+			if slices.Contains(supportedAgents, "claude") {
+				mcpServers := harness.LoadedMCPServers(runnerConfig, time.Now())
+				if len(mcpServers) == 0 {
+					out.Print("MCP servers: none\n")
+				} else {
+					out.Print("MCP servers: %s\n", strings.Join(mcpServers, ", "))
+				}
+			}
 
 			if dryRun {
 				out.Println()
@@ -187,7 +203,7 @@ Examples:
 			}()
 
 			out.Println()
-			return runWatchLink(ctx, c, habitatID, queueID, supportedAgents)
+			return runWatchLink(ctx, c, habitatID, queueID, supportedAgents, runnerConfig)
 		},
 	}
 
@@ -200,12 +216,19 @@ Examples:
 	return cmd
 }
 
-func runWatchLink(ctx context.Context, c *client.Client, habitatID, queueID string, supportedAgents []string) error {
+func runWatchLink(
+	ctx context.Context,
+	c *client.Client,
+	habitatID, queueID string,
+	supportedAgents []string,
+	runnerConfig *client.RunnerConfigResponse,
+) error {
 	cfg := &harness.Config{
 		Client:          c,
 		HabitatID:       habitatID,
 		QueueID:         queueID,
 		SupportedAgents: supportedAgents,
+		RunnerConfig:    runnerConfig,
 	}
 	return harness.Run(ctx, cfg)
 }

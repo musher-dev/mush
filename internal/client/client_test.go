@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -277,6 +278,101 @@ func TestClient_HeartbeatJob(t *testing.T) {
 	if job.ID != "job-123" {
 		t.Errorf("HeartbeatJob() id = %q, want %q", job.ID, "job-123")
 	}
+}
+
+func TestClient_GetRunnerConfig(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/api/v1/runner/config" {
+				t.Fatalf("path = %q, want %q", r.URL.Path, "/api/v1/runner/config")
+			}
+			if r.Method != http.MethodGet {
+				t.Fatalf("method = %q, want GET", r.Method)
+			}
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{
+				"configVersion": "1",
+				"workspaceId": "ws-123",
+				"generatedAt": "2026-02-13T12:00:00Z",
+				"refreshAfterSeconds": 300,
+				"providers": {
+					"linear": {
+						"status": "active",
+						"credential": {
+							"accessToken": "tok_123",
+							"tokenType": "bearer",
+							"expiresAt": "2026-02-13T12:05:00Z"
+						},
+						"flags": {
+							"mcp": true
+						},
+						"mcp": {
+							"url": "https://mcp.linear.app/mcp",
+							"transport": "streamable-http"
+						}
+					}
+				}
+			}`))
+		}))
+		defer server.Close()
+
+		c := New(server.URL, "test-key")
+		cfg, err := c.GetRunnerConfig(context.Background())
+		if err != nil {
+			t.Fatalf("GetRunnerConfig() error = %v", err)
+		}
+
+		if cfg.WorkspaceID != "ws-123" {
+			t.Fatalf("WorkspaceID = %q, want ws-123", cfg.WorkspaceID)
+		}
+		if cfg.RefreshAfterSeconds != 300 {
+			t.Fatalf("RefreshAfterSeconds = %d, want 300", cfg.RefreshAfterSeconds)
+		}
+		linear, ok := cfg.Providers["linear"]
+		if !ok {
+			t.Fatalf("expected providers.linear")
+		}
+		if !linear.Flags.MCP {
+			t.Fatalf("expected providers.linear.flags.mcp = true")
+		}
+		if linear.Credential == nil || linear.Credential.AccessToken != "tok_123" {
+			t.Fatalf("unexpected credential: %#v", linear.Credential)
+		}
+	})
+
+	t.Run("non-200", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = w.Write([]byte(`{"detail":"forbidden"}`))
+		}))
+		defer server.Close()
+
+		c := New(server.URL, "test-key")
+		_, err := c.GetRunnerConfig(context.Background())
+		if err == nil {
+			t.Fatalf("expected error")
+		}
+		if !strings.Contains(err.Error(), "runner config failed with status 403") {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("malformed", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"providers":`))
+		}))
+		defer server.Close()
+
+		c := New(server.URL, "test-key")
+		_, err := c.GetRunnerConfig(context.Background())
+		if err == nil {
+			t.Fatalf("expected error")
+		}
+		if !strings.Contains(err.Error(), "failed to parse runner config") {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
 }
 
 func TestClient_CompleteJob(t *testing.T) {

@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -86,8 +87,11 @@ type RootModel struct {
 	height int
 
 	// PTY management
-	ptmx *os.File
-	cmd  *exec.Cmd
+	ptyMu sync.Mutex
+	ptmx  *os.File
+	cmd   *exec.Cmd
+	// ptyReady delivers active PTY handles to the output reader loop.
+	ptyReady chan *os.File
 
 	// Status bar state
 	statusMu      sync.Mutex
@@ -106,6 +110,17 @@ type RootModel struct {
 	linkID          string
 	signalDir       string
 	restoreHooks    func() error
+	runnerConfig    *client.RunnerConfigResponse
+	mcpConfigPath   string
+	mcpConfigSig    string
+	mcpConfigRemove func() error
+	loadedMCPNames  []string
+
+	refreshMu              sync.Mutex
+	refreshInterval        time.Duration
+	pendingRunnerConfig    *client.RunnerConfigResponse
+	pendingRunnerConfigSig string
+	claudeRestartNeeded    bool
 
 	// Original terminal state for restoration
 	oldState *term.State
@@ -172,8 +187,11 @@ func NewRootModel(ctx context.Context, cfg *Config) *RootModel {
 		queueID:         cfg.QueueID,
 		supportedAgents: cfg.SupportedAgents,
 		instanceID:      cfg.InstanceID,
+		runnerConfig:    cfg.RunnerConfig,
+		refreshInterval: normalizeRefreshInterval(0),
 		done:            make(chan struct{}),
 		promptDetected:  make(chan struct{}, 1),
+		ptyReady:        make(chan *os.File, 4),
 	}
 }
 
@@ -234,6 +252,12 @@ func (m *RootModel) Run() error {
 				_ = m.restoreHooks()
 			}
 		}()
+
+		// Build an ephemeral Claude MCP config from runner config, if available.
+		if mcpErr := m.applyRunnerConfigForClaude(m.runnerConfig); mcpErr != nil {
+			m.setLastError(fmt.Sprintf("MCP config disabled: %v", mcpErr))
+		}
+		defer m.cleanupMCPConfigFile()
 	}
 
 	// Register link with the platform
@@ -267,7 +291,7 @@ func (m *RootModel) Run() error {
 	var wg sync.WaitGroup
 
 	// PTY output -> terminal (in scroll region)
-	if m.ptmx != nil {
+	if m.isAgentSupported("claude") {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -296,6 +320,15 @@ func (m *RootModel) Run() error {
 		defer wg.Done()
 		m.jobManagerLoop()
 	}()
+
+	// Runner config refresh loop for MCP credential rotation.
+	if m.isAgentSupported("claude") {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			m.runnerConfigRefreshLoop()
+		}()
+	}
 
 	// Wait for done signal
 	<-m.done
@@ -469,7 +502,11 @@ func (m *RootModel) visibleLength(s string) int {
 func (m *RootModel) startPTY() error {
 	// Use --dangerously-skip-permissions to bypass interactive permission dialogs
 	// This is appropriate for automated job execution in the harness
-	cmd := exec.CommandContext(m.ctx, "claude", "--dangerously-skip-permissions")
+	args := []string{"--dangerously-skip-permissions"}
+	if m.mcpConfigPath != "" {
+		args = append(args, "--mcp-config", m.mcpConfigPath)
+	}
+	cmd := exec.CommandContext(m.ctx, "claude", args...)
 	cmd.Env = append(os.Environ(),
 		"TERM=xterm-256color",
 		"FORCE_COLOR=1",
@@ -487,25 +524,66 @@ func (m *RootModel) startPTY() error {
 		return err
 	}
 
+	m.ptyMu.Lock()
 	m.ptmx = ptmx
 	m.cmd = cmd
+	m.ptyMu.Unlock()
+
+	// Drain stale handles before delivering the new one, so the reader
+	// always picks up the most recent PTY.
+	for len(m.ptyReady) > 0 {
+		<-m.ptyReady
+	}
+	m.ptyReady <- ptmx
 
 	return nil
 }
 
 // closePTY closes the PTY.
 func (m *RootModel) closePTY() {
-	if m.ptmx != nil {
-		_ = m.ptmx.Close()
+	m.ptyMu.Lock()
+	ptmx := m.ptmx
+	cmd := m.cmd
+	m.ptmx = nil
+	m.cmd = nil
+	m.ptyMu.Unlock()
+
+	if ptmx != nil {
+		_ = ptmx.Close()
 	}
-	if m.cmd != nil && m.cmd.Process != nil {
-		_ = m.cmd.Process.Kill()
-		_ = m.cmd.Wait()
+	if cmd != nil && cmd.Process != nil {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
 	}
 }
 
+func (m *RootModel) activePTY() *os.File {
+	m.ptyMu.Lock()
+	defer m.ptyMu.Unlock()
+	return m.ptmx
+}
+
 // copyPTYOutput copies PTY output to stdout and detects prompt/completion.
+// When readPTYOutput returns (PTY closed or error), the loop waits for a new
+// PTY handle on m.ptyReady — this supports restart without signaling done.
+// Job completion is detected via the Stop hook signal file, not PTY exit.
 func (m *RootModel) copyPTYOutput() {
+	for {
+		select {
+		case <-m.ctx.Done():
+			return
+		case <-m.done:
+			return
+		case ptmx := <-m.ptyReady:
+			if ptmx == nil {
+				continue
+			}
+			m.readPTYOutput(ptmx)
+		}
+	}
+}
+
+func (m *RootModel) readPTYOutput(ptmx *os.File) {
 	buf := make([]byte, 4096)
 	// Ring buffer to detect prompt across chunk boundaries
 	promptRing := make([]byte, len(PromptDetectionBytes))
@@ -517,65 +595,68 @@ func (m *RootModel) copyPTYOutput() {
 		select {
 		case <-m.ctx.Done():
 			return
+		case <-m.done:
+			return
 		default:
 		}
 
-		n, err := m.ptmx.Read(buf)
+		n, err := ptmx.Read(buf)
 		if err != nil {
-			// PTY closed or error (including io.EOF)
-			m.signalDone()
 			return
 		}
 
-		if n > 0 {
-			// Write to terminal
-			m.termWrite(buf[:n])
+		if n <= 0 {
+			continue
+		}
 
-			// Detect bypass dialog and auto-accept
-			m.jobMu.Lock()
-			if !m.bypassAccepted {
-				dialogBuf.Write(buf[:n])
-				// Look for "Esc to cancel" which appears at the end of the dialog
-				if bytes.Contains(dialogBuf.Bytes(), []byte("Esc to cancel")) {
-					m.bypassAccepted = true
-					m.jobMu.Unlock()
-					dialogBuf.Reset()
-					// Wait a moment for the TUI to be ready, then send input
-					go func() {
-						time.Sleep(300 * time.Millisecond)
-						if m.ptmx != nil {
-							// Down arrow to select "Yes, I accept"
-							_, _ = m.ptmx.WriteString("\x1b[B")
-							time.Sleep(100 * time.Millisecond)
-							// Enter to confirm
-							_, _ = m.ptmx.WriteString("\r")
-						}
-					}()
-				} else {
-					m.jobMu.Unlock()
-				}
+		// Write to terminal
+		m.termWrite(buf[:n])
+
+		// Detect bypass dialog and auto-accept
+		m.jobMu.Lock()
+		if !m.bypassAccepted {
+			dialogBuf.Write(buf[:n])
+			// Look for "Esc to cancel" which appears at the end of the dialog
+			if bytes.Contains(dialogBuf.Bytes(), []byte("Esc to cancel")) {
+				m.bypassAccepted = true
+				m.jobMu.Unlock()
+				dialogBuf.Reset()
+				// Wait a moment for the TUI to be ready, then send input
+				go func() {
+					time.Sleep(300 * time.Millisecond)
+					active := m.activePTY()
+					if active != nil {
+						// Down arrow to select "Yes, I accept"
+						_, _ = active.WriteString("\x1b[B")
+						time.Sleep(100 * time.Millisecond)
+						// Enter to confirm
+						_, _ = active.WriteString("\r")
+					}
+				}()
 			} else {
 				m.jobMu.Unlock()
 			}
-
-			// Capture output if we're processing a job
-			m.jobMu.Lock()
-			if m.capturing {
-				m.outputBuffer.Write(buf[:n])
-			}
-			// Reset prompt confirmation since new output arrived
-			m.promptConfirmed = false
+		} else {
 			m.jobMu.Unlock()
+		}
 
-			// Detect prompt pattern "❯ " to know Claude might be ready
-			for i := 0; i < n; i++ {
-				promptRing[promptRingIdx] = buf[i]
-				promptRingIdx = (promptRingIdx + 1) % len(PromptDetectionBytes)
+		// Capture output if we're processing a job
+		m.jobMu.Lock()
+		if m.capturing {
+			m.outputBuffer.Write(buf[:n])
+		}
+		// Reset prompt confirmation since new output arrived
+		m.promptConfirmed = false
+		m.jobMu.Unlock()
 
-				// Check if we have a match (need to check rotated)
-				if m.checkPromptMatch(promptRing, promptRingIdx) {
-					m.onPromptPatternSeen()
-				}
+		// Detect prompt pattern "❯ " to know Claude might be ready
+		for i := 0; i < n; i++ {
+			promptRing[promptRingIdx] = buf[i]
+			promptRingIdx = (promptRingIdx + 1) % len(PromptDetectionBytes)
+
+			// Check if we have a match (need to check rotated)
+			if m.checkPromptMatch(promptRing, promptRingIdx) {
+				m.onPromptPatternSeen()
 			}
 		}
 	}
@@ -677,8 +758,8 @@ func (m *RootModel) copyInput() {
 		}
 
 		// Forward to PTY
-		if m.ptmx != nil {
-			_, _ = m.ptmx.Write(buf[:n])
+		if ptmx := m.activePTY(); ptmx != nil {
+			_, _ = ptmx.Write(buf[:n])
 		}
 	}
 }
@@ -703,7 +784,7 @@ func (m *RootModel) updateStatusLoop() {
 // jobManagerLoop manages the job queue and lifecycle by polling the API.
 func (m *RootModel) jobManagerLoop() {
 	// Wait for Claude to be ready (only when a Claude PTY is running).
-	if m.ptmx != nil {
+	if m.activePTY() != nil {
 		m.waitForClaude()
 	} else {
 		m.statusMu.Lock()
@@ -723,6 +804,12 @@ func (m *RootModel) jobManagerLoop() {
 		case <-m.done:
 			return
 		default:
+		}
+
+		if err := m.maybeRestartClaude(); err != nil {
+			m.setLastError(fmt.Sprintf("Claude restart failed: %v", err))
+			time.Sleep(2 * time.Second)
+			continue
 		}
 
 		// Poll for a job
@@ -756,6 +843,8 @@ func (m *RootModel) jobManagerLoop() {
 
 // waitForClaude waits until the Claude PTY is ready for input.
 func (m *RootModel) waitForClaude() {
+	m.drainPromptDetected()
+
 	m.statusMu.Lock()
 	m.status = StatusConnected
 	m.statusMu.Unlock()
@@ -773,6 +862,17 @@ func (m *RootModel) waitForClaude() {
 			time.Sleep(2 * time.Second)
 		} else {
 			m.jobMu.Unlock()
+		}
+	}
+}
+
+func (m *RootModel) drainPromptDetected() {
+	for {
+		select {
+		case <-m.promptDetected:
+			// Drain stale prompt events.
+		default:
+			return
 		}
 	}
 }
@@ -864,7 +964,7 @@ func (m *RootModel) processJob(job *client.Job) {
 			return
 		}
 
-		m.completeJob(job, map[string]interface{}{
+		m.completeJob(job, map[string]any{
 			"success":    true,
 			"output":     output,
 			"durationMs": int(duration / time.Millisecond),
@@ -1042,7 +1142,8 @@ func (m *RootModel) waitForSignalFile(ctx context.Context) (string, error) {
 
 // injectPrompt writes a prompt into the PTY in bulk chunks.
 func (m *RootModel) injectPrompt(prompt string) {
-	if m.ptmx == nil {
+	ptmx := m.activePTY()
+	if ptmx == nil {
 		return
 	}
 
@@ -1053,7 +1154,7 @@ func (m *RootModel) injectPrompt(prompt string) {
 		if len(chunk) > PTYWriteChunkSize {
 			chunk = data[:PTYWriteChunkSize]
 		}
-		_, _ = m.ptmx.Write(chunk)
+		_, _ = ptmx.Write(chunk)
 		data = data[len(chunk):]
 		if len(data) > 0 {
 			time.Sleep(PTYChunkDelay)
@@ -1062,22 +1163,23 @@ func (m *RootModel) injectPrompt(prompt string) {
 
 	// Allow the application to finish processing the pasted content
 	time.Sleep(PTYPasteSettleDelay)
-	_, _ = m.ptmx.WriteString("\r")
+	_, _ = ptmx.WriteString("\r")
 }
 
 // sendClear sends the /clear command to reset Claude's session.
 func (m *RootModel) sendClear() {
-	if m.ptmx == nil {
+	ptmx := m.activePTY()
+	if ptmx == nil {
 		return
 	}
 	time.Sleep(500 * time.Millisecond)
-	_, _ = m.ptmx.WriteString("/clear")
+	_, _ = ptmx.WriteString("/clear")
 	time.Sleep(PTYPostWriteDelay)
-	_, _ = m.ptmx.WriteString("\r")
+	_, _ = ptmx.WriteString("\r")
 }
 
 // completeJob reports job completion to the API.
-func (m *RootModel) completeJob(job *client.Job, outputData map[string]interface{}) {
+func (m *RootModel) completeJob(job *client.Job, outputData map[string]any) {
 	err := m.client.CompleteJob(m.ctx, job.ID, outputData)
 	if err != nil {
 		m.setLastError(fmt.Sprintf("Complete failed: %v", err))
@@ -1091,7 +1193,7 @@ func (m *RootModel) completeJob(job *client.Job, outputData map[string]interface
 	m.statusMu.Unlock()
 }
 
-func (m *RootModel) executeBashJob(ctx context.Context, job *client.Job, command string) (map[string]interface{}, error) {
+func (m *RootModel) executeBashJob(ctx context.Context, job *client.Job, command string) (map[string]any, error) {
 	// Verify bash is available
 	if _, err := exec.LookPath("bash"); err != nil {
 		return nil, fmt.Errorf("bash not found in PATH")
@@ -1149,7 +1251,7 @@ func (m *RootModel) executeBashJob(ctx context.Context, job *client.Job, command
 		return nil, fmt.Errorf("bash exited with code %d: %s", exitCode, msg)
 	}
 
-	return map[string]interface{}{
+	return map[string]any{
 		"output":     m.stripANSI(strings.TrimSpace(stdoutBuf.String())),
 		"stdout":     stdoutBuf.String(),
 		"stderr":     stderrBuf.String(),
@@ -1218,6 +1320,156 @@ func (m *RootModel) setLastError(msg string) {
 	m.lastError = msg
 	m.lastErrorTime = time.Now()
 	m.statusMu.Unlock()
+}
+
+func (m *RootModel) runnerConfigRefreshLoop() {
+	interval := m.refreshInterval
+	if interval <= 0 {
+		interval = normalizeRefreshInterval(0)
+	}
+	timer := time.NewTimer(interval)
+	defer timer.Stop()
+
+	for {
+		select {
+		case <-m.ctx.Done():
+			return
+		case <-m.done:
+			return
+		case <-timer.C:
+			cfg, err := m.client.GetRunnerConfig(m.ctx)
+			if err != nil {
+				m.setLastError(fmt.Sprintf("Runner config refresh failed: %v", err))
+				timer.Reset(interval)
+				continue
+			}
+
+			specs := buildMCPProviderSpecs(cfg, time.Now())
+			sig, sigErr := mcpSignature(specs)
+			if sigErr != nil {
+				m.setLastError(fmt.Sprintf("Runner config signature failed: %v", sigErr))
+				timer.Reset(interval)
+				continue
+			}
+
+			m.refreshMu.Lock()
+			interval = normalizeRefreshInterval(cfg.RefreshAfterSeconds)
+			m.refreshInterval = interval
+			if sig != m.mcpConfigSig {
+				m.pendingRunnerConfig = cfg
+				m.pendingRunnerConfigSig = sig
+				m.claudeRestartNeeded = true
+			}
+			m.refreshMu.Unlock()
+			timer.Reset(interval)
+		}
+	}
+}
+
+func (m *RootModel) maybeRestartClaude() error {
+	if !m.isAgentSupported("claude") {
+		return nil
+	}
+	if m.currentJobID() != "" {
+		return nil
+	}
+
+	m.refreshMu.Lock()
+	needsRestart := m.claudeRestartNeeded
+	nextCfg := m.pendingRunnerConfig
+	oldNames := append([]string(nil), m.loadedMCPNames...)
+	m.refreshMu.Unlock()
+
+	if !needsRestart || nextCfg == nil {
+		return nil
+	}
+
+	if err := m.applyRunnerConfigForClaude(nextCfg); err != nil {
+		return err
+	}
+
+	m.closePTY()
+	if err := m.startPTY(); err != nil {
+		return err
+	}
+	m.waitForClaude()
+
+	m.refreshMu.Lock()
+	m.pendingRunnerConfig = nil
+	m.pendingRunnerConfigSig = ""
+	m.claudeRestartNeeded = false
+	newNames := append([]string(nil), m.loadedMCPNames...)
+	m.refreshMu.Unlock()
+
+	if !sameStringSlice(oldNames, newNames) {
+		m.infof("MCP servers reloaded: %s", summarizeMCPServers(newNames))
+	}
+
+	return nil
+}
+
+func (m *RootModel) applyRunnerConfigForClaude(cfg *client.RunnerConfigResponse) error {
+	now := time.Now()
+	path, sig, cleanup, err := createClaudeMCPConfigFile(cfg, now)
+	if err != nil {
+		return err
+	}
+	names := loadedMCPProviderNames(cfg, now)
+
+	// Swap config file atomically after successful generation.
+	m.refreshMu.Lock()
+	oldCleanup := m.mcpConfigRemove
+	m.mcpConfigPath = path
+	m.mcpConfigSig = sig
+	m.mcpConfigRemove = cleanup
+	m.loadedMCPNames = names
+	m.refreshMu.Unlock()
+
+	m.runnerConfig = cfg
+
+	if oldCleanup != nil {
+		if err := oldCleanup(); err != nil {
+			m.setLastError(fmt.Sprintf("MCP config cleanup: %v", err))
+		}
+	}
+
+	return nil
+}
+
+func (m *RootModel) cleanupMCPConfigFile() {
+	if m.mcpConfigRemove == nil {
+		return
+	}
+	if err := m.mcpConfigRemove(); err != nil {
+		m.setLastError(fmt.Sprintf("MCP config cleanup: %v", err))
+	}
+	m.mcpConfigRemove = nil
+	m.mcpConfigPath = ""
+}
+
+func (m *RootModel) infof(format string, args ...any) {
+	msg := fmt.Sprintf(format, args...)
+	// Use \r\n because the terminal is in raw mode; writing through termWrite
+	// ensures the output lands inside the scroll region alongside PTY output.
+	m.termWrite([]byte(msg + "\r\n"))
+}
+
+func summarizeMCPServers(names []string) string {
+	if len(names) == 0 {
+		return "none"
+	}
+	return strings.Join(names, ", ")
+}
+
+func sameStringSlice(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	aCopy := append([]string(nil), a...)
+	bCopy := append([]string(nil), b...)
+	slices.Sort(aCopy)
+	slices.Sort(bCopy)
+	return slices.Equal(aCopy, bCopy)
 }
 
 // restore restores the terminal to its original state.
