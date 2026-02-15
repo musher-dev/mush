@@ -110,8 +110,12 @@ type RootModel struct {
 	ptyMu sync.Mutex
 	ptmx  *os.File
 	cmd   *exec.Cmd
+	// cmdPGID is the process-group ID for the active Claude process.
+	cmdPGID int
 	// setPTYSize is injectable for tests; defaults to pty.Setsize.
 	setPTYSize func(*os.File, *pty.Winsize) error
+	// startPTYWithSize is injectable for tests; defaults to pty.StartWithSize.
+	startPTYWithSize func(*exec.Cmd, *pty.Winsize) (*os.File, error)
 	// ptyReady delivers active PTY handles to the output reader loop.
 	ptyReady chan *os.File
 
@@ -183,6 +187,7 @@ type RootModel struct {
 	now                 func() time.Time
 	ctrlCExitWindow     time.Duration
 	ptyShutdownDeadline time.Duration
+	killProcess         func(int, syscall.Signal) error
 }
 
 type lockedWriter struct {
@@ -233,12 +238,14 @@ func NewRootModel(ctx context.Context, cfg *Config) *RootModel {
 		promptDetected:      make(chan struct{}, 1),
 		ptyReady:            make(chan *os.File, 4),
 		setPTYSize:          pty.Setsize,
+		startPTYWithSize:    pty.StartWithSize,
 		transcriptEnabled:   cfg.TranscriptEnabled,
 		transcriptDir:       cfg.TranscriptDir,
 		transcriptLines:     cfg.TranscriptLines,
 		now:                 time.Now,
 		ctrlCExitWindow:     defaultCtrlCExitWindow,
 		ptyShutdownDeadline: defaultPTYShutdownDeadline,
+		killProcess:         syscall.Kill,
 	}
 }
 
@@ -774,7 +781,6 @@ func (m *RootModel) startPTY() error {
 		args = append(args, "--mcp-config", m.mcpConfigPath)
 	}
 	cmd := exec.CommandContext(m.ctx, "claude", args...)
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Env = append(os.Environ(),
 		"TERM=xterm-256color",
 		"FORCE_COLOR=1",
@@ -784,17 +790,28 @@ func (m *RootModel) startPTY() error {
 	// Calculate PTY size (full height minus status bar)
 	ptyHeight := m.ptyRowsForHeight(m.height)
 
-	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{
+	startWithSize := m.startPTYWithSize
+	if startWithSize == nil {
+		startWithSize = pty.StartWithSize
+	}
+
+	ptmx, err := startWithSize(cmd, &pty.Winsize{
 		Rows: uint16(ptyHeight), //nolint:gosec // G115: terminal dimensions bounded by OS
 		Cols: uint16(m.width),   //nolint:gosec // G115: terminal dimensions bounded by OS
 	})
 	if err != nil {
-		return err
+		return annotateStartPTYError(err, cmd.Path)
 	}
 
 	m.ptyMu.Lock()
 	m.ptmx = ptmx
 	m.cmd = cmd
+	m.cmdPGID = 0
+	if cmd.Process != nil && cmd.Process.Pid > 0 {
+		if pgid, pgErr := syscall.Getpgid(cmd.Process.Pid); pgErr == nil {
+			m.cmdPGID = pgid
+		}
+	}
 	m.ptyMu.Unlock()
 
 	// Drain stale handles before delivering the new one, so the reader
@@ -812,8 +829,10 @@ func (m *RootModel) closePTY() {
 	m.ptyMu.Lock()
 	ptmx := m.ptmx
 	cmd := m.cmd
+	pgid := m.cmdPGID
 	m.ptmx = nil
 	m.cmd = nil
+	m.cmdPGID = 0
 	m.ptyMu.Unlock()
 
 	if ptmx != nil {
@@ -828,7 +847,7 @@ func (m *RootModel) closePTY() {
 		waitCh <- cmd.Wait()
 	}()
 
-	sendProcessGroupSignal(cmd.Process.Pid, syscall.SIGTERM)
+	m.sendSignal(cmd.Process.Pid, pgid, syscall.SIGTERM)
 
 	shutdownDeadline := m.ptyShutdownDeadline
 	if shutdownDeadline <= 0 {
@@ -839,7 +858,7 @@ func (m *RootModel) closePTY() {
 	case <-waitCh:
 		return
 	case <-time.After(shutdownDeadline):
-		sendProcessGroupSignal(cmd.Process.Pid, syscall.SIGKILL)
+		m.sendSignal(cmd.Process.Pid, pgid, syscall.SIGKILL)
 		select {
 		case <-waitCh:
 		case <-time.After(shutdownDeadline):
@@ -847,14 +866,33 @@ func (m *RootModel) closePTY() {
 	}
 }
 
-func sendProcessGroupSignal(pid int, sig syscall.Signal) {
+func (m *RootModel) sendSignal(pid, pgid int, sig syscall.Signal) {
+	kill := m.killProcess
+	if kill == nil {
+		kill = syscall.Kill
+	}
+
+	if pgid > 0 {
+		if err := kill(-pgid, sig); err == nil || errors.Is(err, syscall.ESRCH) {
+			return
+		}
+	}
+
 	if pid <= 0 {
 		return
 	}
-	if err := syscall.Kill(-pid, sig); err == nil || errors.Is(err, syscall.ESRCH) {
-		return
+	_ = kill(pid, sig)
+}
+
+func annotateStartPTYError(err error, binaryPath string) error {
+	if !errors.Is(err, syscall.EPERM) {
+		return err
 	}
-	_ = syscall.Kill(pid, sig)
+	return fmt.Errorf(
+		"%w (EPERM during PTY start for %q; likely session/exec policy issue. Check executable permissions, filesystem noexec, and macOS quarantine attributes)",
+		err,
+		binaryPath,
+	)
 }
 
 func (m *RootModel) activePTY() *os.File {
