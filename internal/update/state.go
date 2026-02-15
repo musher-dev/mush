@@ -35,10 +35,10 @@ func statePath() (string, error) {
 func LoadState() (*State, error) {
 	path, err := statePath()
 	if err != nil {
-		return &State{}, nil
+		return &State{}, nil //nolint:nilerr // graceful: treat path failure as empty state
 	}
 
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec // G304: path from controlled config directory
 	if err != nil {
 		if os.IsNotExist(err) {
 			return &State{}, nil
@@ -49,7 +49,7 @@ func LoadState() (*State, error) {
 	var s State
 	if err := json.Unmarshal(data, &s); err != nil {
 		// Corrupted state file; treat as empty
-		return &State{}, nil
+		return &State{}, nil //nolint:nilerr // graceful: corrupted state file treated as empty
 	}
 
 	return &s, nil

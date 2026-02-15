@@ -85,12 +85,12 @@ func (u *Updater) CheckLatest(ctx context.Context, currentVersion string) (*Info
 	if err != nil {
 		// Can't parse current version (e.g. "dev"), treat as needing update
 		info.UpdateAvailable = true
-		return info, nil
+		return info, nil //nolint:nilerr // graceful: unparseable current version treated as needing update
 	}
 
 	latestSemver, err := semver.NewVersion(latest.Version())
 	if err != nil {
-		return info, nil
+		return info, nil //nolint:nilerr // graceful: unparseable latest version is non-fatal
 	}
 
 	if latestSemver.GreaterThan(current) {

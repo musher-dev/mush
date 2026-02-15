@@ -1,7 +1,6 @@
 package update
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -78,7 +77,7 @@ func TestCheckLatest_NewerAvailable(t *testing.T) {
 	})
 
 	u := newTestUpdater(t, handler)
-	info, err := u.CheckLatest(context.Background(), "1.0.0")
+	info, err := u.CheckLatest(t.Context(), "1.0.0")
 	if err != nil {
 		t.Fatalf("CheckLatest returned error: %v", err)
 	}
@@ -101,7 +100,7 @@ func TestCheckLatest_UpToDate(t *testing.T) {
 	})
 
 	u := newTestUpdater(t, handler)
-	info, err := u.CheckLatest(context.Background(), "1.0.0")
+	info, err := u.CheckLatest(t.Context(), "1.0.0")
 	if err != nil {
 		t.Fatalf("CheckLatest returned error: %v", err)
 	}
@@ -117,7 +116,7 @@ func TestCheckLatest_APIError(t *testing.T) {
 	})
 
 	u := newTestUpdater(t, handler)
-	_, err := u.CheckLatest(context.Background(), "1.0.0")
+	_, err := u.CheckLatest(t.Context(), "1.0.0")
 	if err == nil {
 		t.Fatal("expected error for 500 response")
 	}
@@ -130,7 +129,7 @@ func TestCheckLatest_RateLimited(t *testing.T) {
 	})
 
 	u := newTestUpdater(t, handler)
-	_, err := u.CheckLatest(context.Background(), "1.0.0")
+	_, err := u.CheckLatest(t.Context(), "1.0.0")
 	if err == nil {
 		t.Fatal("expected error for 403 response")
 	}
@@ -143,7 +142,7 @@ func TestCheckLatest_DevBuild(t *testing.T) {
 	})
 
 	u := newTestUpdater(t, handler)
-	info, err := u.CheckLatest(context.Background(), "dev")
+	info, err := u.CheckLatest(t.Context(), "dev")
 	if err != nil {
 		t.Fatalf("CheckLatest returned error: %v", err)
 	}
@@ -161,7 +160,7 @@ func TestCheckLatest_NoReleases(t *testing.T) {
 	})
 
 	u := newTestUpdater(t, handler)
-	info, err := u.CheckLatest(context.Background(), "1.0.0")
+	info, err := u.CheckLatest(t.Context(), "1.0.0")
 	if err != nil {
 		t.Fatalf("CheckLatest returned error: %v", err)
 	}
@@ -182,7 +181,7 @@ func TestCheckLatest_NoMatchingAssets(t *testing.T) {
 	})
 
 	u := newTestUpdater(t, handler)
-	info, err := u.CheckLatest(context.Background(), "1.0.0")
+	info, err := u.CheckLatest(t.Context(), "1.0.0")
 	if err != nil {
 		t.Fatalf("CheckLatest returned error: %v", err)
 	}

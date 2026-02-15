@@ -32,15 +32,7 @@ func TestInstallStopHook_MigratesLegacyAndRestores(t *testing.T) {
 		t.Fatalf("write failed: %v", err)
 	}
 
-	prev, getwdErr := os.Getwd()
-	if getwdErr != nil {
-		t.Fatalf("getwd failed: %v", getwdErr)
-	}
-	t.Cleanup(func() { _ = os.Chdir(prev) })
-	chdirErr := os.Chdir(tmp)
-	if chdirErr != nil {
-		t.Fatalf("chdir failed: %v", chdirErr)
-	}
+	t.Chdir(tmp)
 
 	restore, err := installStopHook("/tmp/mush-test-signals")
 	if err != nil {
@@ -125,15 +117,7 @@ func TestInstallStopHook_DoesNotDuplicateExistingMushHook(t *testing.T) {
 		t.Fatalf("write failed: %v", writeErr)
 	}
 
-	prev, getwdErr := os.Getwd()
-	if getwdErr != nil {
-		t.Fatalf("getwd failed: %v", getwdErr)
-	}
-	t.Cleanup(func() { _ = os.Chdir(prev) })
-	chdirErr := os.Chdir(tmp)
-	if chdirErr != nil {
-		t.Fatalf("chdir failed: %v", chdirErr)
-	}
+	t.Chdir(tmp)
 
 	restore, err := installStopHook("/tmp/mush-test-signals")
 	if err != nil {

@@ -648,7 +648,7 @@ func emptyJSONBody() io.Reader {
 func unexpectedStatus(operation string, statusCode int, body io.Reader) error {
 	respBody, readErr := io.ReadAll(body)
 	if readErr != nil {
-		return fmt.Errorf("%s failed with status %d (failed to read body: %v)", operation, statusCode, readErr)
+		return fmt.Errorf("%s failed with status %d (failed to read body: %w)", operation, statusCode, readErr)
 	}
 	return fmt.Errorf("%s failed with status %d: %s", operation, statusCode, string(respBody))
 }

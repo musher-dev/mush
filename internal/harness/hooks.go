@@ -78,7 +78,7 @@ func installStopHook(signalDir string) (func() error, error) {
 	originalExists := false
 
 	settings := settingsFile{}
-	if data, readErr := os.ReadFile(settingsPath); readErr == nil {
+	if data, readErr := os.ReadFile(settingsPath); readErr == nil { //nolint:gosec // G304: path from known .claude directory
 		original = data
 		originalExists = true
 		if len(original) > 0 {
@@ -149,7 +149,7 @@ func installStopHook(signalDir string) (func() error, error) {
 
 	settings.Hooks["Stop"] = normalizedStopHooks
 
-	if mkdirErr := os.MkdirAll(filepath.Dir(settingsPath), 0o755); mkdirErr != nil {
+	if mkdirErr := os.MkdirAll(filepath.Dir(settingsPath), 0o755); mkdirErr != nil { //nolint:gosec // G301: .claude dir needs 0o755 for compatibility
 		return nil, fmt.Errorf("failed to create .claude directory: %w", mkdirErr)
 	}
 

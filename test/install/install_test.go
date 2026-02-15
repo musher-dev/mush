@@ -8,6 +8,7 @@ import (
 	"compress/gzip"
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -46,11 +47,11 @@ func testContext(t *testing.T) context.Context {
 	t.Helper()
 	const fallback = 30 * time.Second
 	if dl, ok := t.Deadline(); ok {
-		ctx, cancel := context.WithDeadline(context.Background(), dl.Add(-time.Second))
+		ctx, cancel := context.WithDeadline(t.Context(), dl.Add(-time.Second))
 		t.Cleanup(cancel)
 		return ctx
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), fallback)
+	ctx, cancel := context.WithTimeout(t.Context(), fallback)
 	t.Cleanup(cancel)
 	return ctx
 }
@@ -69,7 +70,8 @@ func runScript(t *testing.T, args, env []string) runResult {
 	err := cmd.Run()
 	exitCode := 0
 	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
 			exitCode = exitErr.ExitCode()
 		} else {
 			t.Fatalf("running install.sh: %v", err)
@@ -97,7 +99,8 @@ func runFunction(t *testing.T, fnCall string, env []string) runResult {
 	err := cmd.Run()
 	exitCode := 0
 	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
 			exitCode = exitErr.ExitCode()
 		} else {
 			t.Fatalf("running function %q: %v\nstderr: %s", fnCall, err, stderr.String())

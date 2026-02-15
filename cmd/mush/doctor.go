@@ -25,7 +25,7 @@ Checks performed:
 			out.Println()
 
 			// Run diagnostics
-			runner := doctor.New(out)
+			runner := doctor.New()
 			results := runner.Run(cmd.Context())
 
 			// Display results

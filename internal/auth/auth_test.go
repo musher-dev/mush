@@ -29,19 +29,10 @@ func TestGetCredentials_FromEnv(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Save original value
-			orig := os.Getenv(envVarName)
-			defer func() {
-				if orig != "" {
-					os.Setenv(envVarName, orig)
-				} else {
-					os.Unsetenv(envVarName)
-				}
-			}()
-
 			if tt.envKey != "" {
-				os.Setenv(envVarName, tt.envKey)
+				t.Setenv(envVarName, tt.envKey)
 			} else {
+				t.Setenv(envVarName, "")
 				os.Unsetenv(envVarName)
 			}
 
@@ -101,9 +92,7 @@ func TestCredentialSource_String(t *testing.T) {
 func TestWriteAndReadCredentialsFile(t *testing.T) {
 	// Create a temporary directory for testing
 	tmpDir := t.TempDir()
-	originalHome := os.Getenv("HOME")
-	defer os.Setenv("HOME", originalHome)
-	os.Setenv("HOME", tmpDir)
+	t.Setenv("HOME", tmpDir)
 
 	testKey := "test-api-key-xyz"
 
@@ -136,9 +125,7 @@ func TestWriteAndReadCredentialsFile(t *testing.T) {
 func TestDeleteCredentialsFile(t *testing.T) {
 	// Create a temporary directory for testing
 	tmpDir := t.TempDir()
-	originalHome := os.Getenv("HOME")
-	defer os.Setenv("HOME", originalHome)
-	os.Setenv("HOME", tmpDir)
+	t.Setenv("HOME", tmpDir)
 
 	// Write credentials first
 	err := writeCredentialsFile("test-key")
@@ -162,9 +149,7 @@ func TestDeleteCredentialsFile(t *testing.T) {
 func TestDeleteCredentialsFile_NotFound(t *testing.T) {
 	// Create a temporary directory for testing
 	tmpDir := t.TempDir()
-	originalHome := os.Getenv("HOME")
-	defer os.Setenv("HOME", originalHome)
-	os.Setenv("HOME", tmpDir)
+	t.Setenv("HOME", tmpDir)
 
 	// Try to delete non-existent file
 	err := deleteCredentialsFile()

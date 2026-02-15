@@ -19,7 +19,6 @@ import (
 	"github.com/musher-dev/mush/internal/claude"
 	"github.com/musher-dev/mush/internal/client"
 	"github.com/musher-dev/mush/internal/config"
-	"github.com/musher-dev/mush/internal/output"
 	"github.com/musher-dev/mush/internal/update"
 )
 
@@ -48,7 +47,6 @@ type Check func(ctx context.Context) Result
 
 // Runner executes diagnostic checks.
 type Runner struct {
-	out    *output.Writer
 	checks []namedCheck
 }
 
@@ -58,8 +56,8 @@ type namedCheck struct {
 }
 
 // New creates a new diagnostic runner.
-func New(out *output.Writer) *Runner {
-	r := &Runner{out: out}
+func New() *Runner {
+	r := &Runner{}
 
 	// Register default checks
 	r.AddCheck("API Connectivity", checkAPIConnectivity)
@@ -268,12 +266,18 @@ func checkCLIVersion(ctx context.Context) Result {
 func (s Status) Symbol() string {
 	switch s {
 	case StatusPass:
-		return output.CheckMark
+		return checkMark
 	case StatusWarn:
-		return output.WarningMark
+		return warningMark
 	case StatusFail:
-		return output.XMark
+		return xMark
 	default:
 		return "?"
 	}
 }
+
+const (
+	checkMark   = "\u2713" // ✓
+	xMark       = "\u2717" // ✗
+	warningMark = "\u26A0" // ⚠
+)

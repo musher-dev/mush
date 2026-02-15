@@ -2,7 +2,6 @@ package output
 
 import (
 	"bytes"
-	"context"
 	"testing"
 
 	"github.com/musher-dev/mush/internal/terminal"
@@ -384,7 +383,7 @@ func TestWriter_Context(t *testing.T) {
 	var buf bytes.Buffer
 	w := NewWriter(&buf, &buf, testTerminal())
 
-	ctx := w.WithContext(context.Background())
+	ctx := w.WithContext(t.Context())
 	retrieved := FromContext(ctx)
 
 	if retrieved != w {
@@ -394,7 +393,7 @@ func TestWriter_Context(t *testing.T) {
 
 func TestFromContext_Default(t *testing.T) {
 	// When no writer in context, should return default
-	w := FromContext(context.Background())
+	w := FromContext(t.Context())
 
 	if w == nil {
 		t.Error("FromContext should return non-nil writer")

@@ -22,17 +22,17 @@ func AssertGolden(t *testing.T, got, goldenFile string) {
 
 	if *update {
 		// Ensure testdata directory exists
-		if err := os.MkdirAll(filepath.Dir(goldenPath), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(goldenPath), 0o755); err != nil { //nolint:gosec // G301: testdata dir
 			t.Fatalf("failed to create testdata directory: %v", err)
 		}
-		if err := os.WriteFile(goldenPath, []byte(got), 0o644); err != nil {
+		if err := os.WriteFile(goldenPath, []byte(got), 0o644); err != nil { //nolint:gosec // G306: golden files are non-sensitive
 			t.Fatalf("failed to update golden file %s: %v", goldenPath, err)
 		}
 		t.Logf("updated golden file: %s", goldenPath)
 		return
 	}
 
-	want, err := os.ReadFile(goldenPath)
+	want, err := os.ReadFile(goldenPath) //nolint:gosec // G304: path from test fixture
 	if err != nil {
 		if os.IsNotExist(err) {
 			t.Fatalf("golden file %s does not exist; run with -update to create it", goldenPath)
@@ -62,7 +62,7 @@ func ReadGolden(t *testing.T, goldenFile string) string {
 	t.Helper()
 
 	goldenPath := filepath.Join("testdata", goldenFile)
-	data, err := os.ReadFile(goldenPath)
+	data, err := os.ReadFile(goldenPath) //nolint:gosec // G304: path from test fixture
 	if err != nil {
 		if os.IsNotExist(err) {
 			return ""

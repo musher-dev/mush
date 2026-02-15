@@ -23,7 +23,6 @@ import (
 	"github.com/musher-dev/mush/internal/client"
 	"github.com/musher-dev/mush/internal/config"
 	"github.com/musher-dev/mush/internal/linking"
-	clioutput "github.com/musher-dev/mush/internal/output"
 )
 
 // SignalFileName is the marker file created by the Stop hook.
@@ -270,13 +269,17 @@ func (m *RootModel) Run() error {
 
 	linkHeartbeatCtx, cancelLinkHeartbeat := context.WithCancel(m.ctx)
 	defer cancelLinkHeartbeat()
-	linking.StartHeartbeat(linkHeartbeatCtx, m.client, m.linkID, m.currentJobID, clioutput.FromContext(m.ctx))
+	linking.StartHeartbeat(linkHeartbeatCtx, m.client, m.linkID, m.currentJobID, func(err error) {
+		m.setLastError(fmt.Sprintf("Link heartbeat failed: %v", err))
+	})
 	defer func() {
 		m.statusMu.Lock()
 		completed := m.completed
 		failed := m.failed
 		m.statusMu.Unlock()
-		linking.Deregister(m.client, m.linkID, completed, failed, clioutput.FromContext(m.ctx))
+		if err := linking.Deregister(m.client, m.linkID, completed, failed); err != nil {
+			m.setLastError(fmt.Sprintf("Link deregistration failed: %v", err))
+		}
 	}()
 
 	// Start Claude Code in PTY if it's a supported agent
@@ -517,8 +520,8 @@ func (m *RootModel) startPTY() error {
 	ptyHeight := m.height - StatusBarHeight
 
 	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{
-		Rows: uint16(ptyHeight),
-		Cols: uint16(m.width),
+		Rows: uint16(ptyHeight), //nolint:gosec // G115: terminal dimensions bounded by OS
+		Cols: uint16(m.width),   //nolint:gosec // G115: terminal dimensions bounded by OS
 	})
 	if err != nil {
 		return err
@@ -816,7 +819,7 @@ func (m *RootModel) jobManagerLoop() {
 		job, err := m.client.ClaimJob(m.ctx, m.habitatID, m.queueID, pollInterval)
 		if err != nil {
 			if m.ctx.Err() != nil {
-				return // Context cancelled
+				return // Context canceled
 			}
 			m.setLastError(fmt.Sprintf("Claim failed: %v", err))
 			time.Sleep(5 * time.Second) // Backoff on error
@@ -1240,7 +1243,8 @@ func (m *RootModel) executeBashJob(ctx context.Context, job *client.Job, command
 		}
 
 		exitCode = 1
-		if exitErr, ok := err.(*exec.ExitError); ok {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
 			exitCode = exitErr.ExitCode()
 		}
 
