@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"io"
 	"strings"
 	"testing"
@@ -18,7 +17,7 @@ func TestUpdateCmd_DisabledByEnv(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	term := &terminal.Info{IsTTY: false}
 	out := output.NewWriter(&stdout, &stderr, term)
-	ctx := out.WithContext(context.Background())
+	ctx := out.WithContext(t.Context())
 
 	cmd := newUpdateCmd()
 	cmd.SetContext(ctx)
@@ -44,7 +43,7 @@ func TestUpdateCmd_DevBuild(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	term := &terminal.Info{IsTTY: false}
 	out := output.NewWriter(&stdout, &stderr, term)
-	ctx := out.WithContext(context.Background())
+	ctx := out.WithContext(t.Context())
 
 	cmd := newUpdateCmd()
 	cmd.SetContext(ctx)
@@ -75,7 +74,7 @@ func TestUpdateCmd_VersionTrimPrefix(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	term := &terminal.Info{IsTTY: false}
 	out := output.NewWriter(&stdout, &stderr, term)
-	ctx := out.WithContext(context.Background())
+	ctx := out.WithContext(t.Context())
 
 	cmd := newUpdateCmd()
 	cmd.SetArgs([]string{"--version", "v99.99.99"})

@@ -1,7 +1,6 @@
 package client
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -84,7 +83,7 @@ func TestClient_ValidateKey(t *testing.T) {
 			defer server.Close()
 
 			c := New(server.URL, "test-key")
-			identity, err := c.ValidateKey(context.Background())
+			identity, err := c.ValidateKey(t.Context())
 
 			if (err != nil) != tt.wantErr {
 				t.Errorf("ValidateKey() error = %v, wantErr %v", err, tt.wantErr)
@@ -169,7 +168,7 @@ func TestClient_ClaimJob(t *testing.T) {
 			defer server.Close()
 
 			c := New(server.URL, "test-key")
-			job, err := c.ClaimJob(context.Background(), "habitat-123", "", 30)
+			job, err := c.ClaimJob(t.Context(), "habitat-123", "", 30)
 
 			if (err != nil) != tt.wantErr {
 				t.Errorf("ClaimJob() error = %v, wantErr %v", err, tt.wantErr)
@@ -233,7 +232,7 @@ func TestClient_ListQueues(t *testing.T) {
 			defer server.Close()
 
 			c := New(server.URL, "test-key")
-			queues, err := c.ListQueues(context.Background(), "hab-1")
+			queues, err := c.ListQueues(t.Context(), "hab-1")
 			if (err != nil) != tt.wantErr {
 				t.Errorf("ListQueues() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -268,7 +267,7 @@ func TestClient_HeartbeatJob(t *testing.T) {
 	defer server.Close()
 
 	c := New(server.URL, "test-key")
-	job, err := c.HeartbeatJob(context.Background(), "job-123")
+	job, err := c.HeartbeatJob(t.Context(), "job-123")
 	if err != nil {
 		t.Errorf("HeartbeatJob() error = %v", err)
 	}
@@ -317,7 +316,7 @@ func TestClient_GetRunnerConfig(t *testing.T) {
 		defer server.Close()
 
 		c := New(server.URL, "test-key")
-		cfg, err := c.GetRunnerConfig(context.Background())
+		cfg, err := c.GetRunnerConfig(t.Context())
 		if err != nil {
 			t.Fatalf("GetRunnerConfig() error = %v", err)
 		}
@@ -348,7 +347,7 @@ func TestClient_GetRunnerConfig(t *testing.T) {
 		defer server.Close()
 
 		c := New(server.URL, "test-key")
-		_, err := c.GetRunnerConfig(context.Background())
+		_, err := c.GetRunnerConfig(t.Context())
 		if err == nil {
 			t.Fatalf("expected error")
 		}
@@ -365,7 +364,7 @@ func TestClient_GetRunnerConfig(t *testing.T) {
 		defer server.Close()
 
 		c := New(server.URL, "test-key")
-		_, err := c.GetRunnerConfig(context.Background())
+		_, err := c.GetRunnerConfig(t.Context())
 		if err == nil {
 			t.Fatalf("expected error")
 		}
@@ -391,7 +390,7 @@ func TestClient_CompleteJob(t *testing.T) {
 	defer server.Close()
 
 	c := New(server.URL, "test-key")
-	err := c.CompleteJob(context.Background(), "job-123", map[string]interface{}{"result": "success"})
+	err := c.CompleteJob(t.Context(), "job-123", map[string]interface{}{"result": "success"})
 	if err != nil {
 		t.Errorf("CompleteJob() error = %v", err)
 	}
@@ -422,7 +421,7 @@ func TestClient_FailJob(t *testing.T) {
 	defer server.Close()
 
 	c := New(server.URL, "test-key")
-	err := c.FailJob(context.Background(), "job-123", "execution_error", "test error", true)
+	err := c.FailJob(t.Context(), "job-123", "execution_error", "test error", true)
 	if err != nil {
 		t.Errorf("FailJob() error = %v", err)
 	}
@@ -453,7 +452,7 @@ func TestClient_RegisterLink(t *testing.T) {
 	defer server.Close()
 
 	c := New(server.URL, "test-key")
-	resp, err := c.RegisterLink(context.Background(), &RegisterLinkRequest{
+	resp, err := c.RegisterLink(t.Context(), &RegisterLinkRequest{
 		InstanceID: "instance-1",
 		LinkType:   "agent",
 	})
@@ -491,7 +490,7 @@ func TestClient_HeartbeatLink(t *testing.T) {
 	defer server.Close()
 
 	c := New(server.URL, "test-key")
-	resp, err := c.HeartbeatLink(context.Background(), "link-123", "job-123")
+	resp, err := c.HeartbeatLink(t.Context(), "link-123", "job-123")
 	if err != nil {
 		t.Errorf("HeartbeatLink() error = %v", err)
 	}
@@ -528,7 +527,7 @@ func TestClient_DeregisterLink(t *testing.T) {
 	defer server.Close()
 
 	c := New(server.URL, "test-key")
-	err := c.DeregisterLink(context.Background(), "link-123", DeregisterLinkRequest{
+	err := c.DeregisterLink(t.Context(), "link-123", DeregisterLinkRequest{
 		Reason:        "graceful_shutdown",
 		JobsCompleted: 5,
 		JobsFailed:    1,
@@ -552,7 +551,7 @@ func TestClient_ReleaseJob(t *testing.T) {
 		defer server.Close()
 
 		c := New(server.URL, "test-key")
-		err := c.ReleaseJob(context.Background(), "job-123")
+		err := c.ReleaseJob(t.Context(), "job-123")
 		if err != nil {
 			t.Errorf("ReleaseJob() error = %v", err)
 		}
@@ -566,7 +565,7 @@ func TestClient_ReleaseJob(t *testing.T) {
 		defer server.Close()
 
 		c := New(server.URL, "test-key")
-		err := c.ReleaseJob(context.Background(), "job-123")
+		err := c.ReleaseJob(t.Context(), "job-123")
 		if err == nil {
 			t.Error("ReleaseJob() should return error on 409")
 		}

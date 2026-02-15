@@ -229,7 +229,7 @@ func TestCLIError_Unwrap(t *testing.T) {
 	cause := New(1, "cause")
 	err := &CLIError{Message: "wrapper", Cause: cause}
 
-	if got := err.Unwrap(); got != cause {
+	if got := err.Unwrap(); got != cause { //nolint:errorlint // testing identity
 		t.Errorf("Unwrap() = %v, want %v", got, cause)
 	}
 }
@@ -249,7 +249,7 @@ func TestWrap(t *testing.T) {
 	if err.Code != ExitNetwork {
 		t.Errorf("Wrap() code = %d, want %d", err.Code, ExitNetwork)
 	}
-	if err.Cause != cause {
+	if err.Cause != cause { //nolint:errorlint // testing struct field identity
 		t.Errorf("Wrap() cause = %v, want %v", err.Cause, cause)
 	}
 }

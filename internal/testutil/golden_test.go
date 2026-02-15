@@ -9,9 +9,7 @@ import (
 func TestAssertGolden(t *testing.T) {
 	// Create a temporary test directory
 	tmpDir := t.TempDir()
-	oldWd, _ := os.Getwd()
-	os.Chdir(tmpDir)
-	defer os.Chdir(oldWd)
+	t.Chdir(tmpDir)
 
 	// Create testdata directory
 	os.MkdirAll("testdata", 0o755)
@@ -42,9 +40,7 @@ func TestAssertGolden(t *testing.T) {
 func TestReadGolden(t *testing.T) {
 	// Create a temporary test directory
 	tmpDir := t.TempDir()
-	oldWd, _ := os.Getwd()
-	os.Chdir(tmpDir)
-	defer os.Chdir(oldWd)
+	t.Chdir(tmpDir)
 
 	// Create testdata directory and file
 	os.MkdirAll("testdata", 0o755)

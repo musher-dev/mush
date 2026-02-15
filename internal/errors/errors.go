@@ -214,7 +214,7 @@ func ConfigFailed(operation string, cause error) *CLIError {
 func JobNotFound(jobID string) *CLIError {
 	return &CLIError{
 		Message: fmt.Sprintf("Job not found: %s", jobID),
-		Hint:    "The job may have been completed, cancelled, or the ID is incorrect",
+		Hint:    "The job may have been completed, canceled, or the ID is incorrect",
 		Code:    ExitGeneral,
 	}
 }

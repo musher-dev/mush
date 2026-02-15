@@ -19,6 +19,14 @@ linters:
     - bodyclose       # HTTP response body closure
     - noctx           # HTTP requests with context
     - gocritic        # Additional checks
+    - depguard        # Import boundary enforcement
+    - forbidigo       # Enforce output abstraction usage
+    - gosec           # Security vulnerability detection
+    - errorlint       # Error wrapping correctness (Go 1.13+)
+    - misspell        # Spelling errors in comments/strings
+    - unconvert       # Unnecessary type conversions
+    - nilerr          # Nil error return detection
+    - usetesting      # Modern testing package patterns
   settings:
     govet:
       enable:
@@ -47,19 +55,76 @@ linters:
         - diagnostic
         - style
         - performance
+    depguard:
+      rules:
+        internal_no_cmd_import:
+          files:
+            - internal/**/*.go
+          deny:
+            - pkg: github.com/musher-dev/mush/cmd/mush
+              desc: internal packages must not import cmd/mush
+        platform_no_presentation:
+          files:
+            - internal/client/**/*.go
+            - internal/auth/**/*.go
+            - internal/config/**/*.go
+            - internal/update/**/*.go
+            - internal/claude/**/*.go
+            - internal/linking/**/*.go
+            - internal/errors/**/*.go
+            - internal/buildinfo/**/*.go
+            - internal/terminal/**/*.go
+          deny:
+            - pkg: github.com/musher-dev/mush/internal/output
+              desc: platform/core packages must not depend on output
+            - pkg: github.com/musher-dev/mush/internal/prompt
+              desc: platform/core packages must not depend on prompt
+        doctor_no_output:
+          files:
+            - internal/doctor/**/*.go
+          deny:
+            - pkg: github.com/musher-dev/mush/internal/output
+              desc: doctor package must remain output-agnostic
+    forbidigo:
+      analyze-types: true
+      forbid:
+        - pattern: ^fmt\.Print(ln)?$
+          msg: "use output.Writer.Print() or Println() instead"
+        - pattern: ^fmt\.Printf$
+          msg: "use output.Writer.Print() instead"
+        - pattern: ^log\.(Print|Fatal|Panic)(ln|f)?$
+          msg: "use output.Writer instead of log package"
+    gosec:
+      excludes:
+        - G104        # Redundant with errcheck linter
+      config:
+        global:
+          nosec: true
+    errorlint:
+      errorf: true
+      errorf-multi: true
+      asserts: true
+      comparison: true
+    misspell:
+      locale: "US"
+    usetesting:
+      os-create-temp: true
+      os-mkdir-temp: true
+      os-setenv: true
+      os-temp-dir: true
+      os-chdir: true
+      context-background: true
+      context-todo: true
   exclusions:
-    paths:
-      - .tools
-      - .cache
     rules:
       # Test files can have unchecked errors
       - path: _test\.go
         linters:
           - errcheck
-      # Allow fmt.Print* in main package for CLI output
-      - path: cmd/mush/
+      # Test files use relaxed permissions and subprocess patterns
+      - path: _test\.go
         linters:
-          - forbidigo
+          - gosec
 
 formatters:
   enable:

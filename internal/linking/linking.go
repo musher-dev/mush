@@ -9,7 +9,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/musher-dev/mush/internal/client"
-	"github.com/musher-dev/mush/internal/output"
 )
 
 const (
@@ -68,8 +67,9 @@ func Register(
 	return resp.LinkID, nil
 }
 
-// StartHeartbeat sends periodic link heartbeats until the context is cancelled.
-func StartHeartbeat(ctx context.Context, c *client.Client, linkID string, currentJobID func() string, out *output.Writer) {
+// StartHeartbeat sends periodic link heartbeats until the context is canceled.
+// If onError is non-nil, it is called whenever a heartbeat attempt fails.
+func StartHeartbeat(ctx context.Context, c *client.Client, linkID string, currentJobID func() string, onError func(error)) {
 	if linkID == "" {
 		return
 	}
@@ -87,7 +87,9 @@ func StartHeartbeat(ctx context.Context, c *client.Client, linkID string, curren
 					jobID = currentJobID()
 				}
 				if _, err := c.HeartbeatLink(ctx, linkID, jobID); err != nil {
-					out.Debug("Link heartbeat failed: %v", err)
+					if onError != nil {
+						onError(err)
+					}
 				}
 			}
 		}
@@ -95,9 +97,9 @@ func StartHeartbeat(ctx context.Context, c *client.Client, linkID string, curren
 }
 
 // Deregister gracefully disconnects a link.
-func Deregister(c *client.Client, linkID string, completed, failed int, out *output.Writer) {
+func Deregister(c *client.Client, linkID string, completed, failed int) error {
 	if linkID == "" {
-		return
+		return nil
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -110,8 +112,8 @@ func Deregister(c *client.Client, linkID string, completed, failed int, out *out
 	}
 
 	if err := c.DeregisterLink(ctx, linkID, req); err != nil {
-		out.Warning("Failed to deregister link: %v", err)
-	} else {
-		out.Print("Link deregistered: %s\n", linkID)
+		return fmt.Errorf("deregister link %s: %w", linkID, err)
 	}
+
+	return nil
 }

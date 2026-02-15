@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -56,7 +55,7 @@ func TestLinkDryRun_SucceedsWithoutTTY(t *testing.T) {
 
 	cmd := newLinkCmd()
 	cmd.SetArgs([]string{"--dry-run", "--habitat", "local", "--queue-id", "q-1"})
-	ctx := out.WithContext(context.Background())
+	ctx := out.WithContext(t.Context())
 	cmd.SetContext(ctx)
 
 	err := cmd.Execute()
@@ -79,7 +78,7 @@ func TestLinkNoDryRun_RequiresTTY(t *testing.T) {
 
 	cmd := newLinkCmd()
 	cmd.SetArgs([]string{"--habitat", "local", "--queue-id", "q-1"})
-	ctx := out.WithContext(context.Background())
+	ctx := out.WithContext(t.Context())
 	cmd.SetContext(ctx)
 
 	err := cmd.Execute()
@@ -125,7 +124,7 @@ func TestLinkDryRun_PrintsMCPServers(t *testing.T) {
 
 	cmd := newLinkCmd()
 	cmd.SetArgs([]string{"--dry-run", "--habitat", "local", "--queue-id", "q-1", "--agent", "claude"})
-	ctx := out.WithContext(context.Background())
+	ctx := out.WithContext(t.Context())
 	cmd.SetContext(ctx)
 
 	if err := cmd.Execute(); err != nil {
@@ -152,7 +151,7 @@ func TestLinkDryRun_BashAgentOmitsMCPServers(t *testing.T) {
 
 	cmd := newLinkCmd()
 	cmd.SetArgs([]string{"--dry-run", "--habitat", "local", "--queue-id", "q-1", "--agent", "bash"})
-	ctx := out.WithContext(context.Background())
+	ctx := out.WithContext(t.Context())
 	cmd.SetContext(ctx)
 
 	if err := cmd.Execute(); err != nil {
@@ -177,7 +176,7 @@ func TestResolveQueue_WithFlag(t *testing.T) {
 	c := client.New(server.URL, "test-key")
 	out := output.NewWriter(io.Discard, io.Discard, &terminal.Info{})
 
-	queue, err := resolveQueue(context.Background(), c, "hab-1", "q-1", out)
+	queue, err := resolveQueue(t.Context(), c, "hab-1", "q-1", out)
 	if err != nil {
 		t.Fatalf("resolveQueue returned error: %v", err)
 	}
@@ -195,7 +194,7 @@ func TestResolveQueue_WithInvalidFlag(t *testing.T) {
 	c := client.New(server.URL, "test-key")
 	out := output.NewWriter(io.Discard, io.Discard, &terminal.Info{})
 
-	_, err := resolveQueue(context.Background(), c, "hab-1", "q-missing", out)
+	_, err := resolveQueue(t.Context(), c, "hab-1", "q-missing", out)
 	if err == nil {
 		t.Fatal("expected error for missing queue flag")
 	}
@@ -210,7 +209,7 @@ func TestResolveQueue_NoQueuesForHabitat(t *testing.T) {
 	c := client.New(server.URL, "test-key")
 	out := output.NewWriter(io.Discard, io.Discard, &terminal.Info{})
 
-	_, err := resolveQueue(context.Background(), c, "hab-1", "", out)
+	_, err := resolveQueue(t.Context(), c, "hab-1", "", out)
 	if err == nil {
 		t.Fatal("expected no queues error")
 	}
@@ -226,7 +225,7 @@ func TestResolveQueue_AutoSelectSingle(t *testing.T) {
 	out := output.NewWriter(io.Discard, io.Discard, &terminal.Info{})
 	out.NoInput = true
 
-	queue, err := resolveQueue(context.Background(), c, "hab-1", "", out)
+	queue, err := resolveQueue(t.Context(), c, "hab-1", "", out)
 	if err != nil {
 		t.Fatalf("resolveQueue returned error: %v", err)
 	}
@@ -248,7 +247,7 @@ func TestResolveQueue_NoInputMultipleQueues(t *testing.T) {
 	out := output.NewWriter(io.Discard, io.Discard, &terminal.Info{})
 	out.NoInput = true
 
-	_, err := resolveQueue(context.Background(), c, "hab-1", "", out)
+	_, err := resolveQueue(t.Context(), c, "hab-1", "", out)
 	if err == nil {
 		t.Fatal("expected error for multiple queues in no-input mode")
 	}
@@ -271,7 +270,7 @@ func TestResolveHabitatID_AutoSelectSingle(t *testing.T) {
 	out := output.NewWriter(io.Discard, io.Discard, &terminal.Info{})
 	out.NoInput = true
 
-	id, err := resolveHabitatID(context.Background(), c, "", out)
+	id, err := resolveHabitatID(t.Context(), c, "", out)
 	if err != nil {
 		t.Fatalf("resolveHabitatID returned error: %v", err)
 	}
@@ -293,7 +292,7 @@ func TestResolveHabitatID_NoInputMultipleHabitats(t *testing.T) {
 	out := output.NewWriter(io.Discard, io.Discard, &terminal.Info{})
 	out.NoInput = true
 
-	_, err := resolveHabitatID(context.Background(), c, "", out)
+	_, err := resolveHabitatID(t.Context(), c, "", out)
 	if err == nil {
 		t.Fatal("expected error for multiple habitats in no-input mode")
 	}
