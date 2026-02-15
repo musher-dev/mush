@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.0](https://github.com/musher-dev/mush/compare/v1.3.0...v1.4.0) (2026-02-15)
+
+
+### Features
+
+* **harness:** add graceful Ctrl+C shutdown and PTY process group management ([#24](https://github.com/musher-dev/mush/issues/24)) ([5cb0cf5](https://github.com/musher-dev/mush/commit/5cb0cf5cddd8fed9bf2bfb2c2030261f51962103))
+
 ## [1.3.0](https://github.com/musher-dev/mush/compare/v1.2.0...v1.3.0) (2026-02-15)
 
 
