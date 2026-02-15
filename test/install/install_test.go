@@ -740,7 +740,7 @@ exit 0
 		result := runScript(t, []string{"--version", "0.1.0", "--prefix", prefix, "--yes", "--install-tmux"}, []string{
 			"MUSH_INSTALL_BASE_URL=" + server.URL,
 			"MUSH_INSTALL_INSECURE=1",
-			"PATH=" + fakeBin + ":" + os.Getenv("PATH"),
+			"PATH=" + fakeBin + ":" + pathWithout(t, "tmux"),
 		})
 
 		if result.exitCode != 0 {
@@ -763,4 +763,33 @@ exit 0
 			t.Fatalf("expected fake tmux binary to be created: %v", err)
 		}
 	})
+}
+
+// pathWithout returns PATH with the named binary hidden. Directories that
+// contain the binary are replaced by shadow directories that symlink every
+// other entry, so all other tools (uname, sh, etc.) remain accessible.
+func pathWithout(t *testing.T, bin string) string {
+	t.Helper()
+	var dirs []string
+	for _, dir := range filepath.SplitList(os.Getenv("PATH")) {
+		if _, err := os.Stat(filepath.Join(dir, bin)); err != nil {
+			dirs = append(dirs, dir)
+			continue
+		}
+		// Create a shadow directory with symlinks to everything except bin.
+		shadow := t.TempDir()
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			dirs = append(dirs, dir)
+			continue
+		}
+		for _, e := range entries {
+			if e.Name() == bin {
+				continue
+			}
+			os.Symlink(filepath.Join(dir, e.Name()), filepath.Join(shadow, e.Name()))
+		}
+		dirs = append(dirs, shadow)
+	}
+	return strings.Join(dirs, string(os.PathListSeparator))
 }
