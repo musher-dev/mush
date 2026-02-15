@@ -33,6 +33,23 @@ Shutdown is hardened with a bounded lifecycle:
 3. If still running after a short deadline, `SIGKILL` is sent.
 4. Terminal state is restored and link deregistration is attempted before exit.
 
+## PTY Startup Notes and Troubleshooting
+
+Claude PTY startup uses `pty.StartWithSize`, which sets `setsid` and a controlling TTY.
+The harness does **not** set `setpgid` explicitly at startup, because that can conflict with
+session-leader rules and fail with `EPERM` before Claude executes.
+
+If startup fails with `fork/exec ... operation not permitted`, check:
+
+1. Claude path resolution:
+   - `which claude`
+2. Executable permissions:
+   - `ls -l "$(which claude)"`
+3. Filesystem mount options (Linux):
+   - `findmnt -no OPTIONS "$(dirname "$(which claude)")"` and verify it is not `noexec`
+4. Quarantine attributes (macOS):
+   - `xattr -l "$(which claude)"`
+
 ## Job Loop (High-Level)
 
 1. Validate we are in a TTY, enter raw mode, set up scroll region
