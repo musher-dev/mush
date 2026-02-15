@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.0](https://github.com/musher-dev/mush/compare/v1.4.0...v1.5.0) (2026-02-15)
+
+
+### Features
+
+* **harness:** improve PTY startup robustness and process group signal handling ([#26](https://github.com/musher-dev/mush/issues/26)) ([7de00e6](https://github.com/musher-dev/mush/commit/7de00e6f895c461a6ad44d5453ebb54ee5e11d4f))
+
 ## [1.4.0](https://github.com/musher-dev/mush/compare/v1.3.0...v1.4.0) (2026-02-15)
 
 
