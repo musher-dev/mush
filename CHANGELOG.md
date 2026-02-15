@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.0](https://github.com/musher-dev/mush/compare/v1.2.0...v1.3.0) (2026-02-15)
+
+
+### Features
+
+* **harness:** add live transcript streaming and improve harness ([#22](https://github.com/musher-dev/mush/issues/22)) ([85d0845](https://github.com/musher-dev/mush/commit/85d084524704b9fa0c5641da57482f8a2c758e01))
+
 ## [1.2.0](https://github.com/musher-dev/mush/compare/v1.1.0...v1.2.0) (2026-02-14)
 
 
