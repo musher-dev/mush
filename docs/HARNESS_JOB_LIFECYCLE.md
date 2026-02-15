@@ -15,6 +15,24 @@ Only one surface exists:
 
 There is no headless/daemon mode.
 
+## Operator Controls and Shutdown
+
+In watch mode, terminal input is read in raw mode and handled locally by the harness:
+
+- `Ctrl+C` with an active Claude job:
+  1. First press sends an interrupt to Claude.
+  2. Second press within 2 seconds exits the harness.
+- `Ctrl+C` when no Claude job is active: exits immediately.
+- `Ctrl+Q`: exits immediately.
+- `Ctrl+S`: toggles copy mode (Esc returns to live mode).
+
+Shutdown is hardened with a bounded lifecycle:
+
+1. Command context cancellation propagates into harness shutdown.
+2. Claude PTY process group gets `SIGTERM` first (graceful attempt).
+3. If still running after a short deadline, `SIGKILL` is sent.
+4. Terminal state is restored and link deregistration is attempted before exit.
+
 ## Job Loop (High-Level)
 
 1. Validate we are in a TTY, enter raw mode, set up scroll region
