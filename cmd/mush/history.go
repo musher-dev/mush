@@ -91,11 +91,12 @@ func newHistoryViewCmd() *cobra.Command {
 			}()
 
 			var lastSeq uint64
-			for {
-				events, err := transcript.ReadEvents(dir, sessionID)
-				if err != nil {
+			events, err := transcript.ReadEvents(dir, sessionID)
+			if err != nil {
+				if !follow {
 					return err
 				}
+			} else {
 				for _, ev := range events {
 					if ev.Seq <= lastSeq {
 						continue
@@ -111,8 +112,32 @@ func newHistoryViewCmd() *cobra.Command {
 					out.Print("%s\n", strings.TrimRight(line, "\n"))
 					lastSeq = ev.Seq
 				}
-				if !follow {
-					return nil
+			}
+			if !follow {
+				return nil
+			}
+
+			var liveOffset int64
+			for {
+				liveEvents, nextOffset, err := transcript.ReadLiveEventsFrom(dir, sessionID, liveOffset)
+				if err != nil {
+					return err
+				}
+				liveOffset = nextOffset
+				for _, ev := range liveEvents {
+					if ev.Seq <= lastSeq {
+						continue
+					}
+					line := ev.Text
+					if !raw {
+						line = ansi.Strip(line)
+					}
+					if search != "" && !strings.Contains(strings.ToLower(line), strings.ToLower(search)) {
+						lastSeq = ev.Seq
+						continue
+					}
+					out.Print("%s\n", strings.TrimRight(line, "\n"))
+					lastSeq = ev.Seq
 				}
 
 				select {

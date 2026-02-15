@@ -114,8 +114,9 @@ type RootModel struct {
 	transcriptMu    sync.Mutex
 
 	// Input mode state.
-	inputMu  sync.Mutex
-	copyMode bool
+	inputMu        sync.Mutex
+	copyMode       bool
+	copyEscPending bool
 
 	// Status bar state
 	statusMu      sync.Mutex
@@ -470,6 +471,9 @@ func (m *RootModel) setCopyMode(enabled bool) {
 	m.inputMu.Lock()
 	changed := m.copyMode != enabled
 	m.copyMode = enabled
+	if !enabled {
+		m.copyEscPending = false
+	}
 	m.inputMu.Unlock()
 	if changed {
 		m.drawStatusBar()
@@ -480,6 +484,20 @@ func (m *RootModel) isCopyMode() bool {
 	m.inputMu.Lock()
 	defer m.inputMu.Unlock()
 	return m.copyMode
+}
+
+func (m *RootModel) setCopyEscPending(pending bool) {
+	m.inputMu.Lock()
+	m.copyEscPending = pending
+	m.inputMu.Unlock()
+}
+
+func (m *RootModel) popCopyEscPending() bool {
+	m.inputMu.Lock()
+	defer m.inputMu.Unlock()
+	pending := m.copyEscPending
+	m.copyEscPending = false
+	return pending
 }
 
 func clampTerminalSize(width, height int) (clampedWidth, clampedHeight int) {
@@ -956,6 +974,18 @@ func (m *RootModel) copyInput() {
 
 		// Check for local control keys first.
 		for i := 0; i < n; i++ {
+			if m.isCopyMode() && m.popCopyEscPending() {
+				if buf[i] == '[' || buf[i] == 'O' {
+					// This byte continues an escape sequence (e.g. arrow keys).
+					// Stay in copy mode and swallow this input.
+					buf[i] = 0
+					continue
+				}
+				// Previous ESC was standalone; exit copy mode and process
+				// this byte as normal input.
+				m.setCopyMode(false)
+			}
+
 			if buf[i] == ctrlQ { // Ctrl+Q
 				m.signalDone()
 				return
@@ -967,9 +997,14 @@ func (m *RootModel) copyInput() {
 				continue
 			}
 			if m.isCopyMode() {
-				// Esc exits copy mode; all other input is swallowed while in copy mode.
+				// Esc exits copy mode unless it prefixes a terminal escape sequence
+				// like arrows/function keys.
 				if buf[i] == esc {
-					m.setCopyMode(false)
+					if i+1 < n && (buf[i+1] == '[' || buf[i+1] == 'O') {
+						buf[i] = 0
+						continue
+					}
+					m.setCopyEscPending(true)
 				}
 				buf[i] = 0
 			}

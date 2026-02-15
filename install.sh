@@ -320,6 +320,7 @@ install_tmux() {
 
   case "$pm" in
     brew)
+      # Homebrew installs for the current user and should not be run via sudo.
       brew install tmux
       ;;
     apt-get)

@@ -2,6 +2,7 @@ package transcript
 
 import (
 	"bufio"
+	"bytes"
 	"compress/gzip"
 	"encoding/base64"
 	"encoding/json"
@@ -20,6 +21,7 @@ const (
 	defaultLines          = 10000
 	defaultRetentionHours = 24 * 30
 	eventsFileName        = "events.jsonl.gz"
+	eventsLiveFileName    = "events.live.jsonl"
 	metaFileName          = "meta.json"
 )
 
@@ -47,7 +49,7 @@ type StoreOptions struct {
 	MaxLines  int
 }
 
-// Store writes compressed JSONL transcript events and keeps an in-memory ring.
+// Store writes transcript events to compressed and live JSONL files and keeps an in-memory ring.
 type Store struct {
 	mu sync.Mutex
 
@@ -57,10 +59,11 @@ type Store struct {
 	seq       uint64
 	startedAt time.Time
 
-	file *os.File
-	gz   *gzip.Writer
-	bw   *bufio.Writer
-	enc  *json.Encoder
+	file     *os.File
+	gz       *gzip.Writer
+	bw       *bufio.Writer
+	liveFile *os.File
+	liveBW   *bufio.Writer
 
 	lines       []string
 	lineStart   int
@@ -99,9 +102,15 @@ func NewStore(opts StoreOptions) (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open transcript events: %w", err)
 	}
+	liveFile, err := os.OpenFile(filepath.Join(sessionDir, eventsLiveFileName), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600) //nolint:gosec // sessionDir/sessionID are validated and controlled
+	if err != nil {
+		_ = f.Close()
+		return nil, fmt.Errorf("open live transcript events: %w", err)
+	}
 
 	gz := gzip.NewWriter(f)
 	bw := bufio.NewWriterSize(gz, 64*1024)
+	liveBW := bufio.NewWriterSize(liveFile, 64*1024)
 
 	s := &Store{
 		sessionID: opts.SessionID,
@@ -111,7 +120,8 @@ func NewStore(opts StoreOptions) (*Store, error) {
 		file:      f,
 		gz:        gz,
 		bw:        bw,
-		enc:       json.NewEncoder(bw),
+		liveFile:  liveFile,
+		liveBW:    liveBW,
 		lines:     make([]string, maxLines),
 	}
 
@@ -165,8 +175,19 @@ func (s *Store) Append(stream string, chunk []byte) error {
 		RawBase64: base64.StdEncoding.EncodeToString(chunk),
 		Text:      text,
 	}
-	if err := s.enc.Encode(&ev); err != nil {
+	line, err := json.Marshal(&ev)
+	if err != nil {
+		return fmt.Errorf("marshal transcript event: %w", err)
+	}
+	line = append(line, '\n')
+	if _, err := s.bw.Write(line); err != nil {
 		return fmt.Errorf("encode transcript event: %w", err)
+	}
+	if _, err := s.liveBW.Write(line); err != nil {
+		return fmt.Errorf("encode live transcript event: %w", err)
+	}
+	if err := s.liveBW.Flush(); err != nil {
+		return fmt.Errorf("flush live transcript event: %w", err)
 	}
 
 	s.appendLinesLocked(text)
@@ -228,15 +249,21 @@ func (s *Store) Close() error {
 	s.closed = true
 
 	now := time.Now().UTC()
-	_ = s.writeMeta(&Meta{
+	var errs []error
+	if err := s.writeMeta(&Meta{
 		SessionID: s.sessionID,
 		StartedAt: s.startedAt,
 		ClosedAt:  &now,
-	})
-
-	var errs []error
+	}); err != nil {
+		errs = append(errs, err)
+	}
 	if s.bw != nil {
 		if err := s.bw.Flush(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if s.liveBW != nil {
+		if err := s.liveBW.Flush(); err != nil {
 			errs = append(errs, err)
 		}
 	}
@@ -247,6 +274,11 @@ func (s *Store) Close() error {
 	}
 	if s.file != nil {
 		if err := s.file.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if s.liveFile != nil {
+		if err := s.liveFile.Close(); err != nil {
 			errs = append(errs, err)
 		}
 	}
@@ -361,6 +393,82 @@ func ReadEvents(rootDir, sessionID string) (events []Event, err error) {
 	return events, nil
 }
 
+// ReadLiveEventsFrom reads live transcript events from a byte offset in the append-only JSONL file.
+func ReadLiveEventsFrom(rootDir, sessionID string, offset int64) (events []Event, nextOffset int64, err error) {
+	if sessionID == "" {
+		return nil, offset, errors.New("session id is required")
+	}
+	if validateErr := validateSessionID(sessionID); validateErr != nil {
+		return nil, offset, validateErr
+	}
+	if offset < 0 {
+		return nil, offset, errors.New("offset must be >= 0")
+	}
+	if rootDir == "" {
+		var resolveErr error
+		rootDir, resolveErr = DefaultDir()
+		if resolveErr != nil {
+			return nil, offset, resolveErr
+		}
+	}
+
+	path := filepath.Join(rootDir, sessionID, eventsLiveFileName)
+	f, err := os.Open(path) //nolint:gosec // controlled path
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, offset, nil
+		}
+		return nil, offset, err
+	}
+	defer func() {
+		if closeErr := f.Close(); closeErr != nil && err == nil {
+			err = closeErr
+		}
+	}()
+
+	stat, err := f.Stat()
+	if err != nil {
+		return nil, offset, err
+	}
+	if offset > stat.Size() {
+		offset = stat.Size()
+	}
+	if _, err := f.Seek(offset, io.SeekStart); err != nil {
+		return nil, offset, err
+	}
+
+	br := bufio.NewReaderSize(f, 64*1024)
+	nextOffset = offset
+	for {
+		line, readErr := br.ReadBytes('\n')
+		if len(line) > 0 {
+			// An unterminated trailing line can appear if we race with a writer;
+			// keep offset at the prior safe position and retry on the next poll.
+			if line[len(line)-1] != '\n' {
+				break
+			}
+
+			nextOffset += int64(len(line))
+			trimmed := bytes.TrimSpace(line)
+			if len(trimmed) > 0 {
+				var ev Event
+				if err := json.Unmarshal(trimmed, &ev); err == nil {
+					events = append(events, ev)
+				}
+			}
+		}
+
+		if readErr != nil {
+			if errors.Is(readErr, io.EOF) {
+				break
+			}
+			return events, nextOffset, readErr
+		}
+	}
+
+	return events, nextOffset, nil
+}
+
 // PruneOlderThan removes session directories older than the cutoff.
 func PruneOlderThan(rootDir string, cutoff time.Time) (int, error) {
 	sessions, err := ListSessions(rootDir)
@@ -397,7 +505,7 @@ func validateSessionID(sessionID string) error {
 	if sessionID == "" {
 		return errors.New("session id is required")
 	}
-	if sessionID != filepath.Base(sessionID) || strings.Contains(sessionID, "..") {
+	if sessionID != filepath.Base(sessionID) || strings.Contains(sessionID, "..") || strings.ContainsAny(sessionID, `/\`) {
 		return errors.New("invalid session id")
 	}
 	return nil

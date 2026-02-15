@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -25,17 +26,7 @@ func (f *fakeSource) ListReleases(context.Context, selfupdate.Repository) ([]sel
 }
 
 func (f *fakeSource) DownloadReleaseAsset(context.Context, *selfupdate.Release, int64) (io.ReadCloser, error) {
-	return io.NopCloser(stringsReader("")), nil
-}
-
-type stringsReader string
-
-func (s stringsReader) Read(p []byte) (int, error) {
-	if len(s) == 0 {
-		return 0, io.EOF
-	}
-	n := copy(p, s)
-	return n, io.EOF
+	return io.NopCloser(strings.NewReader("")), nil
 }
 
 type fakeRelease struct {

@@ -1,6 +1,8 @@
 package transcript
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -43,6 +45,17 @@ func TestStoreAppendReadAndList(t *testing.T) {
 	}
 	if len(evs) != 2 {
 		t.Fatalf("ReadEvents len = %d, want 2", len(evs))
+	}
+
+	live, nextOffset, err := ReadLiveEventsFrom(tmp, "s-1", 0)
+	if err != nil {
+		t.Fatalf("ReadLiveEventsFrom() error = %v", err)
+	}
+	if len(live) != 2 {
+		t.Fatalf("ReadLiveEventsFrom len = %d, want 2", len(live))
+	}
+	if nextOffset <= 0 {
+		t.Fatalf("ReadLiveEventsFrom nextOffset = %d, want > 0", nextOffset)
 	}
 
 	list, err := ListSessions(tmp)
@@ -95,5 +108,80 @@ func TestPruneOlderThan(t *testing.T) {
 	if _, err = ReadEvents(tmp, "old"); err == nil {
 		// best effort sanity: folder should be gone.
 		t.Fatalf("expected old session to be removed")
+	}
+}
+
+func TestReadLiveEventsFromOffset(t *testing.T) {
+	tmp := t.TempDir()
+	s, err := NewStore(StoreOptions{SessionID: "offset", Dir: tmp})
+	if err != nil {
+		t.Fatalf("NewStore() error = %v", err)
+	}
+	defer func() {
+		_ = s.Close()
+	}()
+
+	err = s.Append("pty", []byte("one\n"))
+	if err != nil {
+		t.Fatalf("Append one error = %v", err)
+	}
+	first, offset, err := ReadLiveEventsFrom(tmp, "offset", 0)
+	if err != nil {
+		t.Fatalf("ReadLiveEventsFrom first error = %v", err)
+	}
+	if len(first) != 1 {
+		t.Fatalf("first len = %d, want 1", len(first))
+	}
+
+	err = s.Append("pty", []byte("two\n"))
+	if err != nil {
+		t.Fatalf("Append two error = %v", err)
+	}
+	second, nextOffset, err := ReadLiveEventsFrom(tmp, "offset", offset)
+	if err != nil {
+		t.Fatalf("ReadLiveEventsFrom second error = %v", err)
+	}
+	if len(second) != 1 {
+		t.Fatalf("second len = %d, want 1", len(second))
+	}
+	if second[0].Text != "two\n" {
+		t.Fatalf("second[0].Text = %q, want %q", second[0].Text, "two\n")
+	}
+	if nextOffset <= offset {
+		t.Fatalf("nextOffset = %d, want > %d", nextOffset, offset)
+	}
+}
+
+func TestValidateSessionIDRejectsSeparators(t *testing.T) {
+	tests := []string{
+		"../bad",
+		"bad/child",
+		`bad\child`,
+	}
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc, func(t *testing.T) {
+			if err := validateSessionID(tc); err == nil {
+				t.Fatalf("validateSessionID(%q) expected error", tc)
+			}
+		})
+	}
+}
+
+func TestReadLiveEventsFromMissingFileReturnsEmpty(t *testing.T) {
+	tmp := t.TempDir()
+	dir := filepath.Join(tmp, "missing")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatalf("MkdirAll error = %v", err)
+	}
+	events, offset, err := ReadLiveEventsFrom(tmp, "missing", 0)
+	if err != nil {
+		t.Fatalf("ReadLiveEventsFrom error = %v", err)
+	}
+	if len(events) != 0 {
+		t.Fatalf("events len = %d, want 0", len(events))
+	}
+	if offset != 0 {
+		t.Fatalf("offset = %d, want 0", offset)
 	}
 }

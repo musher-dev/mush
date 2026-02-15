@@ -6,18 +6,30 @@ import "strings"
 func Strip(s string) string {
 	var b strings.Builder
 	inEscape := false
+	var escBuf []rune
 	for _, r := range s {
-		if r == '\x1b' {
-			inEscape = true
-			continue
-		}
-		if inEscape {
-			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
-				inEscape = false
+		if !inEscape {
+			if r == '\x1b' {
+				inEscape = true
+				escBuf = escBuf[:0]
+				escBuf = append(escBuf, r)
+				continue
 			}
+			b.WriteRune(r)
 			continue
 		}
-		b.WriteRune(r)
+
+		escBuf = append(escBuf, r)
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
+			inEscape = false
+			escBuf = escBuf[:0]
+		}
+		continue
+	}
+	if inEscape {
+		for _, r := range escBuf {
+			b.WriteRune(r)
+		}
 	}
 	return b.String()
 }
