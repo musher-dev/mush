@@ -5,6 +5,7 @@
 # Options:
 #   --version VERSION   Install a specific version (default: latest)
 #   --prefix DIR        Install to DIR/bin (default: ~/.local)
+#   --install-tmux      Install tmux if missing (opt-in)
 #   --yes, -y           Skip confirmation prompts
 #   --help, -h          Show this help message
 
@@ -55,6 +56,7 @@ yellow() {
 VERSION=""
 PREFIX=""
 YES=false
+INSTALL_TMUX=false
 
 usage() {
   cat <<EOF
@@ -66,6 +68,7 @@ Usage:
 Options:
   --version VERSION   Install a specific version (default: latest)
   --prefix DIR        Install to DIR/bin (default: ~/.local)
+  --install-tmux      Install tmux if missing (opt-in)
   --yes, -y           Skip confirmation prompts
   --help, -h          Show this help message
 
@@ -78,6 +81,9 @@ Examples:
 
   # Install to custom location
   curl -sSL https://raw.githubusercontent.com/musher-dev/mush/main/install.sh | sh -s -- --prefix /usr/local
+
+  # Install latest and also install tmux if missing
+  curl -sSL https://raw.githubusercontent.com/musher-dev/mush/main/install.sh | sh -s -- --install-tmux
 EOF
 }
 
@@ -95,6 +101,10 @@ while [ $# -gt 0 ]; do
       ;;
     --yes | -y)
       YES=true
+      shift
+      ;;
+    --install-tmux)
+      INSTALL_TMUX=true
       shift
       ;;
     --help | -h)
@@ -248,6 +258,97 @@ maybe_sudo() {
   fi
 }
 
+# ── tmux helpers ─────────────────────────────────────────────────────────────
+
+has_tmux() {
+  command -v tmux > /dev/null 2>&1
+}
+
+detect_pkg_manager() {
+  if command -v brew > /dev/null 2>&1; then
+    echo "brew"
+    return
+  fi
+  if command -v apt-get > /dev/null 2>&1; then
+    echo "apt-get"
+    return
+  fi
+  if command -v dnf > /dev/null 2>&1; then
+    echo "dnf"
+    return
+  fi
+  if command -v yum > /dev/null 2>&1; then
+    echo "yum"
+    return
+  fi
+  if command -v pacman > /dev/null 2>&1; then
+    echo "pacman"
+    return
+  fi
+  if command -v zypper > /dev/null 2>&1; then
+    echo "zypper"
+    return
+  fi
+  if command -v apk > /dev/null 2>&1; then
+    echo "apk"
+    return
+  fi
+}
+
+package_install_sudo_prefix() {
+  if [ "$(id -u)" -eq 0 ]; then
+    return
+  fi
+  if command -v sudo > /dev/null 2>&1; then
+    echo "sudo"
+    return
+  fi
+  err "Installing tmux requires elevated privileges but sudo is not available"
+}
+
+install_tmux() {
+  if has_tmux; then
+    say "tmux is already installed."
+    return
+  fi
+
+  pm="$(detect_pkg_manager)"
+  [ -n "${pm:-}" ] || err "tmux requested but no supported package manager found (supported: brew, apt-get, dnf, yum, pacman, zypper, apk)"
+
+  sudo_cmd="$(package_install_sudo_prefix)"
+  say "Installing tmux using ${pm}..."
+
+  case "$pm" in
+    brew)
+      brew install tmux
+      ;;
+    apt-get)
+      ${sudo_cmd} apt-get update
+      ${sudo_cmd} apt-get install -y tmux
+      ;;
+    dnf)
+      ${sudo_cmd} dnf install -y tmux
+      ;;
+    yum)
+      ${sudo_cmd} yum install -y tmux
+      ;;
+    pacman)
+      ${sudo_cmd} pacman -Sy --noconfirm tmux
+      ;;
+    zypper)
+      ${sudo_cmd} zypper --non-interactive install tmux
+      ;;
+    apk)
+      ${sudo_cmd} apk add tmux
+      ;;
+    *)
+      err "Unsupported package manager: ${pm}"
+      ;;
+  esac
+
+  has_tmux || err "tmux installation reported success but tmux is still not found in PATH"
+}
+
 # ── PATH check ───────────────────────────────────────────────────────────────
 
 check_path() {
@@ -343,6 +444,10 @@ main() {
   SUDO="$(maybe_sudo "$BIN_DIR")"
   mkdir -p "$BIN_DIR" 2>/dev/null || ${SUDO} mkdir -p "$BIN_DIR"
   ${SUDO} install -m 755 "${TMP_DIR}/${BINARY}" "${BIN_DIR}/${BINARY}"
+
+  if [ "$INSTALL_TMUX" = true ]; then
+    install_tmux
+  fi
 
   say ""
   green "Successfully installed mush ${TAG} to ${BIN_DIR}/${BINARY}"

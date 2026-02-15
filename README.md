@@ -13,6 +13,9 @@ curl -sSL https://raw.githubusercontent.com/musher-dev/mush/main/install.sh | sh
 # Install a specific version
 curl -sSL https://raw.githubusercontent.com/musher-dev/mush/main/install.sh | sh -s -- --version 0.2.0
 
+# Install and also install tmux if missing (opt-in)
+curl -sSL https://raw.githubusercontent.com/musher-dev/mush/main/install.sh | sh -s -- --install-tmux
+
 # From source
 go install github.com/musher-dev/mush/cmd/mush@latest
 ```
