@@ -4,7 +4,6 @@ package main
 
 import (
 	"context"
-	"os"
 	"os/signal"
 	"slices"
 	"strings"
@@ -49,7 +48,8 @@ Agent Types:
   --agent bash    Only handle Bash script jobs
   (default)       Handle all supported agent types
 
-Press Ctrl+Q to exit the watch UI.
+Press Ctrl+C once to interrupt Claude; press Ctrl+C again quickly to exit.
+Press Ctrl+Q to exit the watch UI immediately.
 Press Ctrl+S to toggle copy mode (Esc to return to live input).
 
 Examples:
@@ -185,27 +185,20 @@ Examples:
 				}
 			}
 
-			// Setup graceful shutdown
-			ctx, cancel := context.WithCancel(cmd.Context())
-			defer cancel()
-
-			sigCh := make(chan os.Signal, 1)
-			signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-			defer signal.Stop(sigCh)
-
-			go func() {
-				select {
-				case <-sigCh:
-					out.Println()
-					out.Info("Received shutdown signal...")
-					cancel()
-				case <-ctx.Done():
-					// Context canceled elsewhere (e.g. Ctrl+Q exit); avoid goroutine leak.
-				}
-			}()
+			// Setup graceful shutdown.
+			ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
+			defer stop()
 
 			out.Println()
-			return runWatchLink(ctx, c, habitatID, queueID, supportedAgents, runnerConfig)
+			err = runWatchLink(ctx, c, habitatID, queueID, supportedAgents, runnerConfig)
+			if err != nil {
+				return err
+			}
+			if cmd.Context().Err() == nil && ctx.Err() != nil {
+				out.Println()
+				out.Info("Received shutdown signal...")
+			}
+			return nil
 		},
 	}
 

@@ -84,7 +84,13 @@ const StatusBarHeight = 2
 const (
 	ctrlQ = 0x11
 	ctrlS = 0x13
+	ctrlC = 0x03
 	esc   = 0x1b
+)
+
+const (
+	defaultCtrlCExitWindow     = 2 * time.Second
+	defaultPTYShutdownDeadline = 3 * time.Second
 )
 
 // RootModel manages the harness state with scroll region approach.
@@ -117,6 +123,7 @@ type RootModel struct {
 	inputMu        sync.Mutex
 	copyMode       bool
 	copyEscPending bool
+	lastCtrlCAt    time.Time
 
 	// Status bar state
 	statusMu      sync.Mutex
@@ -171,6 +178,11 @@ type RootModel struct {
 	lastErrorTime   time.Time     // Time of the last error
 	heartbeatCtx    context.Context
 	heartbeatCancel context.CancelFunc
+
+	// Time and lifecycle behavior knobs (defaulted in constructor; injectable in tests).
+	now                 func() time.Time
+	ctrlCExitWindow     time.Duration
+	ptyShutdownDeadline time.Duration
 }
 
 type lockedWriter struct {
@@ -205,25 +217,28 @@ func NewRootModel(ctx context.Context, cfg *Config) *RootModel {
 	ctx, cancel := context.WithCancel(ctx)
 
 	return &RootModel{
-		ctx:               ctx,
-		cancel:            cancel,
-		status:            StatusConnecting,
-		lastHeartbeat:     time.Now(),
-		client:            cfg.Client,
-		cfg:               config.Load(),
-		habitatID:         cfg.HabitatID,
-		queueID:           cfg.QueueID,
-		supportedAgents:   cfg.SupportedAgents,
-		instanceID:        cfg.InstanceID,
-		runnerConfig:      cfg.RunnerConfig,
-		refreshInterval:   normalizeRefreshInterval(0),
-		done:              make(chan struct{}),
-		promptDetected:    make(chan struct{}, 1),
-		ptyReady:          make(chan *os.File, 4),
-		setPTYSize:        pty.Setsize,
-		transcriptEnabled: cfg.TranscriptEnabled,
-		transcriptDir:     cfg.TranscriptDir,
-		transcriptLines:   cfg.TranscriptLines,
+		ctx:                 ctx,
+		cancel:              cancel,
+		status:              StatusConnecting,
+		lastHeartbeat:       time.Now(),
+		client:              cfg.Client,
+		cfg:                 config.Load(),
+		habitatID:           cfg.HabitatID,
+		queueID:             cfg.QueueID,
+		supportedAgents:     cfg.SupportedAgents,
+		instanceID:          cfg.InstanceID,
+		runnerConfig:        cfg.RunnerConfig,
+		refreshInterval:     normalizeRefreshInterval(0),
+		done:                make(chan struct{}),
+		promptDetected:      make(chan struct{}, 1),
+		ptyReady:            make(chan *os.File, 4),
+		setPTYSize:          pty.Setsize,
+		transcriptEnabled:   cfg.TranscriptEnabled,
+		transcriptDir:       cfg.TranscriptDir,
+		transcriptLines:     cfg.TranscriptLines,
+		now:                 time.Now,
+		ctrlCExitWindow:     defaultCtrlCExitWindow,
+		ptyShutdownDeadline: defaultPTYShutdownDeadline,
 	}
 }
 
@@ -401,6 +416,16 @@ func (m *RootModel) Run() error {
 			m.runnerConfigRefreshLoop()
 		}()
 	}
+
+	// Ensure external context cancellation (SIGTERM/SIGINT at command layer) can
+	// always unblock Run() even when local input keys are not pressed.
+	go func() {
+		select {
+		case <-m.ctx.Done():
+			m.signalDone()
+		case <-m.done:
+		}
+	}()
 
 	// Wait for done signal
 	<-m.done
@@ -749,6 +774,7 @@ func (m *RootModel) startPTY() error {
 		args = append(args, "--mcp-config", m.mcpConfigPath)
 	}
 	cmd := exec.CommandContext(m.ctx, "claude", args...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Env = append(os.Environ(),
 		"TERM=xterm-256color",
 		"FORCE_COLOR=1",
@@ -793,10 +819,42 @@ func (m *RootModel) closePTY() {
 	if ptmx != nil {
 		_ = ptmx.Close()
 	}
-	if cmd != nil && cmd.Process != nil {
-		_ = cmd.Process.Kill()
-		_ = cmd.Wait()
+	if cmd == nil || cmd.Process == nil {
+		return
 	}
+
+	waitCh := make(chan error, 1)
+	go func() {
+		waitCh <- cmd.Wait()
+	}()
+
+	sendProcessGroupSignal(cmd.Process.Pid, syscall.SIGTERM)
+
+	shutdownDeadline := m.ptyShutdownDeadline
+	if shutdownDeadline <= 0 {
+		shutdownDeadline = defaultPTYShutdownDeadline
+	}
+
+	select {
+	case <-waitCh:
+		return
+	case <-time.After(shutdownDeadline):
+		sendProcessGroupSignal(cmd.Process.Pid, syscall.SIGKILL)
+		select {
+		case <-waitCh:
+		case <-time.After(shutdownDeadline):
+		}
+	}
+}
+
+func sendProcessGroupSignal(pid int, sig syscall.Signal) {
+	if pid <= 0 {
+		return
+	}
+	if err := syscall.Kill(-pid, sig); err == nil || errors.Is(err, syscall.ESRCH) {
+		return
+	}
+	_ = syscall.Kill(pid, sig)
 }
 
 func (m *RootModel) activePTY() *os.File {
@@ -990,6 +1048,14 @@ func (m *RootModel) copyInput() {
 				m.signalDone()
 				return
 			}
+			if buf[i] == ctrlC { // Ctrl+C
+				if m.handleCtrlC() {
+					return
+				}
+				// We already handled forwarding locally; do not write this byte twice.
+				buf[i] = 0
+				continue
+			}
 			if buf[i] == ctrlS { // Ctrl+S toggles copy mode
 				m.setCopyMode(!m.isCopyMode())
 				// Drop the key from forwarded data.
@@ -1024,6 +1090,56 @@ func (m *RootModel) copyInput() {
 			_, _ = ptmx.Write(out)
 		}
 	}
+}
+
+func (m *RootModel) handleCtrlC() bool {
+	// When Claude is not actively running a job in PTY, Ctrl+C exits immediately.
+	if !m.hasActiveClaudeJob() || m.activePTY() == nil {
+		m.signalDone()
+		return true
+	}
+
+	nowFn := m.now
+	if nowFn == nil {
+		nowFn = time.Now
+	}
+	now := nowFn()
+
+	window := m.ctrlCExitWindow
+	if window <= 0 {
+		window = defaultCtrlCExitWindow
+	}
+
+	m.inputMu.Lock()
+	last := m.lastCtrlCAt
+	secondPress := !last.IsZero() && now.Sub(last) <= window
+	if secondPress {
+		m.lastCtrlCAt = time.Time{}
+	} else {
+		m.lastCtrlCAt = now
+	}
+	m.inputMu.Unlock()
+
+	if secondPress {
+		m.infof("Second Ctrl+C received: exiting watch mode.")
+		m.signalDone()
+		return true
+	}
+
+	if ptmx := m.activePTY(); ptmx != nil {
+		_, _ = ptmx.Write([]byte{ctrlC})
+	}
+	m.infof("Interrupt sent to Claude. Press Ctrl+C again within %s to exit watch mode.", window.Round(time.Second))
+	return false
+}
+
+func (m *RootModel) hasActiveClaudeJob() bool {
+	m.jobMu.Lock()
+	defer m.jobMu.Unlock()
+	if m.currentJob == nil {
+		return false
+	}
+	return m.currentJob.GetAgentType() == "claude"
 }
 
 // updateStatusLoop periodically updates the status bar.
@@ -1171,6 +1287,9 @@ func (m *RootModel) processJob(job *client.Job) {
 		m.currentJob = nil
 		m.capturing = false
 		m.jobMu.Unlock()
+		m.inputMu.Lock()
+		m.lastCtrlCAt = time.Time{}
+		m.inputMu.Unlock()
 		m.statusMu.Lock()
 		m.status = StatusConnected
 		m.statusMu.Unlock()

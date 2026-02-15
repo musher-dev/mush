@@ -102,6 +102,15 @@ Linear Issue → Musher Queue → Mush (linked to habitat) → Claude Code → R
 6. **Heartbeat**: While executing, Mush sends heartbeats to maintain the lease
 7. **Complete**: Results are reported back to the platform
 
+## Watch Controls
+
+When running `mush link` in watch mode:
+
+- `Ctrl+C` during an active Claude job: first press sends interrupt to Claude; second press within 2s exits watch mode.
+- `Ctrl+C` while idle: exits watch mode immediately.
+- `Ctrl+Q`: exits watch mode immediately.
+- `Ctrl+S`: toggles copy mode (`Esc` returns to live input).
+
 ## Repository Structure
 
 ```
