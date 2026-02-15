@@ -174,6 +174,7 @@ Get started:
 	// Resource commands (noun-first)
 	rootCmd.AddCommand(newAuthCmd())
 	rootCmd.AddCommand(newConfigCmd())
+	rootCmd.AddCommand(newHistoryCmd())
 
 	// Utility commands
 	rootCmd.AddCommand(newInitCmd())

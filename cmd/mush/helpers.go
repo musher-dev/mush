@@ -7,6 +7,8 @@ import (
 	clierrors "github.com/musher-dev/mush/internal/errors"
 )
 
+var apiClientFactory = newAPIClient
+
 // newAPIClient creates an authenticated API client using stored credentials
 // and the configured API URL. Returns a CLIError if not authenticated.
 //

@@ -128,7 +128,7 @@ func newLinkStatusCmd() *cobra.Command {
 			out := output.FromContext(cmd.Context())
 
 			// Get credentials and create client
-			source, c, err := newAPIClient()
+			source, c, err := apiClientFactory()
 			if err != nil {
 				return err
 			}

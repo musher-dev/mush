@@ -10,6 +10,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -20,6 +21,17 @@ import (
 	"testing"
 	"time"
 )
+
+func requireLocalListener(t *testing.T) {
+	t.Helper()
+	lc := net.ListenConfig{}
+	ln, err := lc.Listen(t.Context(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Skipf("local listener not available in this environment: %v", err)
+		return
+	}
+	_ = ln.Close()
+}
 
 // scriptPath returns the absolute path to install.sh.
 func scriptPath(t *testing.T) string {
@@ -149,6 +161,7 @@ func makeFakeArchive(t *testing.T) (archiveData []byte, checksumHex string) {
 // newMockGitHub creates an httptest server that mimics GitHub releases.
 func newMockGitHub(t *testing.T, version string, archiveBytes []byte, checksumContent string) *httptest.Server {
 	t.Helper()
+	requireLocalListener(t)
 	tag := "v" + version
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
@@ -179,6 +192,31 @@ func fakeUname(t *testing.T, output string) string {
 		t.Fatalf("writing fake uname: %v", err)
 	}
 	return binDir
+}
+
+// fakeCommands creates executable stubs for command names in PATH and returns the directory.
+func fakeCommands(t *testing.T, names ...string) string {
+	t.Helper()
+	binDir := filepath.Join(t.TempDir(), "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatalf("creating bin dir: %v", err)
+	}
+	for _, name := range names {
+		path := filepath.Join(binDir, name)
+		script := "#!/bin/sh\nexit 0\n"
+		if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+			t.Fatalf("writing fake %s: %v", name, err)
+		}
+	}
+	return binDir
+}
+
+// writeExecutable writes an executable shell script file.
+func writeExecutable(t *testing.T, path, script string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatalf("writing executable %s: %v", path, err)
+	}
 }
 
 // hostArchiveName returns the archive name the install script would construct
@@ -254,6 +292,12 @@ func TestArgumentParsing(t *testing.T) {
 			wantExit:   0,
 			wantStdout: "Usage:",
 		},
+		{
+			name:       "install-tmux flag accepted",
+			args:       []string{"--install-tmux", "--help"},
+			wantExit:   0,
+			wantStdout: "Usage:",
+		},
 	}
 
 	for _, tt := range tests {
@@ -271,6 +315,59 @@ func TestArgumentParsing(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestDetectPkgManager(t *testing.T) {
+	tests := []struct {
+		name string
+		cmds []string
+		want string
+	}{
+		{name: "brew preferred", cmds: []string{"brew", "apt-get"}, want: "brew"},
+		{name: "apt-get", cmds: []string{"apt-get"}, want: "apt-get"},
+		{name: "dnf", cmds: []string{"dnf"}, want: "dnf"},
+		{name: "none", cmds: nil, want: ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := fakeCommands(t, tt.cmds...)
+			env := []string{"PATH=" + path}
+			result := runFunction(t, "detect_pkg_manager", env)
+
+			if result.exitCode != 0 {
+				t.Fatalf("exit code = %d, want 0\nstderr: %s", result.exitCode, result.stderr)
+			}
+			got := strings.TrimSpace(result.stdout)
+			if got != tt.want {
+				t.Fatalf("detect_pkg_manager = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestInstallTmux(t *testing.T) {
+	t.Run("already installed is no-op", func(t *testing.T) {
+		path := fakeCommands(t, "tmux")
+		result := runFunction(t, "install_tmux", []string{"PATH=" + path})
+		if result.exitCode != 0 {
+			t.Fatalf("exit code = %d, want 0\nstderr: %s", result.exitCode, result.stderr)
+		}
+		if !strings.Contains(result.stdout, "already installed") {
+			t.Fatalf("stdout = %q, expected already installed message", result.stdout)
+		}
+	})
+
+	t.Run("missing manager fails", func(t *testing.T) {
+		path := fakeCommands(t)
+		result := runFunction(t, "install_tmux", []string{"PATH=" + path})
+		if result.exitCode == 0 {
+			t.Fatal("expected non-zero exit code")
+		}
+		if !strings.Contains(result.stderr, "no supported package manager found") {
+			t.Fatalf("stderr = %q, expected no manager message", result.stderr)
+		}
+	})
 }
 
 // ── Group 2: Platform detection ────────────────────────────────────────────
@@ -343,6 +440,7 @@ func TestDetectArch(t *testing.T) {
 
 func TestResolveLatestVersion(t *testing.T) {
 	t.Run("follows redirect and extracts tag", func(t *testing.T) {
+		requireLocalListener(t)
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.URL.Path == "/releases/latest" {
 				http.Redirect(w, r, "/releases/tag/v1.2.3", http.StatusFound)
@@ -368,6 +466,7 @@ func TestResolveLatestVersion(t *testing.T) {
 	})
 
 	t.Run("server error", func(t *testing.T) {
+		requireLocalListener(t)
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
 		}))
@@ -565,6 +664,7 @@ func TestEndToEnd(t *testing.T) {
 	})
 
 	t.Run("download failure 404", func(t *testing.T) {
+		requireLocalListener(t)
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			http.NotFound(w, r)
 		}))
@@ -603,4 +703,93 @@ func TestEndToEnd(t *testing.T) {
 			t.Errorf("stdout missing PATH warning\ngot: %s", result.stdout)
 		}
 	})
+
+	t.Run("install tmux via --install-tmux", func(t *testing.T) {
+		archiveBytes, checksum := makeFakeArchive(t)
+		archiveName := hostArchiveName(t, "0.1.0")
+		checksumContent := fmt.Sprintf("%s  %s\n", checksum, archiveName)
+
+		server := newMockGitHub(t, "0.1.0", archiveBytes, checksumContent)
+		defer server.Close()
+
+		fakeBin := filepath.Join(t.TempDir(), "fake-bin")
+		if err := os.MkdirAll(fakeBin, 0o755); err != nil {
+			t.Fatalf("creating fake bin dir: %v", err)
+		}
+		marker := filepath.Join(t.TempDir(), "apt-get.log")
+		tmuxPath := filepath.Join(fakeBin, "tmux")
+
+		// sudo wrapper: execute command directly so PATH-prepended fake apt-get is used.
+		writeExecutable(t, filepath.Join(fakeBin, "sudo"), "#!/bin/sh\nexec \"$@\"\n")
+
+		// apt-get wrapper: record calls and create a fake tmux binary on install.
+		aptScript := fmt.Sprintf(`#!/bin/sh
+echo "$@" >> %q
+if [ "$1" = "install" ]; then
+  cat > %q <<'EOF'
+#!/bin/sh
+echo "tmux (fake)"
+EOF
+  chmod +x %q
+fi
+exit 0
+`, marker, tmuxPath, tmuxPath)
+		writeExecutable(t, filepath.Join(fakeBin, "apt-get"), aptScript)
+
+		prefix := t.TempDir()
+		result := runScript(t, []string{"--version", "0.1.0", "--prefix", prefix, "--yes", "--install-tmux"}, []string{
+			"MUSH_INSTALL_BASE_URL=" + server.URL,
+			"MUSH_INSTALL_INSECURE=1",
+			"PATH=" + fakeBin + ":" + pathWithout(t, "tmux"),
+		})
+
+		if result.exitCode != 0 {
+			t.Fatalf("exit code = %d, want 0\nstdout: %s\nstderr: %s",
+				result.exitCode, result.stdout, result.stderr)
+		}
+
+		logData, err := os.ReadFile(marker)
+		if err != nil {
+			t.Fatalf("reading apt-get marker: %v", err)
+		}
+		logText := string(logData)
+		if !strings.Contains(logText, "update") {
+			t.Fatalf("expected apt-get update invocation, got %q", logText)
+		}
+		if !strings.Contains(logText, "install -y tmux") {
+			t.Fatalf("expected apt-get install invocation, got %q", logText)
+		}
+		if _, err := os.Stat(tmuxPath); err != nil {
+			t.Fatalf("expected fake tmux binary to be created: %v", err)
+		}
+	})
+}
+
+// pathWithout returns PATH with the named binary hidden. Directories that
+// contain the binary are replaced by shadow directories that symlink every
+// other entry, so all other tools (uname, sh, etc.) remain accessible.
+func pathWithout(t *testing.T, bin string) string {
+	t.Helper()
+	var dirs []string
+	for _, dir := range filepath.SplitList(os.Getenv("PATH")) {
+		if _, err := os.Stat(filepath.Join(dir, bin)); err != nil {
+			dirs = append(dirs, dir)
+			continue
+		}
+		// Create a shadow directory with symlinks to everything except bin.
+		shadow := t.TempDir()
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			dirs = append(dirs, dir)
+			continue
+		}
+		for _, e := range entries {
+			if e.Name() == bin {
+				continue
+			}
+			os.Symlink(filepath.Join(dir, e.Name()), filepath.Join(shadow, e.Name()))
+		}
+		dirs = append(dirs, shadow)
+	}
+	return strings.Join(dirs, string(os.PathListSeparator))
 }

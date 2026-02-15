@@ -15,6 +15,7 @@ import (
 
 	"github.com/musher-dev/mush/internal/claude"
 	"github.com/musher-dev/mush/internal/client"
+	"github.com/musher-dev/mush/internal/config"
 	clierrors "github.com/musher-dev/mush/internal/errors"
 	"github.com/musher-dev/mush/internal/harness"
 	"github.com/musher-dev/mush/internal/output"
@@ -49,6 +50,7 @@ Agent Types:
   (default)       Handle all supported agent types
 
 Press Ctrl+Q to exit the watch UI.
+Press Ctrl+S to toggle copy mode (Esc to return to live input).
 
 Examples:
   mush link                  # Watch mode, all agents
@@ -109,7 +111,7 @@ Examples:
 			}
 
 			// Get credentials and create client
-			source, c, err := newAPIClient()
+			source, c, err := apiClientFactory()
 			if err != nil {
 				return err
 			}
@@ -223,12 +225,16 @@ func runWatchLink(
 	supportedAgents []string,
 	runnerConfig *client.RunnerConfigResponse,
 ) error {
+	localCfg := config.Load()
 	cfg := &harness.Config{
-		Client:          c,
-		HabitatID:       habitatID,
-		QueueID:         queueID,
-		SupportedAgents: supportedAgents,
-		RunnerConfig:    runnerConfig,
+		Client:            c,
+		HabitatID:         habitatID,
+		QueueID:           queueID,
+		SupportedAgents:   supportedAgents,
+		RunnerConfig:      runnerConfig,
+		TranscriptEnabled: localCfg.HistoryEnabled(),
+		TranscriptDir:     localCfg.HistoryDir(),
+		TranscriptLines:   localCfg.HistoryLines(),
 	}
 	return harness.Run(ctx, cfg)
 }

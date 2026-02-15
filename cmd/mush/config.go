@@ -41,6 +41,10 @@ func newConfigListCmd() *cobra.Command {
 				out.Println("Available settings:")
 				out.Print("  api.url       Platform API URL (default: %s)\n", config.DefaultAPIURL)
 				out.Print("  worker.poll   Poll interval in seconds (default: %d)\n", config.DefaultPollInterval)
+				out.Print("  history.enabled   Enable PTY transcript capture (default: true)\n")
+				out.Print("  history.dir       Transcript storage directory (default: ~/.config/mush/history)\n")
+				out.Print("  history.lines     In-memory transcript lines per session (default: 10000)\n")
+				out.Print("  history.retention Default prune window (default: 720h)\n")
 				return nil
 			}
 

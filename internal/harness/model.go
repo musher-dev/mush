@@ -10,19 +10,24 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/creack/pty"
+	"github.com/google/uuid"
 	"golang.org/x/term"
 
+	"github.com/musher-dev/mush/internal/ansi"
 	"github.com/musher-dev/mush/internal/buildinfo"
 	"github.com/musher-dev/mush/internal/client"
 	"github.com/musher-dev/mush/internal/config"
 	"github.com/musher-dev/mush/internal/linking"
+	"github.com/musher-dev/mush/internal/transcript"
 )
 
 // SignalFileName is the marker file created by the Stop hook.
@@ -39,6 +44,10 @@ const PromptDebounceTime = 1 * time.Second
 
 // SignalPollInterval is how often to check for completion signal files.
 const SignalPollInterval = 200 * time.Millisecond
+
+// ResizePollInterval is the fallback interval to reconcile terminal size in
+// environments that don't reliably forward SIGWINCH.
+const ResizePollInterval = 250 * time.Millisecond
 
 // PTYWriteChunkSize is the max bytes to write to the PTY at once.
 const PTYWriteChunkSize = 4096
@@ -72,6 +81,12 @@ const (
 // StatusBarHeight is the number of lines reserved for the status bar
 const StatusBarHeight = 2
 
+const (
+	ctrlQ = 0x11
+	ctrlS = 0x13
+	esc   = 0x1b
+)
+
 // RootModel manages the harness state with scroll region approach.
 type RootModel struct {
 	ctx    context.Context
@@ -89,8 +104,19 @@ type RootModel struct {
 	ptyMu sync.Mutex
 	ptmx  *os.File
 	cmd   *exec.Cmd
+	// setPTYSize is injectable for tests; defaults to pty.Setsize.
+	setPTYSize func(*os.File, *pty.Winsize) error
 	// ptyReady delivers active PTY handles to the output reader loop.
 	ptyReady chan *os.File
+
+	// Transcript capture for session history.
+	transcriptStore *transcript.Store
+	transcriptMu    sync.Mutex
+
+	// Input mode state.
+	inputMu        sync.Mutex
+	copyMode       bool
+	copyEscPending bool
 
 	// Status bar state
 	statusMu      sync.Mutex
@@ -100,20 +126,23 @@ type RootModel struct {
 	failed        int
 
 	// Configuration
-	client          *client.Client
-	cfg             *config.Config
-	habitatID       string
-	queueID         string
-	supportedAgents []string
-	instanceID      string
-	linkID          string
-	signalDir       string
-	restoreHooks    func() error
-	runnerConfig    *client.RunnerConfigResponse
-	mcpConfigPath   string
-	mcpConfigSig    string
-	mcpConfigRemove func() error
-	loadedMCPNames  []string
+	client            *client.Client
+	cfg               *config.Config
+	habitatID         string
+	queueID           string
+	supportedAgents   []string
+	instanceID        string
+	linkID            string
+	signalDir         string
+	restoreHooks      func() error
+	runnerConfig      *client.RunnerConfigResponse
+	mcpConfigPath     string
+	mcpConfigSig      string
+	mcpConfigRemove   func() error
+	loadedMCPNames    []string
+	transcriptEnabled bool
+	transcriptDir     string
+	transcriptLines   int
 
 	refreshMu              sync.Mutex
 	refreshInterval        time.Duration
@@ -176,21 +205,25 @@ func NewRootModel(ctx context.Context, cfg *Config) *RootModel {
 	ctx, cancel := context.WithCancel(ctx)
 
 	return &RootModel{
-		ctx:             ctx,
-		cancel:          cancel,
-		status:          StatusConnecting,
-		lastHeartbeat:   time.Now(),
-		client:          cfg.Client,
-		cfg:             config.Load(),
-		habitatID:       cfg.HabitatID,
-		queueID:         cfg.QueueID,
-		supportedAgents: cfg.SupportedAgents,
-		instanceID:      cfg.InstanceID,
-		runnerConfig:    cfg.RunnerConfig,
-		refreshInterval: normalizeRefreshInterval(0),
-		done:            make(chan struct{}),
-		promptDetected:  make(chan struct{}, 1),
-		ptyReady:        make(chan *os.File, 4),
+		ctx:               ctx,
+		cancel:            cancel,
+		status:            StatusConnecting,
+		lastHeartbeat:     time.Now(),
+		client:            cfg.Client,
+		cfg:               config.Load(),
+		habitatID:         cfg.HabitatID,
+		queueID:           cfg.QueueID,
+		supportedAgents:   cfg.SupportedAgents,
+		instanceID:        cfg.InstanceID,
+		runnerConfig:      cfg.RunnerConfig,
+		refreshInterval:   normalizeRefreshInterval(0),
+		done:              make(chan struct{}),
+		promptDetected:    make(chan struct{}, 1),
+		ptyReady:          make(chan *os.File, 4),
+		setPTYSize:        pty.Setsize,
+		transcriptEnabled: cfg.TranscriptEnabled,
+		transcriptDir:     cfg.TranscriptDir,
+		transcriptLines:   cfg.TranscriptLines,
 	}
 }
 
@@ -208,7 +241,7 @@ func (m *RootModel) Run() error {
 	}
 
 	// Get terminal size
-	width, height, err := term.GetSize(int(os.Stdin.Fd()))
+	width, height, err := m.readTerminalSize()
 	if err != nil {
 		return fmt.Errorf("failed to get terminal size: %w", err)
 	}
@@ -225,6 +258,35 @@ func (m *RootModel) Run() error {
 
 	// Clear screen and set up scroll region
 	m.setupScreen()
+
+	historyEnabled := m.transcriptEnabled
+	if !historyEnabled {
+		historyEnabled = m.cfg.HistoryEnabled()
+	}
+	if historyEnabled && m.shouldCaptureTranscript() {
+		historyDir := m.transcriptDir
+		if historyDir == "" {
+			historyDir = m.cfg.HistoryDir()
+		}
+		historyLines := m.transcriptLines
+		if historyLines <= 0 {
+			historyLines = m.cfg.HistoryLines()
+		}
+		sessionID := uuid.NewString()
+		store, tErr := transcript.NewStore(transcript.StoreOptions{
+			SessionID: sessionID,
+			Dir:       historyDir,
+			MaxLines:  historyLines,
+		})
+		if tErr != nil {
+			m.setLastError(fmt.Sprintf("Transcript disabled: %v", tErr))
+		} else {
+			m.transcriptMu.Lock()
+			m.transcriptStore = store
+			m.transcriptMu.Unlock()
+			defer m.closeTranscript()
+		}
+	}
 
 	// Claude-specific wiring (PTY + stop-hook completion).
 	// If the harness is running without the Claude agent, we skip all Claude setup
@@ -292,6 +354,13 @@ func (m *RootModel) Run() error {
 
 	// Start goroutines
 	var wg sync.WaitGroup
+
+	// Terminal resize watcher (SIGWINCH + periodic reconciliation).
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		m.resizeLoop()
+	}()
 
 	// PTY output -> terminal (in scroll region)
 	if m.isAgentSupported("claude") {
@@ -369,6 +438,171 @@ func (m *RootModel) setupScreen() {
 	m.termPrintf(escMoveTo, scrollStart, 1)
 }
 
+func (m *RootModel) shouldCaptureTranscript() bool {
+	return m.isAgentSupported("claude")
+}
+
+func (m *RootModel) appendTranscript(stream string, chunk []byte) {
+	m.transcriptMu.Lock()
+	store := m.transcriptStore
+	m.transcriptMu.Unlock()
+	if store == nil || len(chunk) == 0 {
+		return
+	}
+	if err := store.Append(stream, chunk); err != nil {
+		m.setLastError(fmt.Sprintf("Transcript write failed: %v", err))
+	}
+}
+
+func (m *RootModel) closeTranscript() {
+	m.transcriptMu.Lock()
+	store := m.transcriptStore
+	m.transcriptStore = nil
+	m.transcriptMu.Unlock()
+	if store == nil {
+		return
+	}
+	if err := store.Close(); err != nil {
+		m.setLastError(fmt.Sprintf("Transcript close failed: %v", err))
+	}
+}
+
+func (m *RootModel) setCopyMode(enabled bool) {
+	m.inputMu.Lock()
+	changed := m.copyMode != enabled
+	m.copyMode = enabled
+	if !enabled {
+		m.copyEscPending = false
+	}
+	m.inputMu.Unlock()
+	if changed {
+		m.drawStatusBar()
+	}
+}
+
+func (m *RootModel) isCopyMode() bool {
+	m.inputMu.Lock()
+	defer m.inputMu.Unlock()
+	return m.copyMode
+}
+
+func (m *RootModel) setCopyEscPending(pending bool) {
+	m.inputMu.Lock()
+	m.copyEscPending = pending
+	m.inputMu.Unlock()
+}
+
+func (m *RootModel) popCopyEscPending() bool {
+	m.inputMu.Lock()
+	defer m.inputMu.Unlock()
+	pending := m.copyEscPending
+	m.copyEscPending = false
+	return pending
+}
+
+func clampTerminalSize(width, height int) (clampedWidth, clampedHeight int) {
+	if width < 20 {
+		width = 20
+	}
+	minHeight := StatusBarHeight + 1
+	if height < minHeight {
+		height = minHeight
+	}
+	return width, height
+}
+
+func (m *RootModel) ptyRowsForHeight(height int) int {
+	rows := height - StatusBarHeight
+	if rows < 1 {
+		return 1
+	}
+	return rows
+}
+
+func (m *RootModel) readTerminalSize() (width, height int, err error) {
+	width, height, err = term.GetSize(int(os.Stdin.Fd()))
+	if err != nil {
+		return 0, 0, err
+	}
+	width, height = clampTerminalSize(width, height)
+	return width, height, nil
+}
+
+func (m *RootModel) resizeLoop() {
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGWINCH)
+	defer signal.Stop(sigCh)
+
+	ticker := time.NewTicker(ResizePollInterval)
+	defer ticker.Stop()
+
+	m.refreshTerminalSize()
+
+	for {
+		select {
+		case <-m.ctx.Done():
+			return
+		case <-m.done:
+			return
+		case <-sigCh:
+			m.refreshTerminalSize()
+		case <-ticker.C:
+			m.refreshTerminalSize()
+		}
+	}
+}
+
+func (m *RootModel) refreshTerminalSize() {
+	width, height, err := m.readTerminalSize()
+	if err != nil {
+		m.setLastError(fmt.Sprintf("Terminal resize read failed: %v", err))
+		return
+	}
+	m.handleResize(width, height)
+}
+
+func (m *RootModel) handleResize(width, height int) {
+	width, height = clampTerminalSize(width, height)
+
+	m.termMu.Lock()
+	if width == m.width && height == m.height {
+		m.termMu.Unlock()
+		return
+	}
+	m.width = width
+	m.height = height
+	scrollStart := StatusBarHeight + 1
+	_, _ = fmt.Fprintf(os.Stdout, escSetScrollRgn, scrollStart, m.height)
+	_, _ = fmt.Fprintf(os.Stdout, escMoveTo, scrollStart, 1)
+	m.termMu.Unlock()
+
+	_ = m.resizeActivePTY(width, m.ptyRowsForHeight(height))
+	m.drawStatusBar()
+}
+
+func (m *RootModel) resizeActivePTY(cols, rows int) error {
+	m.ptyMu.Lock()
+	ptmx := m.ptmx
+	m.ptyMu.Unlock()
+	if ptmx == nil {
+		return nil
+	}
+
+	setSize := m.setPTYSize
+	if setSize == nil {
+		setSize = pty.Setsize
+	}
+
+	if err := setSize(ptmx, &pty.Winsize{
+		Rows: uint16(rows), //nolint:gosec // G115: terminal dimensions bounded by guardrails
+		Cols: uint16(cols), //nolint:gosec // G115: terminal dimensions bounded by guardrails
+	}); err != nil {
+		m.setLastError(fmt.Sprintf("PTY resize failed: %v", err))
+		return err
+	}
+	return nil
+}
+
 // drawStatusBar renders the status bar at the top of the screen.
 func (m *RootModel) drawStatusBar() {
 	m.statusMu.Lock()
@@ -402,6 +636,11 @@ func (m *RootModel) drawStatusBar() {
 		"\x1b[1mMUSH HARNESS\x1b[0m",
 		fmt.Sprintf("Habitat: \x1b[1m%s\x1b[0m", habitatID),
 		fmt.Sprintf("Status: %s", renderedStatus),
+	}
+	if m.isCopyMode() {
+		line1Parts = append(line1Parts, "Mode: \x1b[33mCOPY\x1b[0m")
+	} else {
+		line1Parts = append(line1Parts, "Mode: \x1b[32mLIVE\x1b[0m")
 	}
 
 	if jobID != "" {
@@ -517,7 +756,7 @@ func (m *RootModel) startPTY() error {
 	)
 
 	// Calculate PTY size (full height minus status bar)
-	ptyHeight := m.height - StatusBarHeight
+	ptyHeight := m.ptyRowsForHeight(m.height)
 
 	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{
 		Rows: uint16(ptyHeight), //nolint:gosec // G115: terminal dimensions bounded by OS
@@ -614,6 +853,7 @@ func (m *RootModel) readPTYOutput(ptmx *os.File) {
 
 		// Write to terminal
 		m.termWrite(buf[:n])
+		m.appendTranscript("pty", buf[:n])
 
 		// Detect bypass dialog and auto-accept
 		m.jobMu.Lock()
@@ -716,26 +956,6 @@ func (m *RootModel) onPromptConfirmed() {
 	}
 }
 
-// stripANSI removes ANSI escape sequences from a string.
-func (m *RootModel) stripANSI(s string) string {
-	var result strings.Builder
-	inEscape := false
-	for _, r := range s {
-		if r == '\x1b' {
-			inEscape = true
-			continue
-		}
-		if inEscape {
-			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
-				inEscape = false
-			}
-			continue
-		}
-		result.WriteRune(r)
-	}
-	return result.String()
-}
-
 // copyInput copies stdin to PTY with quit key handling.
 // Uses Ctrl+Q (0x11) as quit key to avoid escape sequence ambiguity.
 func (m *RootModel) copyInput() {
@@ -752,17 +972,56 @@ func (m *RootModel) copyInput() {
 			return
 		}
 
-		// Check for Ctrl+Q to quit (avoids escape sequence ambiguity)
+		// Check for local control keys first.
 		for i := 0; i < n; i++ {
-			if buf[i] == 0x11 { // Ctrl+Q
+			if m.isCopyMode() && m.popCopyEscPending() {
+				if buf[i] == '[' || buf[i] == 'O' {
+					// This byte continues an escape sequence (e.g. arrow keys).
+					// Stay in copy mode and swallow this input.
+					buf[i] = 0
+					continue
+				}
+				// Previous ESC was standalone; exit copy mode and process
+				// this byte as normal input.
+				m.setCopyMode(false)
+			}
+
+			if buf[i] == ctrlQ { // Ctrl+Q
 				m.signalDone()
 				return
 			}
+			if buf[i] == ctrlS { // Ctrl+S toggles copy mode
+				m.setCopyMode(!m.isCopyMode())
+				// Drop the key from forwarded data.
+				buf[i] = 0
+				continue
+			}
+			if m.isCopyMode() {
+				// Esc exits copy mode unless it prefixes a terminal escape sequence
+				// like arrows/function keys.
+				if buf[i] == esc {
+					if i+1 < n && (buf[i+1] == '[' || buf[i+1] == 'O') {
+						buf[i] = 0
+						continue
+					}
+					m.setCopyEscPending(true)
+				}
+				buf[i] = 0
+			}
 		}
 
-		// Forward to PTY
+		// Forward filtered bytes to PTY.
+		out := make([]byte, 0, n)
+		for i := 0; i < n; i++ {
+			if buf[i] != 0 {
+				out = append(out, buf[i])
+			}
+		}
+		if len(out) == 0 {
+			continue
+		}
 		if ptmx := m.activePTY(); ptmx != nil {
-			_, _ = ptmx.Write(buf[:n])
+			_, _ = ptmx.Write(out)
 		}
 	}
 }
@@ -1135,7 +1394,7 @@ func (m *RootModel) waitForSignalFile(ctx context.Context) (string, error) {
 
 			m.jobMu.Lock()
 			m.capturing = false
-			output := m.stripANSI(m.outputBuffer.String())
+			output := ansi.Strip(m.outputBuffer.String())
 			m.outputBuffer.Reset()
 			m.jobMu.Unlock()
 			return output, nil
@@ -1256,7 +1515,7 @@ func (m *RootModel) executeBashJob(ctx context.Context, job *client.Job, command
 	}
 
 	return map[string]any{
-		"output":     m.stripANSI(strings.TrimSpace(stdoutBuf.String())),
+		"output":     ansi.Strip(strings.TrimSpace(stdoutBuf.String())),
 		"stdout":     stdoutBuf.String(),
 		"stderr":     stderrBuf.String(),
 		"exitCode":   exitCode,

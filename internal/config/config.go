@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/spf13/viper"
 )
@@ -38,11 +39,15 @@ func Load() *Config {
 	v.SetDefault("api.url", DefaultAPIURL)
 	v.SetDefault("worker.poll_interval", DefaultPollInterval)
 	v.SetDefault("worker.heartbeat_interval", DefaultHeartbeatInterval)
+	v.SetDefault("history.enabled", true)
+	v.SetDefault("history.lines", 10000)
+	v.SetDefault("history.retention", (30 * 24 * time.Hour).String())
 
 	// Config file location
 	home, err := os.UserHomeDir()
 	if err == nil {
 		configDir := filepath.Join(home, ".config", "mush")
+		v.SetDefault("history.dir", filepath.Join(configDir, "history"))
 		v.AddConfigPath(configDir)
 		v.SetConfigName("config")
 		v.SetConfigType("yaml")
@@ -116,4 +121,28 @@ func (c *Config) PollInterval() int {
 // HeartbeatInterval returns the heartbeat interval in seconds.
 func (c *Config) HeartbeatInterval() int {
 	return c.GetInt("worker.heartbeat_interval")
+}
+
+// HistoryEnabled returns whether transcript history is enabled.
+func (c *Config) HistoryEnabled() bool {
+	return c.v.GetBool("history.enabled")
+}
+
+// HistoryDir returns the configured transcript directory.
+func (c *Config) HistoryDir() string {
+	return c.GetString("history.dir")
+}
+
+// HistoryLines returns the configured in-memory transcript ring size.
+func (c *Config) HistoryLines() int {
+	return c.GetInt("history.lines")
+}
+
+// HistoryRetention returns the configured retention period for history pruning.
+func (c *Config) HistoryRetention() time.Duration {
+	d, err := time.ParseDuration(c.GetString("history.retention"))
+	if err != nil || d <= 0 {
+		return 30 * 24 * time.Hour
+	}
+	return d
 }

@@ -338,12 +338,22 @@ func (j *Job) GetDisplayName() string {
 
 // New creates a new API client with the given base URL and API key.
 func New(baseURL, apiKey string) *Client {
+	return NewWithHTTPClient(baseURL, apiKey, nil)
+}
+
+// NewWithHTTPClient creates a new API client with an injected HTTP client.
+// If httpClient is nil, a default client with DefaultTimeout is used.
+func NewWithHTTPClient(baseURL, apiKey string, httpClient *http.Client) *Client {
+	if httpClient == nil {
+		httpClient = &http.Client{Timeout: DefaultTimeout}
+	}
+	if httpClient.Timeout == 0 {
+		httpClient.Timeout = DefaultTimeout
+	}
 	return &Client{
-		baseURL: baseURL,
-		apiKey:  apiKey,
-		httpClient: &http.Client{
-			Timeout: DefaultTimeout,
-		},
+		baseURL:    baseURL,
+		apiKey:     apiKey,
+		httpClient: httpClient,
 	}
 }
 

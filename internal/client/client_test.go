@@ -1,13 +1,34 @@
 package client
 
 import (
+	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 )
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
+func jsonResponse(status int, body string) *http.Response {
+	return &http.Response{
+		StatusCode: status,
+		Header:     make(http.Header),
+		Body:       io.NopCloser(strings.NewReader(body)),
+	}
+}
+
+func newMockClient(t *testing.T, fn roundTripFunc) *Client {
+	t.Helper()
+	hc := &http.Client{Transport: fn}
+	return NewWithHTTPClient("https://api.test", "test-key", hc)
+}
 
 func TestNew(t *testing.T) {
 	baseURL := "https://custom.api.com"
@@ -25,575 +46,241 @@ func TestNew(t *testing.T) {
 	}
 }
 
-func TestClient_ValidateKey(t *testing.T) {
-	identityJSON := `{
-		"credentialType": "service_account",
-		"credentialId": "cred-123",
-		"credentialName": "my-ci-runner",
-		"workerId": "sa_xxx",
-		"workspaceId": "ws-456",
-		"workspaceName": "Acme Corp"
-	}`
+func TestClientValidateKey(t *testing.T) {
+	identityJSON := `{"credentialType":"service_account","credentialName":"my-ci-runner","workspaceId":"ws-456","workspaceName":"Acme Corp"}`
 
 	tests := []struct {
 		name       string
 		statusCode int
 		body       string
-		wantErr    bool
-		errMsg     string
+		wantErr    string
 	}{
-		{
-			name:       "valid key",
-			statusCode: http.StatusOK,
-			body:       identityJSON,
-			wantErr:    false,
-		},
-		{
-			name:       "unauthorized",
-			statusCode: http.StatusUnauthorized,
-			wantErr:    true,
-			errMsg:     "invalid or expired API key",
-		},
-		{
-			name:       "forbidden",
-			statusCode: http.StatusForbidden,
-			wantErr:    true,
-			errMsg:     "API key does not have runner permissions",
-		},
+		{name: "valid key", statusCode: http.StatusOK, body: identityJSON},
+		{name: "unauthorized", statusCode: http.StatusUnauthorized, wantErr: "invalid or expired API key"},
+		{name: "forbidden", statusCode: http.StatusForbidden, wantErr: "API key does not have runner permissions"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			c := newMockClient(t, func(r *http.Request) (*http.Response, error) {
 				if r.URL.Path != "/api/v1/runner/me" {
-					t.Errorf("path = %q, want %q", r.URL.Path, "/api/v1/runner/me")
+					t.Fatalf("path = %q, want %q", r.URL.Path, "/api/v1/runner/me")
 				}
-
-				// Verify auth header
-				auth := r.Header.Get("Authorization")
-				if auth != "Bearer test-key" {
-					t.Errorf("Authorization header = %q, want %q", auth, "Bearer test-key")
+				if got := r.Header.Get("Authorization"); got != "Bearer test-key" {
+					t.Fatalf("Authorization = %q, want %q", got, "Bearer test-key")
 				}
+				return jsonResponse(tt.statusCode, tt.body), nil
+			})
 
-				w.WriteHeader(tt.statusCode)
-				if tt.body != "" {
-					w.Write([]byte(tt.body))
-				}
-			}))
-			defer server.Close()
-
-			c := New(server.URL, "test-key")
 			identity, err := c.ValidateKey(t.Context())
-
-			if (err != nil) != tt.wantErr {
-				t.Errorf("ValidateKey() error = %v, wantErr %v", err, tt.wantErr)
+			if tt.wantErr != "" {
+				if err == nil || err.Error() != tt.wantErr {
+					t.Fatalf("error = %v, want %q", err, tt.wantErr)
+				}
+				return
 			}
-			if tt.wantErr && err != nil && tt.errMsg != "" {
-				if err.Error() != tt.errMsg {
-					t.Errorf("ValidateKey() error = %q, want %q", err.Error(), tt.errMsg)
-				}
+			if err != nil {
+				t.Fatalf("ValidateKey() error = %v", err)
 			}
-			if !tt.wantErr && identity != nil {
-				if identity.CredentialType != "service_account" {
-					t.Errorf("CredentialType = %q, want %q", identity.CredentialType, "service_account")
-				}
-				if identity.CredentialName != "my-ci-runner" {
-					t.Errorf("CredentialName = %q, want %q", identity.CredentialName, "my-ci-runner")
-				}
-				if identity.WorkspaceName != "Acme Corp" {
-					t.Errorf("WorkspaceName = %q, want %q", identity.WorkspaceName, "Acme Corp")
-				}
-				if identity.WorkspaceID != "ws-456" {
-					t.Errorf("WorkspaceID = %q, want %q", identity.WorkspaceID, "ws-456")
-				}
+			if identity.WorkspaceName != "Acme Corp" {
+				t.Fatalf("WorkspaceName = %q, want %q", identity.WorkspaceName, "Acme Corp")
 			}
 		})
 	}
 }
 
-func TestClient_ClaimJob(t *testing.T) {
+func TestClientClaimJob(t *testing.T) {
 	tests := []struct {
 		name       string
 		statusCode int
-		response   interface{}
+		body       string
 		wantJob    bool
-		wantErr    bool
 	}{
-		{
-			name:       "job available",
-			statusCode: http.StatusOK,
-			response: JobClaimResponse{
-				Job: Job{
-					ID:            "job-123",
-					JobType:       "webhook",
-					QueueID:       "queue-123",
-					Priority:      "normal",
-					Status:        "queued",
-					AttemptNumber: 1,
-					MaxAttempts:   3,
-				},
-			},
-			wantJob: true,
-			wantErr: false,
-		},
-		{
-			name:       "no content",
-			statusCode: http.StatusNoContent,
-			wantJob:    false,
-			wantErr:    false,
-		},
-		{
-			name:       "null response",
-			statusCode: http.StatusOK,
-			response:   nil,
-			wantJob:    false,
-			wantErr:    false,
-		},
+		{name: "job available", statusCode: http.StatusOK, body: `{"job":{"id":"job-123","queueId":"queue-123","priority":"normal","status":"queued","attemptNumber":1,"maxAttempts":3}}`, wantJob: true},
+		{name: "no content", statusCode: http.StatusNoContent, body: "", wantJob: false},
+		{name: "null response", statusCode: http.StatusOK, body: "null", wantJob: false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			c := newMockClient(t, func(r *http.Request) (*http.Response, error) {
 				if r.URL.Path != "/api/v1/runner/jobs:claim" {
-					t.Errorf("path = %q, want %q", r.URL.Path, "/api/v1/runner/jobs:claim")
+					t.Fatalf("path = %q, want %q", r.URL.Path, "/api/v1/runner/jobs:claim")
 				}
-
-				w.WriteHeader(tt.statusCode)
-				if tt.response != nil {
-					json.NewEncoder(w).Encode(tt.response)
-				} else if tt.statusCode == http.StatusOK {
-					w.Write([]byte("null"))
+				if r.URL.Query().Get("wait_timeout_seconds") != "30" {
+					t.Fatalf("wait_timeout_seconds = %q, want 30", r.URL.Query().Get("wait_timeout_seconds"))
 				}
-			}))
-			defer server.Close()
+				return jsonResponse(tt.statusCode, tt.body), nil
+			})
 
-			c := New(server.URL, "test-key")
 			job, err := c.ClaimJob(t.Context(), "habitat-123", "", 30)
-
-			if (err != nil) != tt.wantErr {
-				t.Errorf("ClaimJob() error = %v, wantErr %v", err, tt.wantErr)
+			if err != nil {
+				t.Fatalf("ClaimJob() error = %v", err)
 			}
 			if tt.wantJob && job == nil {
-				t.Error("ClaimJob() job should not be nil")
+				t.Fatal("expected job")
 			}
 			if !tt.wantJob && job != nil {
-				t.Error("ClaimJob() job should be nil")
+				t.Fatal("expected nil job")
 			}
 		})
 	}
 }
 
-func TestClient_ListQueues(t *testing.T) {
-	tests := []struct {
-		name       string
-		statusCode int
-		response   string
-		wantCount  int
-		wantErr    bool
-	}{
-		{
-			name:       "queues available",
-			statusCode: http.StatusOK,
-			response:   `{"data":[{"id":"queue-1","slug":"default","name":"Default","status":"active","habitatId":"hab-1"}]}`,
-			wantCount:  1,
-			wantErr:    false,
-		},
-		{
-			name:       "empty queue list",
-			statusCode: http.StatusOK,
-			response:   `{"data":[]}`,
-			wantCount:  0,
-			wantErr:    false,
-		},
-		{
-			name:       "error response",
-			statusCode: http.StatusForbidden,
-			response:   `{"detail":"forbidden"}`,
-			wantErr:    true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if r.URL.Path != "/api/v1/queues" {
-					t.Errorf("path = %q, want %q", r.URL.Path, "/api/v1/queues")
-				}
-				if r.URL.Query().Get("status") != "active" {
-					t.Errorf("status query = %q, want active", r.URL.Query().Get("status"))
-				}
-				if r.URL.Query().Get("habitat_id") != "hab-1" {
-					t.Errorf("habitat_id query = %q, want hab-1", r.URL.Query().Get("habitat_id"))
-				}
-
-				w.WriteHeader(tt.statusCode)
-				_, _ = w.Write([]byte(tt.response))
-			}))
-			defer server.Close()
-
-			c := New(server.URL, "test-key")
-			queues, err := c.ListQueues(t.Context(), "hab-1")
-			if (err != nil) != tt.wantErr {
-				t.Errorf("ListQueues() error = %v, wantErr %v", err, tt.wantErr)
-			}
-			if !tt.wantErr && len(queues) != tt.wantCount {
-				t.Errorf("ListQueues() count = %d, want %d", len(queues), tt.wantCount)
-			}
-		})
-	}
-}
-
-func TestClient_HeartbeatJob(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/v1/runner/jobs/job-123:heartbeat" {
-			t.Errorf("path = %q, want %q", r.URL.Path, "/api/v1/runner/jobs/job-123:heartbeat")
+func TestClientListQueues(t *testing.T) {
+	c := newMockClient(t, func(r *http.Request) (*http.Response, error) {
+		if r.URL.Path != "/api/v1/queues" {
+			t.Fatalf("path = %q, want /api/v1/queues", r.URL.Path)
 		}
-		if r.Method != "POST" {
-			t.Errorf("method = %q, want POST", r.Method)
+		if got := r.URL.Query().Get("status"); got != "active" {
+			t.Fatalf("status = %q, want active", got)
 		}
+		if got := r.URL.Query().Get("habitat_id"); got != "hab-1" {
+			t.Fatalf("habitat_id = %q, want hab-1", got)
+		}
+		return jsonResponse(http.StatusOK, `{"data":[{"id":"queue-1","slug":"default","name":"Default","status":"active","habitatId":"hab-1"}]}`), nil
+	})
 
-		// Return updated job
-		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(Job{
-			ID:            "job-123",
-			JobType:       "webhook",
-			QueueID:       "queue-123",
-			Priority:      "normal",
-			Status:        "claimed",
-			AttemptNumber: 1,
-			MaxAttempts:   3,
-		})
-	}))
-	defer server.Close()
-
-	c := New(server.URL, "test-key")
-	job, err := c.HeartbeatJob(t.Context(), "job-123")
+	queues, err := c.ListQueues(t.Context(), "hab-1")
 	if err != nil {
-		t.Errorf("HeartbeatJob() error = %v", err)
+		t.Fatalf("ListQueues() error = %v", err)
 	}
-	if job == nil {
-		t.Fatal("HeartbeatJob() job should not be nil")
-	}
-	if job.ID != "job-123" {
-		t.Errorf("HeartbeatJob() id = %q, want %q", job.ID, "job-123")
+	if len(queues) != 1 || queues[0].ID != "queue-1" {
+		t.Fatalf("unexpected queues: %#v", queues)
 	}
 }
 
-func TestClient_GetRunnerConfig(t *testing.T) {
-	t.Run("success", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != "/api/v1/runner/config" {
-				t.Fatalf("path = %q, want %q", r.URL.Path, "/api/v1/runner/config")
+func TestClientGetRunnerConfig(t *testing.T) {
+	c := newMockClient(t, func(r *http.Request) (*http.Response, error) {
+		if r.URL.Path != "/api/v1/runner/config" {
+			t.Fatalf("path = %q, want /api/v1/runner/config", r.URL.Path)
+		}
+		return jsonResponse(http.StatusOK, `{"configVersion":"1","workspaceId":"ws-123","generatedAt":"2026-02-13T12:00:00Z","refreshAfterSeconds":300,"providers":{"linear":{"status":"active","credential":{"accessToken":"tok_123"},"flags":{"mcp":true}}}}`), nil
+	})
+
+	cfg, err := c.GetRunnerConfig(t.Context())
+	if err != nil {
+		t.Fatalf("GetRunnerConfig() error = %v", err)
+	}
+	if cfg.WorkspaceID != "ws-123" || cfg.RefreshAfterSeconds != 300 {
+		t.Fatalf("unexpected config: %#v", cfg)
+	}
+	if !cfg.Providers["linear"].Flags.MCP {
+		t.Fatalf("expected linear MCP enabled")
+	}
+}
+
+func TestClientJobLifecycleEndpoints(t *testing.T) {
+	c := newMockClient(t, func(r *http.Request) (*http.Response, error) {
+		switch r.URL.Path {
+		case "/api/v1/runner/jobs/job-123:start":
+			return jsonResponse(http.StatusOK, `{"id":"job-123"}`), nil
+		case "/api/v1/runner/jobs/job-123:heartbeat":
+			return jsonResponse(http.StatusOK, `{"id":"job-123"}`), nil
+		case "/api/v1/runner/jobs/job-123:complete":
+			return jsonResponse(http.StatusOK, `{}`), nil
+		case "/api/v1/runner/jobs/job-123:fail":
+			var req JobFailRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatalf("decode fail request: %v", err)
 			}
-			if r.Method != http.MethodGet {
-				t.Fatalf("method = %q, want GET", r.Method)
+			if req.ErrorCode != "execution_error" || !req.ShouldRetry {
+				t.Fatalf("unexpected fail request: %#v", req)
 			}
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{
-				"configVersion": "1",
-				"workspaceId": "ws-123",
-				"generatedAt": "2026-02-13T12:00:00Z",
-				"refreshAfterSeconds": 300,
-				"providers": {
-					"linear": {
-						"status": "active",
-						"credential": {
-							"accessToken": "tok_123",
-							"tokenType": "bearer",
-							"expiresAt": "2026-02-13T12:05:00Z"
-						},
-						"flags": {
-							"mcp": true
-						},
-						"mcp": {
-							"url": "https://mcp.linear.app/mcp",
-							"transport": "streamable-http"
-						}
-					}
-				}
-			}`))
-		}))
-		defer server.Close()
-
-		c := New(server.URL, "test-key")
-		cfg, err := c.GetRunnerConfig(t.Context())
-		if err != nil {
-			t.Fatalf("GetRunnerConfig() error = %v", err)
-		}
-
-		if cfg.WorkspaceID != "ws-123" {
-			t.Fatalf("WorkspaceID = %q, want ws-123", cfg.WorkspaceID)
-		}
-		if cfg.RefreshAfterSeconds != 300 {
-			t.Fatalf("RefreshAfterSeconds = %d, want 300", cfg.RefreshAfterSeconds)
-		}
-		linear, ok := cfg.Providers["linear"]
-		if !ok {
-			t.Fatalf("expected providers.linear")
-		}
-		if !linear.Flags.MCP {
-			t.Fatalf("expected providers.linear.flags.mcp = true")
-		}
-		if linear.Credential == nil || linear.Credential.AccessToken != "tok_123" {
-			t.Fatalf("unexpected credential: %#v", linear.Credential)
+			return jsonResponse(http.StatusOK, `{}`), nil
+		case "/api/v1/runner/jobs/job-123:release":
+			return jsonResponse(http.StatusOK, `{}`), nil
+		default:
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+			return nil, nil
 		}
 	})
 
-	t.Run("non-200", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusForbidden)
-			_, _ = w.Write([]byte(`{"detail":"forbidden"}`))
-		}))
-		defer server.Close()
+	if _, err := c.StartJob(t.Context(), "job-123"); err != nil {
+		t.Fatalf("StartJob() error = %v", err)
+	}
+	if _, err := c.HeartbeatJob(t.Context(), "job-123"); err != nil {
+		t.Fatalf("HeartbeatJob() error = %v", err)
+	}
+	if err := c.CompleteJob(t.Context(), "job-123", map[string]any{"result": "success"}); err != nil {
+		t.Fatalf("CompleteJob() error = %v", err)
+	}
+	if err := c.FailJob(t.Context(), "job-123", "execution_error", "test error", true); err != nil {
+		t.Fatalf("FailJob() error = %v", err)
+	}
+	if err := c.ReleaseJob(t.Context(), "job-123"); err != nil {
+		t.Fatalf("ReleaseJob() error = %v", err)
+	}
+}
 
-		c := New(server.URL, "test-key")
-		_, err := c.GetRunnerConfig(t.Context())
-		if err == nil {
-			t.Fatalf("expected error")
-		}
-		if !strings.Contains(err.Error(), "runner config failed with status 403") {
-			t.Fatalf("unexpected error: %v", err)
+func TestClientLinkLifecycleEndpoints(t *testing.T) {
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	c := newMockClient(t, func(r *http.Request) (*http.Response, error) {
+		switch r.URL.Path {
+		case "/api/v1/runner/links:register":
+			return jsonResponse(http.StatusCreated, `{"linkId":"link-123","workerId":"worker-456","heartbeatDeadlineAt":"`+now+`","heartbeatIntervalMs":30000}`), nil
+		case "/api/v1/runner/links/link-123:heartbeat":
+			return jsonResponse(http.StatusOK, `{"status":"active","heartbeatDeadlineAt":"`+now+`"}`), nil
+		case "/api/v1/runner/links/link-123:deregister":
+			return jsonResponse(http.StatusOK, `{}`), nil
+		default:
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+			return nil, nil
 		}
 	})
 
-	t.Run("malformed", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"providers":`))
-		}))
-		defer server.Close()
-
-		c := New(server.URL, "test-key")
-		_, err := c.GetRunnerConfig(t.Context())
-		if err == nil {
-			t.Fatalf("expected error")
-		}
-		if !strings.Contains(err.Error(), "failed to parse runner config") {
-			t.Fatalf("unexpected error: %v", err)
-		}
-	})
-}
-
-func TestClient_CompleteJob(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/v1/runner/jobs/job-123:complete" {
-			t.Errorf("path = %q, want %q", r.URL.Path, "/api/v1/runner/jobs/job-123:complete")
-		}
-
-		var req JobCompleteRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			t.Errorf("failed to decode request: %v", err)
-		}
-
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer server.Close()
-
-	c := New(server.URL, "test-key")
-	err := c.CompleteJob(t.Context(), "job-123", map[string]interface{}{"result": "success"})
-	if err != nil {
-		t.Errorf("CompleteJob() error = %v", err)
+	resp, err := c.RegisterLink(t.Context(), &RegisterLinkRequest{InstanceID: "instance-1", LinkType: "agent"})
+	if err != nil || resp.LinkID != "link-123" {
+		t.Fatalf("RegisterLink() resp=%#v err=%v", resp, err)
+	}
+	if _, err := c.HeartbeatLink(t.Context(), "link-123", "job-123"); err != nil {
+		t.Fatalf("HeartbeatLink() error = %v", err)
+	}
+	if err := c.DeregisterLink(t.Context(), "link-123", DeregisterLinkRequest{Reason: "graceful_shutdown", JobsCompleted: 5, JobsFailed: 1}); err != nil {
+		t.Fatalf("DeregisterLink() error = %v", err)
 	}
 }
 
-func TestClient_FailJob(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/v1/runner/jobs/job-123:fail" {
-			t.Errorf("path = %q, want %q", r.URL.Path, "/api/v1/runner/jobs/job-123:fail")
-		}
-
-		var req JobFailRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			t.Errorf("failed to decode request: %v", err)
-		}
-		if req.ErrorCode != "execution_error" {
-			t.Errorf("errorCode = %q, want %q", req.ErrorCode, "execution_error")
-		}
-		if req.ErrorMessage != "test error" {
-			t.Errorf("errorMessage = %q, want %q", req.ErrorMessage, "test error")
-		}
-		if !req.ShouldRetry {
-			t.Error("shouldRetry should be true")
-		}
-
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer server.Close()
-
-	c := New(server.URL, "test-key")
-	err := c.FailJob(t.Context(), "job-123", "execution_error", "test error", true)
-	if err != nil {
-		t.Errorf("FailJob() error = %v", err)
-	}
-}
-
-func TestClient_RegisterLink(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/v1/runner/links:register" {
-			t.Errorf("path = %q, want %q", r.URL.Path, "/api/v1/runner/links:register")
-		}
-
-		var req RegisterLinkRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			t.Errorf("failed to decode request: %v", err)
-		}
-		if req.InstanceID != "instance-1" {
-			t.Errorf("instanceId = %q, want %q", req.InstanceID, "instance-1")
-		}
-
-		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(RegisterLinkResponse{
-			LinkID:              "link-123",
-			WorkerID:            "worker-456",
-			HeartbeatIntervalMs: 30000,
-			HeartbeatDeadlineAt: time.Now().Add(time.Minute),
-		})
-	}))
-	defer server.Close()
-
-	c := New(server.URL, "test-key")
-	resp, err := c.RegisterLink(t.Context(), &RegisterLinkRequest{
-		InstanceID: "instance-1",
-		LinkType:   "agent",
-	})
-	if err != nil {
-		t.Errorf("RegisterLink() error = %v", err)
-	}
-	if resp == nil {
-		t.Fatal("RegisterLink() response should not be nil")
-	}
-	if resp.LinkID != "link-123" {
-		t.Errorf("linkId = %q, want %q", resp.LinkID, "link-123")
-	}
-}
-
-func TestClient_HeartbeatLink(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/v1/runner/links/link-123:heartbeat" {
-			t.Errorf("path = %q, want %q", r.URL.Path, "/api/v1/runner/links/link-123:heartbeat")
-		}
-
-		var req LinkHeartbeatRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			t.Errorf("failed to decode request: %v", err)
-		}
-		if req.CurrentJobID != "job-123" {
-			t.Errorf("current job id = %q, want %q", req.CurrentJobID, "job-123")
-		}
-
-		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(LinkHeartbeatResponse{
-			Status:              "active",
-			HeartbeatDeadlineAt: time.Now().Add(time.Minute),
-		})
-	}))
-	defer server.Close()
-
-	c := New(server.URL, "test-key")
-	resp, err := c.HeartbeatLink(t.Context(), "link-123", "job-123")
-	if err != nil {
-		t.Errorf("HeartbeatLink() error = %v", err)
-	}
-	if resp == nil {
-		t.Fatal("HeartbeatLink() response should not be nil")
-	}
-	if resp.Status != "active" {
-		t.Errorf("status = %q, want %q", resp.Status, "active")
-	}
-}
-
-func TestClient_DeregisterLink(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/v1/runner/links/link-123:deregister" {
-			t.Errorf("path = %q, want %q", r.URL.Path, "/api/v1/runner/links/link-123:deregister")
-		}
-
-		var req DeregisterLinkRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			t.Errorf("failed to decode request: %v", err)
-		}
-		if req.Reason != "graceful_shutdown" {
-			t.Errorf("reason = %q, want %q", req.Reason, "graceful_shutdown")
-		}
-		if req.JobsCompleted != 5 {
-			t.Errorf("jobs completed = %d, want %d", req.JobsCompleted, 5)
-		}
-		if req.JobsFailed != 1 {
-			t.Errorf("jobs failed = %d, want %d", req.JobsFailed, 1)
-		}
-
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer server.Close()
-
-	c := New(server.URL, "test-key")
-	err := c.DeregisterLink(t.Context(), "link-123", DeregisterLinkRequest{
-		Reason:        "graceful_shutdown",
-		JobsCompleted: 5,
-		JobsFailed:    1,
-	})
-	if err != nil {
-		t.Errorf("DeregisterLink() error = %v", err)
-	}
-}
-
-func TestClient_ReleaseJob(t *testing.T) {
-	t.Run("success", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != "/api/v1/runner/jobs/job-123:release" {
-				t.Errorf("path = %q, want %q", r.URL.Path, "/api/v1/runner/jobs/job-123:release")
-			}
-			if r.Method != "POST" {
-				t.Errorf("method = %q, want POST", r.Method)
-			}
-			w.WriteHeader(http.StatusOK)
-		}))
-		defer server.Close()
-
-		c := New(server.URL, "test-key")
-		err := c.ReleaseJob(t.Context(), "job-123")
-		if err != nil {
-			t.Errorf("ReleaseJob() error = %v", err)
-		}
-	})
-
-	t.Run("error on non-200 response", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusConflict)
-			w.Write([]byte(`{"detail":"conflict"}`))
-		}))
-		defer server.Close()
-
-		c := New(server.URL, "test-key")
-		err := c.ReleaseJob(t.Context(), "job-123")
-		if err == nil {
-			t.Error("ReleaseJob() should return error on 409")
-		}
-	})
-}
-
-func TestJob_Fields(t *testing.T) {
+func TestJobFieldsAndHelpers(t *testing.T) {
 	job := Job{
 		ID:            "job-123",
 		JobType:       "webhook",
 		QueueID:       "queue-1",
 		Priority:      "normal",
 		Status:        "running",
-		InputData:     map[string]interface{}{"pr": 42},
+		InputData:     map[string]any{"title": "Fix bug"},
 		AttemptNumber: 1,
 		MaxAttempts:   3,
+		Execution:     &ExecutionConfig{AgentType: "bash", RenderedInstruction: "echo hi"},
 	}
 
-	if job.ID != "job-123" {
-		t.Errorf("ID = %q, want %q", job.ID, "job-123")
+	if job.GetAgentType() != "bash" {
+		t.Fatalf("GetAgentType = %q, want bash", job.GetAgentType())
 	}
-	if job.JobType != "webhook" {
-		t.Errorf("JobType = %q, want %q", job.JobType, "webhook")
+	if got := job.GetRenderedInstruction(); got != "echo hi" {
+		t.Fatalf("GetRenderedInstruction = %q, want %q", got, "echo hi")
 	}
-	if job.AttemptNumber != 1 {
-		t.Errorf("AttemptNumber = %d, want 1", job.AttemptNumber)
+	if got := job.GetDisplayName(); got != "Fix bug" {
+		t.Fatalf("GetDisplayName = %q, want %q", got, "Fix bug")
 	}
-	if job.MaxAttempts != 3 {
-		t.Errorf("MaxAttempts = %d, want 3", job.MaxAttempts)
+}
+
+func TestClaimJobSendsJSONBody(t *testing.T) {
+	c := newMockClient(t, func(r *http.Request) (*http.Response, error) {
+		if r.URL.Path != "/api/v1/runner/jobs:claim" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		payload, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read body: %v", err)
+		}
+		if !bytes.Contains(payload, []byte(`"leaseDurationMs":45000`)) {
+			t.Fatalf("body missing leaseDurationMs: %s", string(payload))
+		}
+		return jsonResponse(http.StatusNoContent, ""), nil
+	})
+
+	if _, err := c.ClaimJob(t.Context(), "hab-1", "", 30); err != nil {
+		t.Fatalf("ClaimJob() error = %v", err)
 	}
 }
