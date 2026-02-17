@@ -115,7 +115,7 @@ func TestLinkDryRunPrintsMCPServers(t *testing.T) {
 	withMockAPIClient(t, linkMockClient(t, `{"configVersion":"1","workspaceId":"ws-1","generatedAt":"2026-02-13T12:00:00Z","refreshAfterSeconds":300,"providers":{"linear":{"status":"active","credential":{"accessToken":"tok","tokenType":"bearer","expiresAt":"2099-12-31T23:59:59Z"},"flags":{"mcp":true},"mcp":{"url":"https://mcp.linear.app/mcp","transport":"streamable-http"}}}}`))
 
 	cmd := newLinkCmd()
-	cmd.SetArgs([]string{"--dry-run", "--habitat", "local", "--queue-id", "q-1", "--agent", "claude"})
+	cmd.SetArgs([]string{"--dry-run", "--habitat", "local", "--queue-id", "q-1", "--harness", "claude"})
 	ctx := out.WithContext(t.Context())
 	cmd.SetContext(ctx)
 
@@ -128,7 +128,7 @@ func TestLinkDryRunPrintsMCPServers(t *testing.T) {
 	}
 }
 
-func TestLinkDryRunBashAgentOmitsMCPServers(t *testing.T) {
+func TestLinkDryRunBashHarnessOmitsMCPServers(t *testing.T) {
 	var outBuf bytes.Buffer
 	term := &terminal.Info{IsTTY: false}
 	out := output.NewWriter(&outBuf, io.Discard, term)
@@ -137,7 +137,7 @@ func TestLinkDryRunBashAgentOmitsMCPServers(t *testing.T) {
 	withMockAPIClient(t, linkMockClient(t, `{"configVersion":"1","workspaceId":"ws-1","generatedAt":"2026-02-13T12:00:00Z","refreshAfterSeconds":300,"providers":{}}`))
 
 	cmd := newLinkCmd()
-	cmd.SetArgs([]string{"--dry-run", "--habitat", "local", "--queue-id", "q-1", "--agent", "bash"})
+	cmd.SetArgs([]string{"--dry-run", "--habitat", "local", "--queue-id", "q-1", "--harness", "bash"})
 	ctx := out.WithContext(t.Context())
 	cmd.SetContext(ctx)
 
@@ -146,7 +146,28 @@ func TestLinkDryRunBashAgentOmitsMCPServers(t *testing.T) {
 	}
 
 	if got := outBuf.String(); strings.Contains(got, "MCP servers:") {
-		t.Fatalf("output = %q, expected no MCP servers line for bash-only agent", got)
+		t.Fatalf("output = %q, expected no MCP servers line for bash-only harness", got)
+	}
+}
+
+func TestLinkLegacyAgentFlagRejected(t *testing.T) {
+	term := &terminal.Info{IsTTY: false}
+	out := output.NewWriter(io.Discard, io.Discard, term)
+	out.NoInput = true
+
+	withMockAPIClient(t, linkMockClient(t, `{"configVersion":"1","workspaceId":"ws-1","generatedAt":"2026-02-13T12:00:00Z","refreshAfterSeconds":300,"providers":{}}`))
+
+	cmd := newLinkCmd()
+	cmd.SetArgs([]string{"--dry-run", "--habitat", "local", "--queue-id", "q-1", "--agent", "claude"})
+	ctx := out.WithContext(t.Context())
+	cmd.SetContext(ctx)
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for legacy --agent flag")
+	}
+	if !strings.Contains(err.Error(), "unknown flag: --agent") {
+		t.Fatalf("error = %q, want unknown flag --agent", err.Error())
 	}
 }
 

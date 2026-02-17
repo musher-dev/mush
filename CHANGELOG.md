@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Breaking Changes
+
+* **link:** replace `--agent` runtime selector with `--harness` (no backwards compatibility)
+
 ## [1.5.0](https://github.com/musher-dev/mush/compare/v1.4.0...v1.5.0) (2026-02-15)
 
 

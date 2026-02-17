@@ -56,7 +56,7 @@ If startup fails with `fork/exec ... operation not permitted`, check:
 2. Register a link with the platform and start link heartbeat
 3. Poll `ClaimJob(...)` in a loop
 4. For each job:
-   - validate supported agent type
+  - validate supported harness type (mapped from `execution.agentType` in the API contract)
    - call `StartJob(...)`
    - run the job
    - call `CompleteJob(...)` or `FailJob(...)`

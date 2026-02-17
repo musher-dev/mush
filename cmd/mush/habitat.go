@@ -13,7 +13,7 @@ func newHabitatCmd() *cobra.Command {
 		Short: "Manage habitats",
 		Long: `Commands for listing and selecting habitats.
 
-Habitats are execution contexts within your workspace where agents connect
+Habitats are execution contexts within your workspace where harnesses connect
 and jobs are routed. You must select a habitat before linking to receive jobs.`,
 	}
 

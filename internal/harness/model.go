@@ -137,23 +137,23 @@ type RootModel struct {
 	failed        int
 
 	// Configuration
-	client            *client.Client
-	cfg               *config.Config
-	habitatID         string
-	queueID           string
-	supportedAgents   []string
-	instanceID        string
-	linkID            string
-	signalDir         string
-	restoreHooks      func() error
-	runnerConfig      *client.RunnerConfigResponse
-	mcpConfigPath     string
-	mcpConfigSig      string
-	mcpConfigRemove   func() error
-	loadedMCPNames    []string
-	transcriptEnabled bool
-	transcriptDir     string
-	transcriptLines   int
+	client             *client.Client
+	cfg                *config.Config
+	habitatID          string
+	queueID            string
+	supportedHarnesses []string
+	instanceID         string
+	linkID             string
+	signalDir          string
+	restoreHooks       func() error
+	runnerConfig       *client.RunnerConfigResponse
+	mcpConfigPath      string
+	mcpConfigSig       string
+	mcpConfigRemove    func() error
+	loadedMCPNames     []string
+	transcriptEnabled  bool
+	transcriptDir      string
+	transcriptLines    int
 
 	refreshMu              sync.Mutex
 	refreshInterval        time.Duration
@@ -230,7 +230,7 @@ func NewRootModel(ctx context.Context, cfg *Config) *RootModel {
 		cfg:                 config.Load(),
 		habitatID:           cfg.HabitatID,
 		queueID:             cfg.QueueID,
-		supportedAgents:     cfg.SupportedAgents,
+		supportedHarnesses:  cfg.SupportedHarnesses,
 		instanceID:          cfg.InstanceID,
 		runnerConfig:        cfg.RunnerConfig,
 		refreshInterval:     normalizeRefreshInterval(0),
@@ -311,9 +311,9 @@ func (m *RootModel) Run() error {
 	}
 
 	// Claude-specific wiring (PTY + stop-hook completion).
-	// If the harness is running without the Claude agent, we skip all Claude setup
+	// If the harness is running without the Claude harness, we skip all Claude setup
 	// and only run non-Claude jobs (e.g. bash) in the scroll region.
-	if m.isAgentSupported("claude") {
+	if m.isHarnessSupported("claude") {
 		// Create per-run signal directory
 		signalDir, mkErr := os.MkdirTemp("", "mush-signals-")
 		if mkErr != nil {
@@ -366,8 +366,8 @@ func (m *RootModel) Run() error {
 		}
 	}()
 
-	// Start Claude Code in PTY if it's a supported agent
-	if m.isAgentSupported("claude") {
+	// Start Claude Code in PTY if it's a supported harness.
+	if m.isHarnessSupported("claude") {
 		if err := m.startPTY(); err != nil {
 			return fmt.Errorf("failed to start PTY: %w", err)
 		}
@@ -385,7 +385,7 @@ func (m *RootModel) Run() error {
 	}()
 
 	// PTY output -> terminal (in scroll region)
-	if m.isAgentSupported("claude") {
+	if m.isHarnessSupported("claude") {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -416,7 +416,7 @@ func (m *RootModel) Run() error {
 	}()
 
 	// Runner config refresh loop for MCP credential rotation.
-	if m.isAgentSupported("claude") {
+	if m.isHarnessSupported("claude") {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -444,10 +444,10 @@ func (m *RootModel) Run() error {
 	return nil
 }
 
-// isAgentSupported checks if a given agent type is in the list of supported agents.
-func (m *RootModel) isAgentSupported(agentType string) bool {
-	for _, a := range m.supportedAgents {
-		if a == agentType {
+// isHarnessSupported checks if a given harness type is in the supported list.
+func (m *RootModel) isHarnessSupported(harnessType string) bool {
+	for _, a := range m.supportedHarnesses {
+		if a == harnessType {
 			return true
 		}
 	}
@@ -471,7 +471,7 @@ func (m *RootModel) setupScreen() {
 }
 
 func (m *RootModel) shouldCaptureTranscript() bool {
-	return m.isAgentSupported("claude")
+	return m.isHarnessSupported("claude")
 }
 
 func (m *RootModel) appendTranscript(stream string, chunk []byte) {
@@ -1243,10 +1243,10 @@ func (m *RootModel) jobManagerLoop() {
 			continue // No job, poll again
 		}
 
-		// Check if we can handle this agent type
+		// Server contract uses execution.agentType; we map that to harness selection locally.
 		agentType := job.GetAgentType()
-		if !m.isAgentSupported(agentType) {
-			errMsg := fmt.Sprintf("Unsupported agent type: %s", agentType)
+		if !m.isHarnessSupported(agentType) {
+			errMsg := fmt.Sprintf("Unsupported harness type: %s", agentType)
 			m.setLastError(errMsg)
 			m.releaseJob(job)
 			continue
@@ -1351,7 +1351,7 @@ func (m *RootModel) processJob(job *client.Job) {
 		execTimeout = time.Duration(job.Execution.TimeoutMs) * time.Millisecond
 	}
 
-	// Execute by agent type.
+	// Execute by harness type. (The wire contract still calls this `agentType`.)
 	switch agentType {
 	case "claude":
 		// Get the prompt for Claude
@@ -1435,7 +1435,7 @@ func (m *RootModel) processJob(job *client.Job) {
 		return
 
 	default:
-		m.setLastError(fmt.Sprintf("Unsupported agent type: %s", agentType))
+		m.setLastError(fmt.Sprintf("Unsupported harness type: %s", agentType))
 		m.releaseJob(job)
 		return
 	}
@@ -1787,7 +1787,7 @@ func (m *RootModel) runnerConfigRefreshLoop() {
 }
 
 func (m *RootModel) maybeRestartClaude() error {
-	if !m.isAgentSupported("claude") {
+	if !m.isHarnessSupported("claude") {
 		return nil
 	}
 	if m.currentJobID() != "" {
