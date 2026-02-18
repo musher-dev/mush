@@ -47,7 +47,7 @@ func TestHandleCtrlCFirstPressInterruptsClaude(t *testing.T) {
 		now:             func() time.Time { return now },
 		ctrlCExitWindow: 2 * time.Second,
 		currentJob: &client.Job{
-			Execution: &client.ExecutionConfig{AgentType: "claude"},
+			Execution: &client.ExecutionConfig{HarnessType: "claude"},
 		},
 	}
 
@@ -86,7 +86,7 @@ func TestHandleCtrlCSecondPressExitsWithinWindow(t *testing.T) {
 		now:             func() time.Time { return current },
 		ctrlCExitWindow: 2 * time.Second,
 		currentJob: &client.Job{
-			Execution: &client.ExecutionConfig{AgentType: "claude"},
+			Execution: &client.ExecutionConfig{HarnessType: "claude"},
 		},
 	}
 

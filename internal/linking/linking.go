@@ -50,7 +50,7 @@ func Register(
 		InstanceID:     instanceID,
 		HabitatID:      habitatID,
 		Name:           name,
-		LinkType:       "agent",
+		LinkType:       "harness",
 		ClientVersion:  version,
 		ClientMetadata: metadata,
 	}

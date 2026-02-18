@@ -1177,7 +1177,7 @@ func (m *RootModel) hasActiveClaudeJob() bool {
 	if m.currentJob == nil {
 		return false
 	}
-	return m.currentJob.GetAgentType() == "claude"
+	return m.currentJob.GetHarnessType() == "claude"
 }
 
 // updateStatusLoop periodically updates the status bar.
@@ -1243,10 +1243,10 @@ func (m *RootModel) jobManagerLoop() {
 			continue // No job, poll again
 		}
 
-		// Server contract uses execution.agentType; we map that to harness selection locally.
-		agentType := job.GetAgentType()
-		if !m.isHarnessSupported(agentType) {
-			errMsg := fmt.Sprintf("Unsupported harness type: %s", agentType)
+		// Map execution.harnessType to local harness selection.
+		harnessType := job.GetHarnessType()
+		if !m.isHarnessSupported(harnessType) {
+			errMsg := fmt.Sprintf("Unsupported harness type: %s", harnessType)
 			m.setLastError(errMsg)
 			m.releaseJob(job)
 			continue
@@ -1295,12 +1295,12 @@ func (m *RootModel) drainPromptDetected() {
 
 // processJob handles the lifecycle of a single job.
 func (m *RootModel) processJob(job *client.Job) {
-	agentType := job.GetAgentType()
+	harnessType := job.GetHarnessType()
 
 	m.jobMu.Lock()
 	m.currentJob = job
 	m.readyForJob = false
-	if agentType == "claude" {
+	if harnessType == "claude" {
 		m.capturing = true
 		m.outputBuffer.Reset()
 	} else {
@@ -1340,7 +1340,7 @@ func (m *RootModel) processJob(job *client.Job) {
 	}
 
 	// Clear any prior signal file and record current job (Claude only).
-	if agentType == "claude" && m.signalDir != "" {
+	if harnessType == "claude" && m.signalDir != "" {
 		_ = os.Remove(m.signalPath())
 		_ = os.WriteFile(m.currentJobPath(), []byte(job.ID), 0o600)
 	}
@@ -1351,8 +1351,8 @@ func (m *RootModel) processJob(job *client.Job) {
 		execTimeout = time.Duration(job.Execution.TimeoutMs) * time.Millisecond
 	}
 
-	// Execute by harness type. (The wire contract still calls this `agentType`.)
-	switch agentType {
+	// Execute by harness type.
+	switch harnessType {
 	case "claude":
 		// Get the prompt for Claude
 		prompt, err := m.getPromptFromJob(job)
@@ -1435,7 +1435,7 @@ func (m *RootModel) processJob(job *client.Job) {
 		return
 
 	default:
-		m.setLastError(fmt.Sprintf("Unsupported harness type: %s", agentType))
+		m.setLastError(fmt.Sprintf("Unsupported harness type: %s", harnessType))
 		m.releaseJob(job)
 		return
 	}

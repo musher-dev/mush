@@ -229,7 +229,7 @@ func TestClientLinkLifecycleEndpoints(t *testing.T) {
 		}
 	})
 
-	resp, err := c.RegisterLink(t.Context(), &RegisterLinkRequest{InstanceID: "instance-1", LinkType: "agent"})
+	resp, err := c.RegisterLink(t.Context(), &RegisterLinkRequest{InstanceID: "instance-1", LinkType: "harness"})
 	if err != nil || resp.LinkID != "link-123" {
 		t.Fatalf("RegisterLink() resp=%#v err=%v", resp, err)
 	}
@@ -251,11 +251,11 @@ func TestJobFieldsAndHelpers(t *testing.T) {
 		InputData:     map[string]any{"title": "Fix bug"},
 		AttemptNumber: 1,
 		MaxAttempts:   3,
-		Execution:     &ExecutionConfig{AgentType: "bash", RenderedInstruction: "echo hi"},
+		Execution:     &ExecutionConfig{HarnessType: "bash", RenderedInstruction: "echo hi"},
 	}
 
-	if job.GetAgentType() != "bash" {
-		t.Fatalf("GetAgentType = %q, want bash", job.GetAgentType())
+	if job.GetHarnessType() != "bash" {
+		t.Fatalf("GetHarnessType = %q, want bash", job.GetHarnessType())
 	}
 	if got := job.GetRenderedInstruction(); got != "echo hi" {
 		t.Fatalf("GetRenderedInstruction = %q, want %q", got, "echo hi")
