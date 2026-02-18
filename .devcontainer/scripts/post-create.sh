@@ -68,7 +68,7 @@ if ! command -v claude >/dev/null 2>&1 || [[ "$(command -v claude)" != "$HOME/.l
   set -e
   hash -r
 
-  if (( claude_install_rc != 0 )); then
+  if ((claude_install_rc != 0)); then
     echo "WARN: Claude native install failed (exit $claude_install_rc). Continuing." >&2
   fi
 fi
@@ -95,6 +95,43 @@ echo "==> Installing GoReleaser..."
 if ! command -v goreleaser >/dev/null 2>&1; then
   go install github.com/goreleaser/goreleaser/v2@v2.13.3 || {
     echo "WARN: GoReleaser installation failed. Continuing." >&2
+  }
+fi
+
+echo "==> Installing VHS and dependencies..."
+# ffmpeg for GIF encoding
+if ! command -v ffmpeg >/dev/null 2>&1; then
+  sudo apt-get update
+  sudo apt-get install -y --no-install-recommends ffmpeg
+fi
+
+# chromium for VHS terminal rendering (via Playwright — Ubuntu's chromium
+# package is a snap shim that doesn't work in containers)
+if ! command -v chrome >/dev/null 2>&1; then
+  npx --yes playwright install --with-deps chromium 2>/dev/null
+  PW_CHROME="$(find "$HOME/.cache/ms-playwright" -name chrome -path "*/chrome-linux/*" 2>/dev/null | head -1)"
+  if [ -n "$PW_CHROME" ]; then
+    sudo ln -sf "$PW_CHROME" /usr/local/bin/chrome
+  else
+    echo "WARN: chromium installation failed. VHS will not work." >&2
+  fi
+fi
+
+# ttyd for VHS PTY management
+if ! command -v ttyd >/dev/null 2>&1; then
+  TTYD_VERSION="1.7.7"
+  curl -fsSL -o /tmp/ttyd \
+    "https://github.com/tsl0922/ttyd/releases/download/${TTYD_VERSION}/ttyd.$(uname -m)"
+  chmod +x /tmp/ttyd
+  sudo mv /tmp/ttyd /usr/local/bin/ttyd || {
+    echo "WARN: ttyd installation failed. VHS will not work." >&2
+  }
+fi
+
+# VHS for terminal demo recording
+if ! command -v vhs >/dev/null 2>&1; then
+  go install github.com/charmbracelet/vhs@latest || {
+    echo "WARN: VHS installation failed. Demo GIF generation will not work." >&2
   }
 fi
 

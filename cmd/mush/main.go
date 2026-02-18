@@ -18,7 +18,7 @@ import (
 	"github.com/musher-dev/mush/internal/update"
 )
 
-// Version information (set via ldflags during build)
+// Version information (set via ldflags during build).
 var (
 	version = "dev"
 	commit  = "none"
@@ -42,10 +42,12 @@ func run() (exitCode int) {
 	buildinfo.Version = version
 
 	out := output.Default()
+
 	rootCmd := newRootCmd()
 	if err := rootCmd.Execute(); err != nil {
 		return handleError(out, err)
 	}
+
 	return 0
 }
 
@@ -57,9 +59,11 @@ func handleError(out *output.Writer, err error) int {
 	if clierrors.As(err, &cliErr) {
 		// CLIErrors are our custom errors - print with styled output
 		out.Failure("%s", cliErr.Message)
+
 		if cliErr.Hint != "" {
 			out.Info("%s", cliErr.Hint)
 		}
+
 		return cliErr.Code
 	}
 
@@ -74,6 +78,7 @@ func handleError(out *output.Writer, err error) int {
 		if !strings.Contains(errStr, "--help") {
 			fmt.Fprintf(os.Stderr, "\nRun 'mush --help' for usage.\n")
 		}
+
 		return clierrors.ExitUsage
 	}
 
@@ -87,6 +92,7 @@ func handleError(out *output.Writer, err error) int {
 
 	// Other errors - print with styled output
 	out.Failure("%s", errStr)
+
 	return clierrors.ExitGeneral
 }
 
@@ -128,6 +134,7 @@ Get started:
 
 			if noColor {
 				out.SetNoColor(true)
+
 				color.NoColor = true
 			}
 
@@ -152,6 +159,7 @@ Get started:
 			if shouldShowUpdateNotice(cmd, version, quiet, jsonOutput) {
 				showUpdateNotice(out, version)
 			}
+
 			return nil
 		},
 	}
@@ -211,6 +219,7 @@ func newVersionCmd() *cobra.Command {
 			out.Print("mush %s\n", version)
 			out.Print("  commit: %s\n", commit)
 			out.Print("  built:  %s\n", date)
+
 			return nil
 		},
 	}
@@ -233,6 +242,7 @@ func shouldBackgroundCheck(cmd *cobra.Command, ver string, quiet, jsonOut bool) 
 	if ver == "dev" || quiet || jsonOut || isUpdateDisabled() {
 		return false
 	}
+
 	return !skipUpdateCommands[cmd.Name()]
 }
 
@@ -242,6 +252,7 @@ func backgroundUpdateCheck(currentVersion string) {
 	if err != nil {
 		return
 	}
+
 	if !state.ShouldCheck() {
 		return
 	}
@@ -272,6 +283,7 @@ func shouldShowUpdateNotice(cmd *cobra.Command, ver string, quiet, jsonOut bool)
 	if ver == "dev" || quiet || jsonOut || isUpdateDisabled() {
 		return false
 	}
+
 	return !skipUpdateCommands[cmd.Name()]
 }
 

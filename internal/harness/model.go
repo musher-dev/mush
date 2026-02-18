@@ -65,7 +65,7 @@ const PTYPasteSettleDelay = 500 * time.Millisecond
 // DefaultExecutionTimeout is the fallback when no execution timeout is set on the job.
 const DefaultExecutionTimeout = 10 * time.Minute
 
-// ANSI escape sequences for terminal control
+// ANSI escape sequences for terminal control.
 const (
 	escClearScreen   = "\x1b[2J"
 	escMoveTo        = "\x1b[%d;%dH" // row;col (1-indexed)
@@ -78,7 +78,7 @@ const (
 	escClearLine     = "\x1b[2K"
 )
 
-// StatusBarHeight is the number of lines reserved for the status bar
+// StatusBarHeight is the number of lines reserved for the status bar.
 const StatusBarHeight = 2
 
 const (
@@ -198,12 +198,19 @@ type lockedWriter struct {
 func (lw *lockedWriter) Write(p []byte) (int, error) {
 	lw.mu.Lock()
 	defer lw.mu.Unlock()
-	return lw.w.Write(p)
+
+	written, err := lw.w.Write(p)
+	if err != nil {
+		return written, fmt.Errorf("write to locked writer: %w", err)
+	}
+
+	return written, nil
 }
 
 func (m *RootModel) termWrite(p []byte) {
 	m.termMu.Lock()
 	defer m.termMu.Unlock()
+
 	_, _ = os.Stdout.Write(p)
 }
 
@@ -214,6 +221,7 @@ func (m *RootModel) termWriteString(s string) {
 func (m *RootModel) termPrintf(format string, args ...any) {
 	m.termMu.Lock()
 	defer m.termMu.Unlock()
+
 	_, _ = fmt.Fprintf(os.Stdout, format, args...)
 }
 
@@ -267,6 +275,7 @@ func (m *RootModel) Run() error {
 	if err != nil {
 		return fmt.Errorf("failed to get terminal size: %w", err)
 	}
+
 	m.width = width
 	m.height = height
 
@@ -275,6 +284,7 @@ func (m *RootModel) Run() error {
 	if err != nil {
 		return fmt.Errorf("failed to set raw mode: %w", err)
 	}
+
 	m.oldState = oldState
 	defer m.restore()
 
@@ -285,16 +295,20 @@ func (m *RootModel) Run() error {
 	if !historyEnabled {
 		historyEnabled = m.cfg.HistoryEnabled()
 	}
+
 	if historyEnabled && m.shouldCaptureTranscript() {
 		historyDir := m.transcriptDir
 		if historyDir == "" {
 			historyDir = m.cfg.HistoryDir()
 		}
+
 		historyLines := m.transcriptLines
 		if historyLines <= 0 {
 			historyLines = m.cfg.HistoryLines()
 		}
+
 		sessionID := uuid.NewString()
+
 		store, tErr := transcript.NewStore(transcript.StoreOptions{
 			SessionID: sessionID,
 			Dir:       historyDir,
@@ -305,6 +319,7 @@ func (m *RootModel) Run() error {
 		} else {
 			m.transcriptMu.Lock()
 			m.transcriptStore = store
+
 			m.transcriptMu.Unlock()
 			defer m.closeTranscript()
 		}
@@ -319,7 +334,9 @@ func (m *RootModel) Run() error {
 		if mkErr != nil {
 			return fmt.Errorf("failed to create signal directory: %w", mkErr)
 		}
+
 		m.signalDir = signalDir
+
 		defer func() {
 			_ = os.RemoveAll(signalDir)
 		}()
@@ -329,7 +346,9 @@ func (m *RootModel) Run() error {
 		if hookErr != nil {
 			return hookErr
 		}
+
 		m.restoreHooks = restoreHooks
+
 		defer func() {
 			if m.restoreHooks != nil {
 				_ = m.restoreHooks()
@@ -345,22 +364,27 @@ func (m *RootModel) Run() error {
 
 	// Register link with the platform
 	name, metadata := linking.DefaultLinkInfo()
+
 	linkID, err := linking.Register(m.ctx, m.client, m.habitatID, m.instanceID, name, metadata, buildinfo.Version)
 	if err != nil {
 		return fmt.Errorf("failed to register link: %w", err)
 	}
+
 	m.linkID = linkID
 
 	linkHeartbeatCtx, cancelLinkHeartbeat := context.WithCancel(m.ctx)
 	defer cancelLinkHeartbeat()
+
 	linking.StartHeartbeat(linkHeartbeatCtx, m.client, m.linkID, m.currentJobID, func(err error) {
 		m.setLastError(fmt.Sprintf("Link heartbeat failed: %v", err))
 	})
+
 	defer func() {
 		m.statusMu.Lock()
 		completed := m.completed
 		failed := m.failed
 		m.statusMu.Unlock()
+
 		if err := linking.Deregister(m.client, m.linkID, completed, failed); err != nil {
 			m.setLastError(fmt.Sprintf("Link deregistration failed: %v", err))
 		}
@@ -379,16 +403,20 @@ func (m *RootModel) Run() error {
 
 	// Terminal resize watcher (SIGWINCH + periodic reconciliation).
 	wg.Add(1)
+
 	go func() {
 		defer wg.Done()
+
 		m.resizeLoop()
 	}()
 
 	// PTY output -> terminal (in scroll region)
 	if m.isHarnessSupported("claude") {
 		wg.Add(1)
+
 		go func() {
 			defer wg.Done()
+
 			m.copyPTYOutput()
 		}()
 	}
@@ -396,30 +424,38 @@ func (m *RootModel) Run() error {
 	// Stdin -> PTY (with quit key handling). If no PTY is running, we still
 	// consume Ctrl+Q so the user can exit the watch UI.
 	wg.Add(1)
+
 	go func() {
 		defer wg.Done()
+
 		m.copyInput()
 	}()
 
 	// Status bar updater
 	wg.Add(1)
+
 	go func() {
 		defer wg.Done()
+
 		m.updateStatusLoop()
 	}()
 
 	// Job manager (polls for and processes jobs)
 	wg.Add(1)
+
 	go func() {
 		defer wg.Done()
+
 		m.jobManagerLoop()
 	}()
 
 	// Runner config refresh loop for MCP credential rotation.
 	if m.isHarnessSupported("claude") {
 		wg.Add(1)
+
 		go func() {
 			defer wg.Done()
+
 			m.runnerConfigRefreshLoop()
 		}()
 	}
@@ -451,6 +487,7 @@ func (m *RootModel) isHarnessSupported(harnessType string) bool {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -478,9 +515,11 @@ func (m *RootModel) appendTranscript(stream string, chunk []byte) {
 	m.transcriptMu.Lock()
 	store := m.transcriptStore
 	m.transcriptMu.Unlock()
+
 	if store == nil || len(chunk) == 0 {
 		return
 	}
+
 	if err := store.Append(stream, chunk); err != nil {
 		m.setLastError(fmt.Sprintf("Transcript write failed: %v", err))
 	}
@@ -491,9 +530,11 @@ func (m *RootModel) closeTranscript() {
 	store := m.transcriptStore
 	m.transcriptStore = nil
 	m.transcriptMu.Unlock()
+
 	if store == nil {
 		return
 	}
+
 	if err := store.Close(); err != nil {
 		m.setLastError(fmt.Sprintf("Transcript close failed: %v", err))
 	}
@@ -502,11 +543,13 @@ func (m *RootModel) closeTranscript() {
 func (m *RootModel) setCopyMode(enabled bool) {
 	m.inputMu.Lock()
 	changed := m.copyMode != enabled
+
 	m.copyMode = enabled
 	if !enabled {
 		m.copyEscPending = false
 	}
 	m.inputMu.Unlock()
+
 	if changed {
 		m.drawStatusBar()
 	}
@@ -515,6 +558,7 @@ func (m *RootModel) setCopyMode(enabled bool) {
 func (m *RootModel) isCopyMode() bool {
 	m.inputMu.Lock()
 	defer m.inputMu.Unlock()
+
 	return m.copyMode
 }
 
@@ -527,8 +571,10 @@ func (m *RootModel) setCopyEscPending(pending bool) {
 func (m *RootModel) popCopyEscPending() bool {
 	m.inputMu.Lock()
 	defer m.inputMu.Unlock()
+
 	pending := m.copyEscPending
 	m.copyEscPending = false
+
 	return pending
 }
 
@@ -536,10 +582,12 @@ func clampTerminalSize(width, height int) (clampedWidth, clampedHeight int) {
 	if width < 20 {
 		width = 20
 	}
+
 	minHeight := StatusBarHeight + 1
 	if height < minHeight {
 		height = minHeight
 	}
+
 	return width, height
 }
 
@@ -548,20 +596,24 @@ func (m *RootModel) ptyRowsForHeight(height int) int {
 	if rows < 1 {
 		return 1
 	}
+
 	return rows
 }
 
 func (m *RootModel) readTerminalSize() (width, height int, err error) {
 	width, height, err = term.GetSize(int(os.Stdin.Fd()))
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, fmt.Errorf("get terminal size: %w", err)
 	}
+
 	width, height = clampTerminalSize(width, height)
+
 	return width, height, nil
 }
 
 func (m *RootModel) resizeLoop() {
 	sigCh := make(chan os.Signal, 1)
+
 	signal.Notify(sigCh, syscall.SIGWINCH)
 	defer signal.Stop(sigCh)
 
@@ -590,6 +642,7 @@ func (m *RootModel) refreshTerminalSize() {
 		m.setLastError(fmt.Sprintf("Terminal resize read failed: %v", err))
 		return
 	}
+
 	m.handleResize(width, height)
 }
 
@@ -601,6 +654,7 @@ func (m *RootModel) handleResize(width, height int) {
 		m.termMu.Unlock()
 		return
 	}
+
 	m.width = width
 	m.height = height
 	scrollStart := StatusBarHeight + 1
@@ -616,6 +670,7 @@ func (m *RootModel) resizeActivePTY(cols, rows int) error {
 	m.ptyMu.Lock()
 	ptmx := m.ptmx
 	m.ptyMu.Unlock()
+
 	if ptmx == nil {
 		return nil
 	}
@@ -626,150 +681,14 @@ func (m *RootModel) resizeActivePTY(cols, rows int) error {
 	}
 
 	if err := setSize(ptmx, &pty.Winsize{
-		Rows: uint16(rows), //nolint:gosec // G115: terminal dimensions bounded by guardrails
-		Cols: uint16(cols), //nolint:gosec // G115: terminal dimensions bounded by guardrails
+		Rows: uint16(rows),
+		Cols: uint16(cols),
 	}); err != nil {
 		m.setLastError(fmt.Sprintf("PTY resize failed: %v", err))
 		return err
 	}
+
 	return nil
-}
-
-// drawStatusBar renders the status bar at the top of the screen.
-func (m *RootModel) drawStatusBar() {
-	m.statusMu.Lock()
-	habitatID := m.habitatID
-	queueID := m.queueID
-	status := m.status
-	completed := m.completed
-	failed := m.failed
-	lastHeartbeat := m.lastHeartbeat
-	lastError := m.lastError
-	lastErrorTime := m.lastErrorTime
-	m.statusMu.Unlock()
-
-	m.jobMu.Lock()
-	jobID := ""
-	if m.currentJob != nil {
-		jobID = m.currentJob.ID
-	}
-	m.jobMu.Unlock()
-
-	hbAge := formatHeartbeatAge(lastHeartbeat)
-	renderedStatus := renderStatus(status)
-
-	// Save cursor and move to top
-	var b strings.Builder
-	b.WriteString(escSaveCursor)
-	b.WriteString(fmt.Sprintf(escMoveTo, 1, 1))
-
-	// Line 1: MUSH HARNESS | Habitat | Status | Job
-	line1Parts := []string{
-		"\x1b[1mMUSH HARNESS\x1b[0m",
-		fmt.Sprintf("Habitat: \x1b[1m%s\x1b[0m", habitatID),
-		fmt.Sprintf("Status: %s", renderedStatus),
-	}
-	if m.isCopyMode() {
-		line1Parts = append(line1Parts, "Mode: \x1b[33mCOPY\x1b[0m")
-	} else {
-		line1Parts = append(line1Parts, "Mode: \x1b[32mLIVE\x1b[0m")
-	}
-
-	if jobID != "" {
-		line1Parts = append(line1Parts, fmt.Sprintf("Job: \x1b[1m%s\x1b[0m", jobID))
-	} else {
-		line1Parts = append(line1Parts, "\x1b[90mJob: (waiting...)\x1b[0m")
-	}
-	line1 := strings.Join(line1Parts, " \x1b[90m|\x1b[0m ")
-
-	// Render line 1
-	b.WriteString(escClearLine)
-	b.WriteString("\x1b[48;5;236m\x1b[38;5;252m ")
-	b.WriteString(line1)
-	padding := m.width - m.visibleLength(line1) - 2
-	if padding > 0 {
-		b.WriteString(strings.Repeat(" ", padding))
-	}
-	b.WriteString(" \x1b[0m")
-
-	// Move to line 2
-	b.WriteString(fmt.Sprintf(escMoveTo, 2, 1))
-
-	// Line 2: Heartbeat | Queue | Completed | Failed | Last Error
-	line2Parts := []string{
-		fmt.Sprintf("HB: \x1b[1m%s\x1b[0m", hbAge),
-		fmt.Sprintf("Queue ID: \x1b[1m%s\x1b[0m", queueID),
-		fmt.Sprintf("Done: \x1b[1m%d\x1b[0m", completed),
-		fmt.Sprintf("Failed: \x1b[1m%d\x1b[0m", failed),
-	}
-	if lastError != "" && time.Since(lastErrorTime) < 30*time.Second {
-		errorStr := lastError
-		if len(errorStr) > 40 {
-			errorStr = errorStr[:37] + "..."
-		}
-		line2Parts = append(line2Parts, fmt.Sprintf("Error: \x1b[31m%s\x1b[0m", errorStr))
-	}
-
-	line2 := strings.Join(line2Parts, " \x1b[90m|\x1b[0m ")
-
-	// Render line 2
-	b.WriteString(escClearLine)
-	b.WriteString("\x1b[48;5;236m\x1b[38;5;252m ")
-	b.WriteString(line2)
-	padding = m.width - m.visibleLength(line2) - 2
-	if padding > 0 {
-		b.WriteString(strings.Repeat(" ", padding))
-	}
-	b.WriteString(" \x1b[0m")
-
-	// Restore cursor
-	b.WriteString(escRestoreCursor)
-
-	m.termWriteString(b.String())
-}
-
-func renderStatus(status ConnectionStatus) string {
-	switch status {
-	case StatusConnected:
-		return "\x1b[32m\x1b[1mConnected\x1b[0m"
-	case StatusProcessing:
-		return "\x1b[33m\x1b[1mProcessing\x1b[0m"
-	case StatusError:
-		return "\x1b[31m\x1b[1mError\x1b[0m"
-	default:
-		return status.String()
-	}
-}
-
-func formatHeartbeatAge(lastHeartbeat time.Time) string {
-	age := time.Since(lastHeartbeat)
-	if age < time.Second {
-		return "<1s ago"
-	}
-	if age < time.Minute {
-		return fmt.Sprintf("%ds ago", int(age.Seconds()))
-	}
-	return fmt.Sprintf("%dm ago", int(age.Minutes()))
-}
-
-// visibleLength returns the visible length of a string, excluding ANSI codes.
-func (m *RootModel) visibleLength(s string) int {
-	length := 0
-	inEscape := false
-	for _, r := range s {
-		if r == '\x1b' {
-			inEscape = true
-			continue
-		}
-		if inEscape {
-			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
-				inEscape = false
-			}
-			continue
-		}
-		length++
-	}
-	return length
 }
 
 // startPTY starts Claude Code in a PTY.
@@ -780,6 +699,7 @@ func (m *RootModel) startPTY() error {
 	if m.mcpConfigPath != "" {
 		args = append(args, "--mcp-config", m.mcpConfigPath)
 	}
+
 	cmd := exec.CommandContext(m.ctx, "claude", args...)
 	cmd.Env = append(os.Environ(),
 		"TERM=xterm-256color",
@@ -796,8 +716,8 @@ func (m *RootModel) startPTY() error {
 	}
 
 	ptmx, err := startWithSize(cmd, &pty.Winsize{
-		Rows: uint16(ptyHeight), //nolint:gosec // G115: terminal dimensions bounded by OS
-		Cols: uint16(m.width),   //nolint:gosec // G115: terminal dimensions bounded by OS
+		Rows: uint16(ptyHeight),
+		Cols: uint16(m.width),
 	})
 	if err != nil {
 		return annotateStartPTYError(err, cmd.Path)
@@ -807,6 +727,7 @@ func (m *RootModel) startPTY() error {
 	m.ptmx = ptmx
 	m.cmd = cmd
 	m.cmdPGID = 0
+
 	if cmd.Process != nil && cmd.Process.Pid > 0 {
 		if pgid, pgErr := syscall.Getpgid(cmd.Process.Pid); pgErr == nil {
 			m.cmdPGID = pgid
@@ -819,6 +740,7 @@ func (m *RootModel) startPTY() error {
 	for len(m.ptyReady) > 0 {
 		<-m.ptyReady
 	}
+
 	m.ptyReady <- ptmx
 
 	return nil
@@ -838,11 +760,13 @@ func (m *RootModel) closePTY() {
 	if ptmx != nil {
 		_ = ptmx.Close()
 	}
+
 	if cmd == nil || cmd.Process == nil {
 		return
 	}
 
 	waitCh := make(chan error, 1)
+
 	go func() {
 		waitCh <- cmd.Wait()
 	}()
@@ -859,6 +783,7 @@ func (m *RootModel) closePTY() {
 		return
 	case <-time.After(shutdownDeadline):
 		m.sendSignal(cmd.Process.Pid, pgid, syscall.SIGKILL)
+
 		select {
 		case <-waitCh:
 		case <-time.After(shutdownDeadline):
@@ -881,6 +806,7 @@ func (m *RootModel) sendSignal(pid, pgid int, sig syscall.Signal) {
 	if pid <= 0 {
 		return
 	}
+
 	_ = kill(pid, sig)
 }
 
@@ -888,6 +814,7 @@ func annotateStartPTYError(err error, binaryPath string) error {
 	if !errors.Is(err, syscall.EPERM) {
 		return err
 	}
+
 	return fmt.Errorf(
 		"%w (EPERM during PTY start for %q; likely session/exec policy issue. Check executable permissions, filesystem noexec, and macOS quarantine attributes)",
 		err,
@@ -898,6 +825,7 @@ func annotateStartPTYError(err error, binaryPath string) error {
 func (m *RootModel) activePTY() *os.File {
 	m.ptyMu.Lock()
 	defer m.ptyMu.Unlock()
+
 	return m.ptmx
 }
 
@@ -916,6 +844,7 @@ func (m *RootModel) copyPTYOutput() {
 			if ptmx == nil {
 				continue
 			}
+
 			m.readPTYOutput(ptmx)
 		}
 	}
@@ -938,23 +867,23 @@ func (m *RootModel) readPTYOutput(ptmx *os.File) {
 		default:
 		}
 
-		n, err := ptmx.Read(buf)
+		bytesRead, err := ptmx.Read(buf)
 		if err != nil {
 			return
 		}
 
-		if n <= 0 {
+		if bytesRead <= 0 {
 			continue
 		}
 
 		// Write to terminal
-		m.termWrite(buf[:n])
-		m.appendTranscript("pty", buf[:n])
+		m.termWrite(buf[:bytesRead])
+		m.appendTranscript("pty", buf[:bytesRead])
 
 		// Detect bypass dialog and auto-accept
 		m.jobMu.Lock()
 		if !m.bypassAccepted {
-			dialogBuf.Write(buf[:n])
+			dialogBuf.Write(buf[:bytesRead])
 			// Look for "Esc to cancel" which appears at the end of the dialog
 			if bytes.Contains(dialogBuf.Bytes(), []byte("Esc to cancel")) {
 				m.bypassAccepted = true
@@ -963,10 +892,12 @@ func (m *RootModel) readPTYOutput(ptmx *os.File) {
 				// Wait a moment for the TUI to be ready, then send input
 				go func() {
 					time.Sleep(300 * time.Millisecond)
+
 					active := m.activePTY()
 					if active != nil {
 						// Down arrow to select "Yes, I accept"
 						_, _ = active.WriteString("\x1b[B")
+
 						time.Sleep(100 * time.Millisecond)
 						// Enter to confirm
 						_, _ = active.WriteString("\r")
@@ -982,14 +913,14 @@ func (m *RootModel) readPTYOutput(ptmx *os.File) {
 		// Capture output if we're processing a job
 		m.jobMu.Lock()
 		if m.capturing {
-			m.outputBuffer.Write(buf[:n])
+			m.outputBuffer.Write(buf[:bytesRead])
 		}
 		// Reset prompt confirmation since new output arrived
 		m.promptConfirmed = false
 		m.jobMu.Unlock()
 
 		// Detect prompt pattern "❯ " to know Claude might be ready
-		for i := 0; i < n; i++ {
+		for i := 0; i < bytesRead; i++ {
 			promptRing[promptRingIdx] = buf[i]
 			promptRingIdx = (promptRingIdx + 1) % len(PromptDetectionBytes)
 
@@ -1034,6 +965,7 @@ func (m *RootModel) checkPromptMatch(ring []byte, idx int) bool {
 			return false
 		}
 	}
+
 	return true
 }
 
@@ -1056,6 +988,7 @@ func (m *RootModel) onPromptConfirmed() {
 // Uses Ctrl+Q (0x11) as quit key to avoid escape sequence ambiguity.
 func (m *RootModel) copyInput() {
 	buf := make([]byte, 256)
+
 	for {
 		select {
 		case <-m.ctx.Done():
@@ -1063,13 +996,13 @@ func (m *RootModel) copyInput() {
 		default:
 		}
 
-		n, err := os.Stdin.Read(buf)
+		bytesRead, err := os.Stdin.Read(buf)
 		if err != nil {
 			return
 		}
 
 		// Check for local control keys first.
-		for i := 0; i < n; i++ {
+		for i := 0; i < bytesRead; i++ {
 			if m.isCopyMode() && m.popCopyEscPending() {
 				if buf[i] == '[' || buf[i] == 'O' {
 					// This byte continues an escape sequence (e.g. arrow keys).
@@ -1086,44 +1019,53 @@ func (m *RootModel) copyInput() {
 				m.signalDone()
 				return
 			}
+
 			if buf[i] == ctrlC { // Ctrl+C
 				if m.handleCtrlC() {
 					return
 				}
 				// We already handled forwarding locally; do not write this byte twice.
 				buf[i] = 0
+
 				continue
 			}
+
 			if buf[i] == ctrlS { // Ctrl+S toggles copy mode
 				m.setCopyMode(!m.isCopyMode())
 				// Drop the key from forwarded data.
 				buf[i] = 0
+
 				continue
 			}
+
 			if m.isCopyMode() {
 				// Esc exits copy mode unless it prefixes a terminal escape sequence
 				// like arrows/function keys.
 				if buf[i] == esc {
-					if i+1 < n && (buf[i+1] == '[' || buf[i+1] == 'O') {
+					if i+1 < bytesRead && (buf[i+1] == '[' || buf[i+1] == 'O') {
 						buf[i] = 0
 						continue
 					}
+
 					m.setCopyEscPending(true)
 				}
+
 				buf[i] = 0
 			}
 		}
 
 		// Forward filtered bytes to PTY.
-		out := make([]byte, 0, n)
-		for i := 0; i < n; i++ {
+		out := make([]byte, 0, bytesRead)
+		for i := 0; i < bytesRead; i++ {
 			if buf[i] != 0 {
 				out = append(out, buf[i])
 			}
 		}
+
 		if len(out) == 0 {
 			continue
 		}
+
 		if ptmx := m.activePTY(); ptmx != nil {
 			_, _ = ptmx.Write(out)
 		}
@@ -1141,6 +1083,7 @@ func (m *RootModel) handleCtrlC() bool {
 	if nowFn == nil {
 		nowFn = time.Now
 	}
+
 	now := nowFn()
 
 	window := m.ctrlCExitWindow
@@ -1150,6 +1093,7 @@ func (m *RootModel) handleCtrlC() bool {
 
 	m.inputMu.Lock()
 	last := m.lastCtrlCAt
+
 	secondPress := !last.IsZero() && now.Sub(last) <= window
 	if secondPress {
 		m.lastCtrlCAt = time.Time{}
@@ -1161,22 +1105,27 @@ func (m *RootModel) handleCtrlC() bool {
 	if secondPress {
 		m.infof("Second Ctrl+C received: exiting watch mode.")
 		m.signalDone()
+
 		return true
 	}
 
 	if ptmx := m.activePTY(); ptmx != nil {
 		_, _ = ptmx.Write([]byte{ctrlC})
 	}
+
 	m.infof("Interrupt sent to Claude. Press Ctrl+C again within %s to exit watch mode.", window.Round(time.Second))
+
 	return false
 }
 
 func (m *RootModel) hasActiveClaudeJob() bool {
 	m.jobMu.Lock()
 	defer m.jobMu.Unlock()
+
 	if m.currentJob == nil {
 		return false
 	}
+
 	return m.currentJob.GetHarnessType() == "claude"
 }
 
@@ -1225,6 +1174,7 @@ func (m *RootModel) jobManagerLoop() {
 		if err := m.maybeRestartClaude(); err != nil {
 			m.setLastError(fmt.Sprintf("Claude restart failed: %v", err))
 			time.Sleep(2 * time.Second)
+
 			continue
 		}
 
@@ -1234,8 +1184,10 @@ func (m *RootModel) jobManagerLoop() {
 			if m.ctx.Err() != nil {
 				return // Context canceled
 			}
+
 			m.setLastError(fmt.Sprintf("Claim failed: %v", err))
 			time.Sleep(5 * time.Second) // Backoff on error
+
 			continue
 		}
 
@@ -1249,6 +1201,7 @@ func (m *RootModel) jobManagerLoop() {
 			errMsg := fmt.Sprintf("Unsupported harness type: %s", harnessType)
 			m.setLastError(errMsg)
 			m.releaseJob(job)
+
 			continue
 		}
 
@@ -1299,6 +1252,7 @@ func (m *RootModel) processJob(job *client.Job) {
 
 	m.jobMu.Lock()
 	m.currentJob = job
+
 	m.readyForJob = false
 	if harnessType == "claude" {
 		m.capturing = true
@@ -1359,6 +1313,7 @@ func (m *RootModel) processJob(job *client.Job) {
 		if err != nil {
 			m.setLastError(fmt.Sprintf("Prompt error: %v", err))
 			m.failJobNoRetry(job, "prompt_error", err.Error())
+
 			return
 		}
 
@@ -1379,7 +1334,9 @@ func (m *RootModel) processJob(job *client.Job) {
 			if errors.Is(waitCtx.Err(), context.DeadlineExceeded) {
 				reason = "timeout"
 			}
+
 			m.failJob(job, reason, execErr.Error())
+
 			return
 		}
 
@@ -1401,6 +1358,7 @@ func (m *RootModel) processJob(job *client.Job) {
 		}
 
 		time.Sleep(1 * time.Second) // Settle time
+
 		return
 
 	case "bash":
@@ -1408,6 +1366,7 @@ func (m *RootModel) processJob(job *client.Job) {
 		if err != nil {
 			m.setLastError(fmt.Sprintf("Command error: %v", err))
 			m.failJobNoRetry(job, "command_error", err.Error())
+
 			return
 		}
 
@@ -1424,7 +1383,9 @@ func (m *RootModel) processJob(job *client.Job) {
 			if errors.Is(waitCtx.Err(), context.DeadlineExceeded) {
 				reason = "timeout"
 			}
+
 			m.failJob(job, reason, execErr.Error())
+
 			return
 		}
 
@@ -1432,11 +1393,13 @@ func (m *RootModel) processJob(job *client.Job) {
 		outputData["success"] = true
 
 		m.completeJob(job, outputData)
+
 		return
 
 	default:
 		m.setLastError(fmt.Sprintf("Unsupported harness type: %s", harnessType))
 		m.releaseJob(job)
+
 		return
 	}
 }
@@ -1460,12 +1423,15 @@ func (m *RootModel) getPromptFromJob(job *client.Job) (string, error) {
 		if instruction, ok := job.InputData["instruction"].(string); ok && instruction != "" {
 			return instruction, nil
 		}
+
 		if title, ok := job.InputData["title"].(string); ok && title != "" {
 			if desc, ok := job.InputData["description"].(string); ok && desc != "" {
 				return title + "\n\n" + desc, nil
 			}
+
 			return title, nil
 		}
+
 		if prompt, ok := job.InputData["prompt"].(string); ok && prompt != "" {
 			return prompt, nil
 		}
@@ -1493,6 +1459,7 @@ func (m *RootModel) getBashCommandFromJob(job *client.Job) (string, error) {
 		if cmd, ok := job.InputData["command"].(string); ok && cmd != "" {
 			return cmd, nil
 		}
+
 		if script, ok := job.InputData["script"].(string); ok && script != "" {
 			return script, nil
 		}
@@ -1507,6 +1474,7 @@ func (m *RootModel) heartbeatLoop(ctx context.Context, jobID string) {
 	if interval <= 0 {
 		interval = config.DefaultHeartbeatInterval
 	}
+
 	ticker := time.NewTicker(time.Duration(interval) * time.Second)
 	defer ticker.Stop()
 
@@ -1539,7 +1507,7 @@ func (m *RootModel) waitForSignalFile(ctx context.Context) (string, error) {
 	for {
 		select {
 		case <-ctx.Done():
-			return "", ctx.Err()
+			return "", fmt.Errorf("wait for signal file canceled: %w", ctx.Err())
 		case <-m.done:
 			return "", errors.New("harness stopped")
 		case <-ticker.C:
@@ -1554,6 +1522,7 @@ func (m *RootModel) waitForSignalFile(ctx context.Context) (string, error) {
 			output := ansi.Strip(m.outputBuffer.String())
 			m.outputBuffer.Reset()
 			m.jobMu.Unlock()
+
 			return output, nil
 		}
 	}
@@ -1573,7 +1542,9 @@ func (m *RootModel) injectPrompt(prompt string) {
 		if len(chunk) > PTYWriteChunkSize {
 			chunk = data[:PTYWriteChunkSize]
 		}
+
 		_, _ = ptmx.Write(chunk)
+
 		data = data[len(chunk):]
 		if len(data) > 0 {
 			time.Sleep(PTYChunkDelay)
@@ -1582,6 +1553,7 @@ func (m *RootModel) injectPrompt(prompt string) {
 
 	// Allow the application to finish processing the pasted content
 	time.Sleep(PTYPasteSettleDelay)
+
 	_, _ = ptmx.WriteString("\r")
 }
 
@@ -1591,9 +1563,13 @@ func (m *RootModel) sendClear() {
 	if ptmx == nil {
 		return
 	}
+
 	time.Sleep(500 * time.Millisecond)
+
 	_, _ = ptmx.WriteString("/clear")
+
 	time.Sleep(PTYPostWriteDelay)
+
 	_, _ = ptmx.WriteString("\r")
 }
 
@@ -1604,6 +1580,7 @@ func (m *RootModel) completeJob(job *client.Job, outputData map[string]any) {
 		m.setLastError(fmt.Sprintf("Complete failed: %v", err))
 		// If completion fails, we should probably try to fail it as a fallback
 		m.failJob(job, "completion_report_failed", err.Error())
+
 		return
 	}
 
@@ -1618,7 +1595,7 @@ func (m *RootModel) executeBashJob(ctx context.Context, job *client.Job, command
 		return nil, fmt.Errorf("bash not found in PATH")
 	}
 
-	cmd := exec.CommandContext(ctx, "bash", "-c", command)
+	cmd := exec.CommandContext(ctx, "bash", "-c", command) //nolint:gosec // G204: command originates from trusted job execution payload
 
 	// Working directory
 	if job.Execution != nil && job.Execution.WorkingDirectory != "" {
@@ -1627,11 +1604,13 @@ func (m *RootModel) executeBashJob(ctx context.Context, job *client.Job, command
 
 	// Environment variables
 	cmd.Env = os.Environ()
+
 	if job.Execution != nil {
 		for k, v := range job.Execution.Environment {
 			cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
 		}
 	}
+
 	cmd.Env = append(cmd.Env,
 		fmt.Sprintf("MUSH_JOB_ID=%s", job.ID),
 		fmt.Sprintf("MUSH_JOB_NAME=%s", job.GetDisplayName()),
@@ -1639,6 +1618,7 @@ func (m *RootModel) executeBashJob(ctx context.Context, job *client.Job, command
 	)
 
 	var stdoutBuf, stderrBuf bytes.Buffer
+
 	termStdout := &lockedWriter{mu: &m.termMu, w: os.Stdout}
 	termStderr := &lockedWriter{mu: &m.termMu, w: os.Stderr}
 	cmd.Stdout = io.MultiWriter(termStdout, &stdoutBuf)
@@ -1649,16 +1629,19 @@ func (m *RootModel) executeBashJob(ctx context.Context, job *client.Job, command
 	duration := time.Since(startedAt)
 
 	exitCode := 0
+
 	if err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			// Prefer context cancellation/timeout errors over synthetic exit codes.
 			if errors.Is(ctxErr, context.DeadlineExceeded) {
 				return nil, fmt.Errorf("bash execution timed out: %w", ctxErr)
 			}
+
 			return nil, fmt.Errorf("bash execution canceled: %w", ctxErr)
 		}
 
 		exitCode = 1
+
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
 			exitCode = exitErr.ExitCode()
@@ -1668,6 +1651,7 @@ func (m *RootModel) executeBashJob(ctx context.Context, job *client.Job, command
 		if msg == "" {
 			msg = err.Error()
 		}
+
 		return nil, fmt.Errorf("bash exited with code %d: %s", exitCode, msg)
 	}
 
@@ -1715,6 +1699,7 @@ func (m *RootModel) signalPath() string {
 	if m.signalDir == "" {
 		return ""
 	}
+
 	return filepath.Join(m.signalDir, SignalFileName)
 }
 
@@ -1722,15 +1707,18 @@ func (m *RootModel) currentJobPath() string {
 	if m.signalDir == "" {
 		return ""
 	}
+
 	return filepath.Join(m.signalDir, "current-job")
 }
 
 func (m *RootModel) currentJobID() string {
 	m.jobMu.Lock()
 	defer m.jobMu.Unlock()
+
 	if m.currentJob == nil {
 		return ""
 	}
+
 	return m.currentJob.ID
 }
 
@@ -1747,6 +1735,7 @@ func (m *RootModel) runnerConfigRefreshLoop() {
 	if interval <= 0 {
 		interval = normalizeRefreshInterval(0)
 	}
+
 	timer := time.NewTimer(interval)
 	defer timer.Stop()
 
@@ -1761,19 +1750,23 @@ func (m *RootModel) runnerConfigRefreshLoop() {
 			if err != nil {
 				m.setLastError(fmt.Sprintf("Runner config refresh failed: %v", err))
 				timer.Reset(interval)
+
 				continue
 			}
 
 			specs := buildMCPProviderSpecs(cfg, time.Now())
+
 			sig, sigErr := mcpSignature(specs)
 			if sigErr != nil {
 				m.setLastError(fmt.Sprintf("Runner config signature failed: %v", sigErr))
 				timer.Reset(interval)
+
 				continue
 			}
 
 			m.refreshMu.Lock()
 			interval = normalizeRefreshInterval(cfg.RefreshAfterSeconds)
+
 			m.refreshInterval = interval
 			if sig != m.mcpConfigSig {
 				m.pendingRunnerConfig = cfg
@@ -1790,6 +1783,7 @@ func (m *RootModel) maybeRestartClaude() error {
 	if !m.isHarnessSupported("claude") {
 		return nil
 	}
+
 	if m.currentJobID() != "" {
 		return nil
 	}
@@ -1809,9 +1803,11 @@ func (m *RootModel) maybeRestartClaude() error {
 	}
 
 	m.closePTY()
+
 	if err := m.startPTY(); err != nil {
 		return err
 	}
+
 	m.waitForClaude()
 
 	m.refreshMu.Lock()
@@ -1830,10 +1826,12 @@ func (m *RootModel) maybeRestartClaude() error {
 
 func (m *RootModel) applyRunnerConfigForClaude(cfg *client.RunnerConfigResponse) error {
 	now := time.Now()
+
 	path, sig, cleanup, err := createClaudeMCPConfigFile(cfg, now)
 	if err != nil {
 		return err
 	}
+
 	names := loadedMCPProviderNames(cfg, now)
 
 	// Swap config file atomically after successful generation.
@@ -1860,9 +1858,11 @@ func (m *RootModel) cleanupMCPConfigFile() {
 	if m.mcpConfigRemove == nil {
 		return
 	}
+
 	if err := m.mcpConfigRemove(); err != nil {
 		m.setLastError(fmt.Sprintf("MCP config cleanup: %v", err))
 	}
+
 	m.mcpConfigRemove = nil
 	m.mcpConfigPath = ""
 }
@@ -1878,17 +1878,21 @@ func summarizeMCPServers(names []string) string {
 	if len(names) == 0 {
 		return "none"
 	}
+
 	return strings.Join(names, ", ")
 }
 
-func sameStringSlice(a, b []string) bool {
-	if len(a) != len(b) {
+func sameStringSlice(a, compared []string) bool {
+	if len(a) != len(compared) {
 		return false
 	}
+
 	aCopy := append([]string(nil), a...)
-	bCopy := append([]string(nil), b...)
+	bCopy := append([]string(nil), compared...)
+
 	slices.Sort(aCopy)
 	slices.Sort(bCopy)
+
 	return slices.Equal(aCopy, bCopy)
 }
 

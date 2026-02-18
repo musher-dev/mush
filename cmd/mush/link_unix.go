@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os/signal"
 	"slices"
 	"strings"
@@ -63,11 +64,13 @@ Examples:
 
 			// Validate harness type if specified.
 			var supportedHarnesses []string
+
 			if harnessType != "" {
 				normalized, err := normalizeHarnessType(harnessType)
 				if err != nil {
 					return err
 				}
+
 				supportedHarnesses = []string{normalized}
 			} else {
 				supportedHarnesses = defaultSupportedHarnesses()
@@ -77,10 +80,12 @@ Examples:
 			hasClaude := false
 			hasBash := false
 			claudeUnavailable := false
+
 			for _, h := range supportedHarnesses {
 				switch h {
 				case "claude":
 					hasClaude = true
+
 					if !claude.Available() {
 						switch {
 						case dryRun:
@@ -97,15 +102,19 @@ Examples:
 					// Bash availability is checked at execution time (exec.LookPath("bash")).
 				}
 			}
+
 			if !dryRun && claudeUnavailable && hasClaude && hasBash {
 				out.Warning("Claude Code CLI not found, disabling Claude harness (bash still enabled)")
+
 				filtered := supportedHarnesses[:0]
 				for _, h := range supportedHarnesses {
 					if h != "claude" {
 						filtered = append(filtered, h)
 					}
 				}
+
 				supportedHarnesses = filtered
+
 				out.Println()
 			}
 
@@ -116,6 +125,7 @@ Examples:
 			}
 
 			out.Print("Using credentials from: %s\n", source)
+
 			apiURL := c.BaseURL()
 
 			// Validate connection with spinner
@@ -125,13 +135,14 @@ Examples:
 			identity, err := c.ValidateKey(cmd.Context())
 			if err != nil {
 				spin.StopWithFailure("Failed to authenticate")
-				return err
+				return fmt.Errorf("validate credentials: %w", err)
 			}
 
 			spin.StopWithSuccess("Connected to " + apiURL)
 			out.Print("Authenticated as: %s (Workspace: %s)\n", identity.CredentialName, identity.WorkspaceName)
 
 			var runnerConfig *client.RunnerConfigResponse
+
 			runnerConfig, err = c.GetRunnerConfig(cmd.Context())
 			if err != nil {
 				out.Warning("Runner config unavailable, continuing without MCP provisioning: %v", err)
@@ -147,12 +158,14 @@ Examples:
 			if err != nil {
 				return err
 			}
+
 			queueID = queue.ID
 
 			availability, err := c.GetQueueInstructionAvailability(cmd.Context(), queueID)
 			if err != nil {
-				return err
+				return fmt.Errorf("check queue instruction availability: %w", err)
 			}
+
 			if availability == nil || !availability.HasActiveInstruction {
 				return clierrors.NoInstructionsForQueue(queue.Name, queue.Slug)
 			}
@@ -160,6 +173,7 @@ Examples:
 			out.Print("Surface: watch\n")
 			out.Print("Harnesses: %s\n", strings.Join(supportedHarnesses, ", "))
 			out.Print("Queue ID: %s\n", queueID)
+
 			if slices.Contains(supportedHarnesses, "claude") {
 				mcpServers := harness.LoadedMCPServers(runnerConfig, time.Now())
 				if len(mcpServers) == 0 {
@@ -172,6 +186,7 @@ Examples:
 			if dryRun {
 				out.Println()
 				out.Success("Dry run mode: connection verified, not claiming jobs")
+
 				return nil
 			}
 
@@ -189,14 +204,17 @@ Examples:
 			defer stop()
 
 			out.Println()
+
 			err = runWatchLink(ctx, c, habitatID, queueID, supportedHarnesses, runnerConfig)
 			if err != nil {
 				return err
 			}
+
 			if cmd.Context().Err() == nil && ctx.Err() != nil {
 				out.Println()
 				out.Info("Received shutdown signal...")
 			}
+
 			return nil
 		},
 	}
@@ -207,6 +225,7 @@ Examples:
 	cmd.Flags().StringVar(&harnessType, "harness", "", "Specific harness type: claude, bash (default: all)")
 
 	cmd.AddCommand(newLinkStatusCmd())
+
 	return cmd
 }
 
@@ -228,7 +247,12 @@ func runWatchLink(
 		TranscriptDir:      localCfg.HistoryDir(),
 		TranscriptLines:    localCfg.HistoryLines(),
 	}
-	return harness.Run(ctx, cfg)
+
+	if err := harness.Run(ctx, cfg); err != nil {
+		return fmt.Errorf("run watch harness: %w", err)
+	}
+
+	return nil
 }
 
 func normalizeHarnessType(harnessType string) (string, error) {

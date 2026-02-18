@@ -109,6 +109,7 @@ func TestLoad_FromEnv(t *testing.T) {
 					t.Errorf("GetString(%q) = %q, want %q", tt.key, got, tt.wantStr)
 				}
 			}
+
 			if tt.wantInt != 0 {
 				got := cfg.GetInt(tt.key)
 				if got != tt.wantInt {
@@ -138,6 +139,7 @@ func TestConfig_All(t *testing.T) {
 	if _, ok := all["api"]; !ok {
 		t.Error("All() missing 'api' key")
 	}
+
 	if _, ok := all["worker"]; !ok {
 		t.Error("All() missing 'worker' key")
 	}
@@ -160,6 +162,7 @@ func TestConfig_Get(t *testing.T) {
 	if !ok {
 		t.Errorf("Get(\"api.url\") type = %T, want string", got)
 	}
+
 	if str != DefaultAPIURL {
 		t.Errorf("Get(\"api.url\") = %q, want %q", str, DefaultAPIURL)
 	}
@@ -204,6 +207,23 @@ func TestConfig_APIURL(t *testing.T) {
 	}
 }
 
+func runIntConfigCase(t *testing.T, envKey, envValue string, getter func(*Config) int) int {
+	t.Helper()
+
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+
+	if envValue != "" {
+		t.Setenv(envKey, envValue)
+	} else {
+		unsetEnvForTest(t, envKey)
+	}
+
+	cfg := Load()
+
+	return getter(cfg)
+}
+
 func TestConfig_PollInterval(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -224,17 +244,9 @@ func TestConfig_PollInterval(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tmpDir := t.TempDir()
-			t.Setenv("HOME", tmpDir)
-
-			if tt.envVal != "" {
-				t.Setenv("MUSH_WORKER_POLL_INTERVAL", tt.envVal)
-			} else {
-				unsetEnvForTest(t, "MUSH_WORKER_POLL_INTERVAL")
-			}
-
-			cfg := Load()
-			got := cfg.PollInterval()
+			got := runIntConfigCase(t, "MUSH_WORKER_POLL_INTERVAL", tt.envVal, func(cfg *Config) int {
+				return cfg.PollInterval()
+			})
 
 			if got != tt.want {
 				t.Errorf("PollInterval() = %d, want %d", got, tt.want)
@@ -263,17 +275,9 @@ func TestConfig_HeartbeatInterval(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tmpDir := t.TempDir()
-			t.Setenv("HOME", tmpDir)
-
-			if tt.envVal != "" {
-				t.Setenv("MUSH_WORKER_HEARTBEAT_INTERVAL", tt.envVal)
-			} else {
-				unsetEnvForTest(t, "MUSH_WORKER_HEARTBEAT_INTERVAL")
-			}
-
-			cfg := Load()
-			got := cfg.HeartbeatInterval()
+			got := runIntConfigCase(t, "MUSH_WORKER_HEARTBEAT_INTERVAL", tt.envVal, func(cfg *Config) int {
+				return cfg.HeartbeatInterval()
+			})
 
 			if got != tt.want {
 				t.Errorf("HeartbeatInterval() = %d, want %d", got, tt.want)

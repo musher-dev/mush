@@ -36,9 +36,11 @@ func TestExecutionTimedOut(t *testing.T) {
 			if !strings.Contains(err.Message, tt.wantMsg) {
 				t.Errorf("message = %q, want to contain %q", err.Message, tt.wantMsg)
 			}
+
 			if !strings.Contains(err.Hint, tt.wantHint) {
 				t.Errorf("hint = %q, want to contain %q", err.Hint, tt.wantHint)
 			}
+
 			if err.Code != ExitTimeout {
 				t.Errorf("code = %d, want %d", err.Code, ExitTimeout)
 			}
@@ -105,9 +107,11 @@ func TestClaudeExecutionFailed(t *testing.T) {
 			if !strings.Contains(strings.ToLower(err.Message), strings.ToLower(tt.wantMsg)) {
 				t.Errorf("message = %q, want to contain %q", err.Message, tt.wantMsg)
 			}
+
 			if !strings.Contains(err.Hint, tt.wantHint) {
 				t.Errorf("hint = %q, want to contain %q", err.Hint, tt.wantHint)
 			}
+
 			if err.Code != ExitExecution {
 				t.Errorf("code = %d, want %d", err.Code, ExitExecution)
 			}
@@ -121,6 +125,7 @@ func TestClaudeSignalKilled(t *testing.T) {
 	if !strings.Contains(err.Message, "interrupted") {
 		t.Errorf("message = %q, want to contain 'interrupted'", err.Message)
 	}
+
 	if err.Code != ExitExecution {
 		t.Errorf("code = %d, want %d", err.Code, ExitExecution)
 	}
@@ -132,9 +137,11 @@ func TestClaudeNotFound(t *testing.T) {
 	if !strings.Contains(err.Message, "not found") {
 		t.Errorf("message = %q, want to contain 'not found'", err.Message)
 	}
+
 	if !strings.Contains(err.Hint, "Install") {
 		t.Errorf("hint = %q, want to contain 'Install'", err.Hint)
 	}
+
 	if err.Code != ExitConfig {
 		t.Errorf("code = %d, want %d", err.Code, ExitConfig)
 	}
@@ -191,6 +198,7 @@ func TestAllErrorsHaveHints(t *testing.T) {
 			if tt.err.Hint == "" {
 				t.Errorf("%s() should have a hint, got empty string", tt.name)
 			}
+
 			if tt.err.Message == "" {
 				t.Errorf("%s() should have a message, got empty string", tt.name)
 			}
@@ -249,6 +257,7 @@ func TestWrap(t *testing.T) {
 	if err.Code != ExitNetwork {
 		t.Errorf("Wrap() code = %d, want %d", err.Code, ExitNetwork)
 	}
+
 	if err.Cause != cause { //nolint:errorlint // testing struct field identity
 		t.Errorf("Wrap() cause = %v, want %v", err.Cause, cause)
 	}

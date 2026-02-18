@@ -35,7 +35,7 @@ func DefaultLinkInfo() (name string, metadata map[string]interface{}) {
 // Register registers a new link and returns its link ID.
 func Register(
 	ctx context.Context,
-	c *client.Client,
+	apiClient *client.Client,
 	habitatID string,
 	instanceID string,
 	name string,
@@ -55,9 +55,9 @@ func Register(
 		ClientMetadata: metadata,
 	}
 
-	resp, err := c.RegisterLink(ctx, req)
+	resp, err := apiClient.RegisterLink(ctx, req)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("register link: %w", err)
 	}
 
 	if resp.LinkID == "" {
@@ -69,14 +69,22 @@ func Register(
 
 // StartHeartbeat sends periodic link heartbeats until the context is canceled.
 // If onError is non-nil, it is called whenever a heartbeat attempt fails.
-func StartHeartbeat(ctx context.Context, c *client.Client, linkID string, currentJobID func() string, onError func(error)) {
+func StartHeartbeat(
+	ctx context.Context,
+	apiClient *client.Client,
+	linkID string,
+	currentJobID func() string,
+	onError func(error),
+) {
 	if linkID == "" {
 		return
 	}
 
 	ticker := time.NewTicker(LinkHeartbeatInterval)
+
 	go func() {
 		defer ticker.Stop()
+
 		for {
 			select {
 			case <-ctx.Done():
@@ -86,7 +94,8 @@ func StartHeartbeat(ctx context.Context, c *client.Client, linkID string, curren
 				if currentJobID != nil {
 					jobID = currentJobID()
 				}
-				if _, err := c.HeartbeatLink(ctx, linkID, jobID); err != nil {
+
+				if _, err := apiClient.HeartbeatLink(ctx, linkID, jobID); err != nil {
 					if onError != nil {
 						onError(err)
 					}
@@ -97,7 +106,7 @@ func StartHeartbeat(ctx context.Context, c *client.Client, linkID string, curren
 }
 
 // Deregister gracefully disconnects a link.
-func Deregister(c *client.Client, linkID string, completed, failed int) error {
+func Deregister(apiClient *client.Client, linkID string, completed, failed int) error {
 	if linkID == "" {
 		return nil
 	}
@@ -111,7 +120,7 @@ func Deregister(c *client.Client, linkID string, completed, failed int) error {
 		JobsFailed:    failed,
 	}
 
-	if err := c.DeregisterLink(ctx, linkID, req); err != nil {
+	if err := apiClient.DeregisterLink(ctx, linkID, req); err != nil {
 		return fmt.Errorf("deregister link %s: %w", linkID, err)
 	}
 

@@ -58,14 +58,18 @@ Checks performed:
 
 			// Summary
 			passed, failed, warnings := doctor.Summary(results)
+
 			out.Println()
 			out.Print("%d passed", passed)
+
 			if failed > 0 {
 				out.Print(", %d failed", failed)
 			}
+
 			if warnings > 0 {
 				out.Print(", %d warning(s)", warnings)
 			}
+
 			out.Println()
 
 			return nil

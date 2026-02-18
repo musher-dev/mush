@@ -41,7 +41,6 @@ func TestClampTerminalSize(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			gotW, gotH := clampTerminalSize(tc.width, tc.height)
 			if gotW != tc.wantWidth || gotH != tc.wantHeight {
@@ -76,7 +75,9 @@ func TestHandleResizePropagatesPTYSize(t *testing.T) {
 		cols uint16
 		rows uint16
 	}
+
 	var got call
+
 	called := false
 
 	m := &RootModel{
@@ -86,6 +87,7 @@ func TestHandleResizePropagatesPTYSize(t *testing.T) {
 		setPTYSize: func(_ *os.File, ws *pty.Winsize) error {
 			called = true
 			got = call{cols: ws.Cols, rows: ws.Rows}
+
 			return nil
 		},
 	}

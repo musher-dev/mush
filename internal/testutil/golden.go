@@ -9,7 +9,7 @@ import (
 )
 
 // update is a flag to update golden files instead of comparing.
-// Usage: go test ./... -update
+// Usage: go test ./... -update.
 var update = flag.Bool("update", false, "update golden files")
 
 // AssertGolden compares got against a golden file.
@@ -25,10 +25,13 @@ func AssertGolden(t *testing.T, got, goldenFile string) {
 		if err := os.MkdirAll(filepath.Dir(goldenPath), 0o755); err != nil { //nolint:gosec // G301: testdata dir
 			t.Fatalf("failed to create testdata directory: %v", err)
 		}
+
 		if err := os.WriteFile(goldenPath, []byte(got), 0o644); err != nil { //nolint:gosec // G306: golden files are non-sensitive
 			t.Fatalf("failed to update golden file %s: %v", goldenPath, err)
 		}
+
 		t.Logf("updated golden file: %s", goldenPath)
+
 		return
 	}
 
@@ -37,6 +40,7 @@ func AssertGolden(t *testing.T, got, goldenFile string) {
 		if os.IsNotExist(err) {
 			t.Fatalf("golden file %s does not exist; run with -update to create it", goldenPath)
 		}
+
 		t.Fatalf("failed to read golden file %s: %v", goldenPath, err)
 	}
 
@@ -62,12 +66,15 @@ func ReadGolden(t *testing.T, goldenFile string) string {
 	t.Helper()
 
 	goldenPath := filepath.Join("testdata", goldenFile)
+
 	data, err := os.ReadFile(goldenPath) //nolint:gosec // G304: path from test fixture
 	if err != nil {
 		if os.IsNotExist(err) {
 			return ""
 		}
+
 		t.Fatalf("failed to read golden file %s: %v", goldenPath, err)
 	}
+
 	return string(data)
 }

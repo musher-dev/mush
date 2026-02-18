@@ -23,12 +23,13 @@ type Info struct {
 
 // Detect returns terminal information for the current environment.
 func Detect() *Info {
-	fd := int(os.Stdout.Fd())
-	isTTY := term.IsTerminal(fd)
+	stdoutFD := int(os.Stdout.Fd())
+	isTTY := term.IsTerminal(stdoutFD)
 
 	width, height := 80, 24 // sensible defaults
+
 	if isTTY {
-		if w, h, err := term.GetSize(fd); err == nil {
+		if w, h, err := term.GetSize(stdoutFD); err == nil {
 			width, height = w, h
 		}
 	}
@@ -49,6 +50,7 @@ func (t *Info) ColorEnabled() bool {
 	if t.ForceFlag {
 		return false
 	}
+
 	return t.IsTTY && !t.NoColor
 }
 

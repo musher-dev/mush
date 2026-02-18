@@ -52,6 +52,7 @@ func TestWriter_Print(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var buf bytes.Buffer
+
 			w := NewWriter(&buf, &buf, testTerminal())
 			w.Quiet = tt.quiet
 
@@ -88,6 +89,7 @@ func TestWriter_Println(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var buf bytes.Buffer
+
 			w := NewWriter(&buf, &buf, testTerminal())
 			w.Quiet = tt.quiet
 
@@ -102,6 +104,7 @@ func TestWriter_Println(t *testing.T) {
 
 func TestWriter_Error(t *testing.T) {
 	var outBuf, errBuf bytes.Buffer
+
 	w := NewWriter(&outBuf, &errBuf, testTerminal())
 
 	w.Error("Error: %s", "something went wrong")
@@ -110,6 +113,7 @@ func TestWriter_Error(t *testing.T) {
 	if got := errBuf.String(); got != want {
 		t.Errorf("Error() = %q, want %q", got, want)
 	}
+
 	if outBuf.Len() > 0 {
 		t.Errorf("Error() should not write to stdout, got %q", outBuf.String())
 	}
@@ -117,6 +121,7 @@ func TestWriter_Error(t *testing.T) {
 
 func TestWriter_Errorln(t *testing.T) {
 	var outBuf, errBuf bytes.Buffer
+
 	w := NewWriter(&outBuf, &errBuf, testTerminal())
 
 	w.Errorln("Error occurred")
@@ -157,6 +162,7 @@ func TestWriter_PrintJSON(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var buf bytes.Buffer
+
 			w := NewWriter(&buf, &buf, testTerminal())
 
 			err := w.PrintJSON(tt.data)
@@ -165,6 +171,7 @@ func TestWriter_PrintJSON(t *testing.T) {
 				t.Errorf("PrintJSON() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
+
 			if got := buf.String(); got != tt.want {
 				t.Errorf("PrintJSON() = %q, want %q", got, tt.want)
 			}
@@ -199,6 +206,7 @@ func TestWriter_Write(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var buf bytes.Buffer
+
 			w := NewWriter(&buf, &buf, testTerminal())
 			w.Quiet = tt.quiet
 
@@ -207,9 +215,11 @@ func TestWriter_Write(t *testing.T) {
 				t.Errorf("Write() error = %v", err)
 				return
 			}
+
 			if n != tt.wantN {
 				t.Errorf("Write() n = %d, want %d", n, tt.wantN)
 			}
+
 			if got := buf.String(); got != tt.want {
 				t.Errorf("Write() output = %q, want %q", got, tt.want)
 			}
@@ -223,15 +233,19 @@ func TestDefault(t *testing.T) {
 	if w.Out == nil {
 		t.Error("Default().Out should not be nil")
 	}
+
 	if w.Err == nil {
 		t.Error("Default().Err should not be nil")
 	}
+
 	if w.JSON {
 		t.Error("Default().JSON should be false")
 	}
+
 	if w.Quiet {
 		t.Error("Default().Quiet should be false")
 	}
+
 	if w.terminal == nil {
 		t.Error("Default().terminal should not be nil")
 	}
@@ -264,6 +278,7 @@ func TestWriter_Debug(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var buf bytes.Buffer
+
 			w := NewWriter(&buf, &buf, testTerminal())
 			w.Verbose = tt.verbose
 
@@ -279,6 +294,7 @@ func TestWriter_Debug(t *testing.T) {
 
 func TestWriter_Success(t *testing.T) {
 	var buf bytes.Buffer
+
 	w := NewWriter(&buf, &buf, testTerminal())
 
 	w.Success("Operation completed")
@@ -288,9 +304,11 @@ func TestWriter_Success(t *testing.T) {
 	if got == "" {
 		t.Error("Success() should produce output")
 	}
+
 	if !containsString(got, CheckMark) {
 		t.Errorf("Success() should contain checkmark, got %q", got)
 	}
+
 	if !containsString(got, "Operation completed") {
 		t.Errorf("Success() should contain message, got %q", got)
 	}
@@ -298,6 +316,7 @@ func TestWriter_Success(t *testing.T) {
 
 func TestWriter_Failure(t *testing.T) {
 	var outBuf, errBuf bytes.Buffer
+
 	w := NewWriter(&outBuf, &errBuf, testTerminal())
 
 	w.Failure("Operation failed")
@@ -307,9 +326,11 @@ func TestWriter_Failure(t *testing.T) {
 	if got == "" {
 		t.Error("Failure() should produce output")
 	}
+
 	if !containsString(got, XMark) {
 		t.Errorf("Failure() should contain X mark, got %q", got)
 	}
+
 	if !containsString(got, "Operation failed") {
 		t.Errorf("Failure() should contain message, got %q", got)
 	}
@@ -317,6 +338,7 @@ func TestWriter_Failure(t *testing.T) {
 
 func TestWriter_Warning(t *testing.T) {
 	var buf bytes.Buffer
+
 	w := NewWriter(&buf, &buf, testTerminal())
 
 	w.Warning("Be careful")
@@ -325,6 +347,7 @@ func TestWriter_Warning(t *testing.T) {
 	if got == "" {
 		t.Error("Warning() should produce output")
 	}
+
 	if !containsString(got, WarningMark) {
 		t.Errorf("Warning() should contain warning mark, got %q", got)
 	}
@@ -332,6 +355,7 @@ func TestWriter_Warning(t *testing.T) {
 
 func TestWriter_Info(t *testing.T) {
 	var buf bytes.Buffer
+
 	w := NewWriter(&buf, &buf, testTerminal())
 
 	w.Info("Information")
@@ -340,6 +364,7 @@ func TestWriter_Info(t *testing.T) {
 	if got == "" {
 		t.Error("Info() should produce output")
 	}
+
 	if !containsString(got, InfoMark) {
 		t.Errorf("Info() should contain info mark, got %q", got)
 	}
@@ -366,6 +391,7 @@ func TestWriter_Muted(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var buf bytes.Buffer
+
 			w := NewWriter(&buf, &buf, testTerminal())
 			w.Quiet = tt.quiet
 
@@ -381,6 +407,7 @@ func TestWriter_Muted(t *testing.T) {
 
 func TestWriter_Context(t *testing.T) {
 	var buf bytes.Buffer
+
 	w := NewWriter(&buf, &buf, testTerminal())
 
 	ctx := w.WithContext(t.Context())
@@ -402,7 +429,9 @@ func TestFromContext_Default(t *testing.T) {
 
 func TestWriter_Terminal(t *testing.T) {
 	term := testTerminal()
+
 	var buf bytes.Buffer
+
 	w := NewWriter(&buf, &buf, term)
 
 	if w.Terminal() != term {
@@ -412,6 +441,7 @@ func TestWriter_Terminal(t *testing.T) {
 
 func TestWriter_SetNoColor(t *testing.T) {
 	var buf bytes.Buffer
+
 	term := &terminal.Info{IsTTY: true, NoColor: false}
 	w := NewWriter(&buf, &buf, term)
 
@@ -424,6 +454,7 @@ func TestWriter_SetNoColor(t *testing.T) {
 
 func TestSpinner_Disabled(t *testing.T) {
 	var buf bytes.Buffer
+
 	w := NewWriter(&buf, &buf, testTerminal())
 	w.Quiet = true
 
@@ -441,6 +472,7 @@ func TestSpinner_Disabled(t *testing.T) {
 
 func TestSpinner_StopWithSuccess(t *testing.T) {
 	var buf bytes.Buffer
+
 	w := NewWriter(&buf, &buf, testTerminal())
 
 	s := w.Spinner("Loading")
@@ -455,6 +487,7 @@ func TestSpinner_StopWithSuccess(t *testing.T) {
 
 func TestSpinner_StopWithFailure(t *testing.T) {
 	var outBuf, errBuf bytes.Buffer
+
 	w := NewWriter(&outBuf, &errBuf, testTerminal())
 
 	s := w.Spinner("Loading")
@@ -470,6 +503,7 @@ func TestSpinner_StopWithFailure(t *testing.T) {
 
 func TestSpinner_StopWithWarning(t *testing.T) {
 	var buf bytes.Buffer
+
 	w := NewWriter(&buf, &buf, testTerminal())
 
 	s := w.Spinner("Loading")
@@ -486,12 +520,15 @@ func TestStatusSymbols(t *testing.T) {
 	if CheckMark == "" {
 		t.Error("CheckMark should not be empty")
 	}
+
 	if XMark == "" {
 		t.Error("XMark should not be empty")
 	}
+
 	if WarningMark == "" {
 		t.Error("WarningMark should not be empty")
 	}
+
 	if InfoMark == "" {
 		t.Error("InfoMark should not be empty")
 	}
@@ -504,6 +541,7 @@ func containsString(s, substr string) bool {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -517,6 +555,7 @@ func TestPrintJSON_Golden(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
+
 	w := NewWriter(&buf, &buf, testTerminal())
 
 	err := w.PrintJSON(TestStruct{
@@ -533,6 +572,7 @@ func TestPrintJSON_Golden(t *testing.T) {
 
 func TestStatusMessages_Golden(t *testing.T) {
 	var buf bytes.Buffer
+
 	w := NewWriter(&buf, &buf, testTerminal())
 
 	w.Success("Operation completed successfully")

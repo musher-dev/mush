@@ -34,5 +34,10 @@ func ReExecWithSudo() error {
 	fmt.Fprintln(os.Stderr, "Elevated permissions required. Requesting sudo...")
 
 	argv := append([]string{"sudo", execPath}, os.Args[1:]...)
-	return syscall.Exec(sudoPath, argv, os.Environ()) //nolint:gosec // G204: intentional sudo re-exec
+
+	if err := syscall.Exec(sudoPath, argv, os.Environ()); err != nil { //nolint:gosec // G204: intentional sudo re-exec
+		return fmt.Errorf("exec sudo process: %w", err)
+	}
+
+	return nil
 }

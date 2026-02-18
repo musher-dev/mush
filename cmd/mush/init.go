@@ -26,6 +26,7 @@ If credentials already exist, use --force to overwrite them.`,
 			out := output.FromContext(cmd.Context())
 
 			w := wizard.New(out, force)
+
 			return w.Run(cmd.Context())
 		},
 	}

@@ -53,19 +53,23 @@ func (w *Wizard) Run(ctx context.Context) error {
 		if !w.prompter.CanPrompt() {
 			w.out.Println()
 			w.out.Info("Run with --force to overwrite existing credentials")
+
 			return nil
 		}
 
 		overwrite, err := w.prompter.Confirm("Overwrite existing credentials?", false)
 		if err != nil {
-			return err
+			return fmt.Errorf("confirm credential overwrite: %w", err)
 		}
+
 		if !overwrite {
 			w.out.Println()
 			w.out.Success("Keeping existing credentials")
 			w.showNextSteps()
+
 			return nil
 		}
+
 		w.out.Println()
 	}
 
@@ -77,6 +81,7 @@ func (w *Wizard) Run(ctx context.Context) error {
 		w.out.Print("  1. Run without --no-input flag\n")
 		w.out.Print("  2. Set MUSHER_API_KEY environment variable\n")
 		w.out.Print("  3. Run 'mush auth login' interactively\n")
+
 		return nil
 	}
 
@@ -103,12 +108,13 @@ func (w *Wizard) Run(ctx context.Context) error {
 	spin.Start()
 
 	cfg := config.Load()
-	c := client.New(cfg.APIURL(), apiKey)
+	apiClient := client.New(cfg.APIURL(), apiKey)
 
-	identity, err := c.ValidateKey(ctx)
+	identity, err := apiClient.ValidateKey(ctx)
 	if err != nil {
 		spin.StopWithFailure("Invalid API key")
 		w.out.Muted("%s", err.Error())
+
 		return nil
 	}
 
@@ -124,6 +130,7 @@ func (w *Wizard) Run(ctx context.Context) error {
 	if storeErr := auth.StoreAPIKey(apiKey); storeErr != nil {
 		spin.StopWithFailure("Failed to store credentials")
 		w.out.Muted("%s", storeErr.Error())
+
 		return nil
 	}
 
@@ -141,13 +148,14 @@ func (w *Wizard) Run(ctx context.Context) error {
 	spin = w.out.Spinner("Fetching habitats")
 	spin.Start()
 
-	habitats, err := c.ListHabitats(ctx)
+	habitats, err := apiClient.ListHabitats(ctx)
 	if err != nil {
 		spin.StopWithFailure("Failed to fetch habitats")
 		w.out.Muted("%s", err.Error())
 		w.out.Println()
 		w.out.Warning("You can select a habitat later with 'mush habitat select'")
 		w.showNextSteps()
+
 		return nil
 	}
 
@@ -158,6 +166,7 @@ func (w *Wizard) Run(ctx context.Context) error {
 		w.out.Warning("No habitats found in your workspace")
 		w.out.Info("Create a habitat in the console first, then run 'mush habitat select'")
 		w.showNextSteps()
+
 		return nil
 	}
 
@@ -174,6 +183,7 @@ func (w *Wizard) Run(ctx context.Context) error {
 		if err := cfg.Set("habitat.slug", selected.Slug); err != nil {
 			w.out.Warning("Failed to save habitat slug to config: %s", err.Error())
 		}
+
 		w.out.Success("Selected habitat: %s (%s)", selected.Name, selected.Slug)
 	}
 

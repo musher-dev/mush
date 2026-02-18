@@ -17,7 +17,7 @@ type settingsFile struct {
 func (s *settingsFile) UnmarshalJSON(data []byte) error {
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(data, &raw); err != nil {
-		return err
+		return fmt.Errorf("unmarshal settings json: %w", err)
 	}
 
 	s.extra = raw
@@ -26,6 +26,7 @@ func (s *settingsFile) UnmarshalJSON(data []byte) error {
 		if err := json.Unmarshal(rawHooks, &hooks); err != nil {
 			return fmt.Errorf("settings.hooks must be an object")
 		}
+
 		s.Hooks = hooks
 		delete(s.extra, "hooks")
 	}
@@ -42,12 +43,18 @@ func (s settingsFile) MarshalJSON() ([]byte, error) {
 	if s.Hooks != nil {
 		encoded, err := json.Marshal(s.Hooks)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("marshal stop hooks: %w", err)
 		}
+
 		raw["hooks"] = encoded
 	}
 
-	return json.Marshal(raw)
+	encodedRaw, err := json.Marshal(raw)
+	if err != nil {
+		return nil, fmt.Errorf("marshal settings json: %w", err)
+	}
+
+	return encodedRaw, nil
 }
 
 type hookEntry struct {
@@ -74,13 +81,17 @@ func installStopHook(signalDir string) (func() error, error) {
 	}
 
 	settingsPath := filepath.Join(cwd, ".claude", "settings.local.json")
+
 	var original []byte
+
 	originalExists := false
 
 	settings := settingsFile{}
+
 	if data, readErr := os.ReadFile(settingsPath); readErr == nil { //nolint:gosec // G304: path from known .claude directory
 		original = data
 		originalExists = true
+
 		if len(original) > 0 {
 			if unmarshalErr := json.Unmarshal(original, &settings); unmarshalErr != nil {
 				return nil, fmt.Errorf("failed to parse settings: %w", unmarshalErr)
@@ -93,6 +104,7 @@ func installStopHook(signalDir string) (func() error, error) {
 	if settings.Hooks == nil {
 		settings.Hooks = make(map[string][]hookEntry)
 	}
+
 	stopHooks := settings.Hooks["Stop"]
 
 	command := fmt.Sprintf(
@@ -102,6 +114,7 @@ func installStopHook(signalDir string) (func() error, error) {
 
 	normalizedStopHooks := make([]hookEntry, 0, len(stopHooks)+1)
 	alreadyPresent := false
+
 	for _, item := range stopHooks {
 		// Normalize legacy hook entries:
 		// {"matcher":"*","command":"..."} -> {"hooks":[{"type":"command","command":"..."}]}
@@ -122,6 +135,7 @@ func installStopHook(signalDir string) (func() error, error) {
 					item.Matcher = nil
 				}
 			}
+
 			if item.Hooks == nil {
 				item.Hooks = []hookCommand{}
 			}
@@ -164,11 +178,17 @@ func installStopHook(signalDir string) (func() error, error) {
 
 	restore := func() error {
 		if originalExists {
-			return os.WriteFile(settingsPath, original, 0o600)
+			if err := os.WriteFile(settingsPath, original, 0o600); err != nil {
+				return fmt.Errorf("restore original settings file: %w", err)
+			}
+
+			return nil
 		}
+
 		if err := os.Remove(settingsPath); err != nil && !os.IsNotExist(err) {
-			return err
+			return fmt.Errorf("remove temporary settings file: %w", err)
 		}
+
 		return nil
 	}
 

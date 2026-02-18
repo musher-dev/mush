@@ -59,6 +59,7 @@ func TestHandleCtrlCFirstPressInterruptsClaude(t *testing.T) {
 	if _, err := r.Read(b); err != nil {
 		t.Fatalf("read interrupt byte failed: %v", err)
 	}
+
 	if b[0] != ctrlC {
 		t.Fatalf("interrupt byte = %d, want %d", b[0], ctrlC)
 	}
@@ -95,6 +96,7 @@ func TestHandleCtrlCSecondPressExitsWithinWindow(t *testing.T) {
 	}
 
 	current = base.Add(1500 * time.Millisecond)
+
 	if !m.handleCtrlC() {
 		t.Fatal("second handleCtrlC() = false, want true within exit window")
 	}
@@ -115,6 +117,7 @@ func TestStartPTYDoesNotSetSetpgid(t *testing.T) {
 	defer w.Close()
 
 	var gotCmd *exec.Cmd
+
 	m := &RootModel{
 		ctx:      t.Context(),
 		width:    80,
@@ -135,6 +138,7 @@ func TestStartPTYDoesNotSetSetpgid(t *testing.T) {
 	if gotCmd == nil {
 		t.Fatal("expected startPTYWithSize to receive command")
 	}
+
 	if gotCmd.SysProcAttr != nil && gotCmd.SysProcAttr.Setpgid {
 		t.Fatal("Setpgid should not be set when launching via pty.StartWithSize")
 	}
@@ -142,6 +146,7 @@ func TestStartPTYDoesNotSetSetpgid(t *testing.T) {
 
 func TestSendSignalPrefersProcessGroup(t *testing.T) {
 	var targets []int
+
 	m := &RootModel{
 		killProcess: func(target int, _ syscall.Signal) error {
 			targets = append(targets, target)
@@ -158,12 +163,14 @@ func TestSendSignalPrefersProcessGroup(t *testing.T) {
 
 func TestSendSignalFallsBackToPIDWhenGroupSignalFails(t *testing.T) {
 	var targets []int
+
 	m := &RootModel{
 		killProcess: func(target int, _ syscall.Signal) error {
 			targets = append(targets, target)
 			if target < 0 {
 				return errors.New("group signal failed")
 			}
+
 			return nil
 		},
 	}
@@ -182,6 +189,7 @@ func TestAnnotateStartPTYErrorAddsHintForEPERM(t *testing.T) {
 	if !errors.Is(err, syscall.EPERM) {
 		t.Fatalf("annotated error should preserve EPERM: %v", err)
 	}
+
 	if got := err.Error(); !containsAll(got, []string{"EPERM during PTY start", "noexec", "quarantine"}) {
 		t.Fatalf("annotated error missing hints: %q", got)
 	}
@@ -193,5 +201,6 @@ func containsAll(s string, subs []string) bool {
 			return false
 		}
 	}
+
 	return true
 }

@@ -30,6 +30,7 @@ func linkJSONResponse(status int, body string) *http.Response {
 
 func linkMockClient(t *testing.T, runnerConfig string) *client.Client {
 	t.Helper()
+
 	hc := &http.Client{Transport: linkRoundTripFunc(func(r *http.Request) (*http.Response, error) {
 		switch {
 		case r.URL.Path == "/api/v1/runner/me" && r.Method == http.MethodGet:
@@ -44,18 +45,21 @@ func linkMockClient(t *testing.T, runnerConfig string) *client.Client {
 			return linkJSONResponse(http.StatusOK, `{"queueId":"q-1","hasActiveInstruction":true}`), nil
 		default:
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
-			return nil, nil
+			return nil, nil //nolint:nilnil // unreachable after t.Fatalf
 		}
 	})}
+
 	return client.NewWithHTTPClient("https://api.test", "test-key", hc)
 }
 
 func withMockAPIClient(t *testing.T, c *client.Client) {
 	t.Helper()
+
 	prev := apiClientFactory
 	apiClientFactory = func() (auth.CredentialSource, *client.Client, error) {
 		return auth.CredentialSource("env"), c, nil
 	}
+
 	t.Cleanup(func() {
 		apiClientFactory = prev
 	})
@@ -70,6 +74,7 @@ func TestLinkDryRunSucceedsWithoutTTY(t *testing.T) {
 
 	cmd := newLinkCmd()
 	cmd.SetArgs([]string{"--dry-run", "--habitat", "local", "--queue-id", "q-1"})
+
 	ctx := out.WithContext(t.Context())
 	cmd.SetContext(ctx)
 
@@ -87,6 +92,7 @@ func TestLinkNoDryRunRequiresTTY(t *testing.T) {
 
 	cmd := newLinkCmd()
 	cmd.SetArgs([]string{"--habitat", "local", "--queue-id", "q-1"})
+
 	ctx := out.WithContext(t.Context())
 	cmd.SetContext(ctx)
 
@@ -94,13 +100,16 @@ func TestLinkNoDryRunRequiresTTY(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected TTY error for non-dry-run without terminal")
 	}
+
 	var cliErr *clierrors.CLIError
 	if !clierrors.As(err, &cliErr) {
 		t.Fatalf("expected CLIError, got %T: %v", err, err)
 	}
+
 	if cliErr.Code != clierrors.ExitUsage {
 		t.Fatalf("error code = %d, want %d (ExitUsage)", cliErr.Code, clierrors.ExitUsage)
 	}
+
 	if !strings.Contains(cliErr.Message, "TTY") {
 		t.Fatalf("error message = %q, want to contain 'TTY'", cliErr.Message)
 	}
@@ -108,6 +117,7 @@ func TestLinkNoDryRunRequiresTTY(t *testing.T) {
 
 func TestLinkDryRunPrintsMCPServers(t *testing.T) {
 	var outBuf bytes.Buffer
+
 	term := &terminal.Info{IsTTY: false}
 	out := output.NewWriter(&outBuf, io.Discard, term)
 	out.NoInput = true
@@ -116,6 +126,7 @@ func TestLinkDryRunPrintsMCPServers(t *testing.T) {
 
 	cmd := newLinkCmd()
 	cmd.SetArgs([]string{"--dry-run", "--habitat", "local", "--queue-id", "q-1", "--harness", "claude"})
+
 	ctx := out.WithContext(t.Context())
 	cmd.SetContext(ctx)
 
@@ -130,6 +141,7 @@ func TestLinkDryRunPrintsMCPServers(t *testing.T) {
 
 func TestLinkDryRunBashHarnessOmitsMCPServers(t *testing.T) {
 	var outBuf bytes.Buffer
+
 	term := &terminal.Info{IsTTY: false}
 	out := output.NewWriter(&outBuf, io.Discard, term)
 	out.NoInput = true
@@ -138,6 +150,7 @@ func TestLinkDryRunBashHarnessOmitsMCPServers(t *testing.T) {
 
 	cmd := newLinkCmd()
 	cmd.SetArgs([]string{"--dry-run", "--habitat", "local", "--queue-id", "q-1", "--harness", "bash"})
+
 	ctx := out.WithContext(t.Context())
 	cmd.SetContext(ctx)
 
@@ -159,6 +172,7 @@ func TestLinkLegacyAgentFlagRejected(t *testing.T) {
 
 	cmd := newLinkCmd()
 	cmd.SetArgs([]string{"--dry-run", "--habitat", "local", "--queue-id", "q-1", "--agent", "claude"})
+
 	ctx := out.WithContext(t.Context())
 	cmd.SetContext(ctx)
 
@@ -166,6 +180,7 @@ func TestLinkLegacyAgentFlagRejected(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for legacy --agent flag")
 	}
+
 	if !strings.Contains(err.Error(), "unknown flag: --agent") {
 		t.Fatalf("error = %q, want unknown flag --agent", err.Error())
 	}
@@ -180,6 +195,7 @@ func TestResolveQueueAndHabitatNoInputSelection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveHabitatID() error = %v", err)
 	}
+
 	if habitatID != "hab-1" {
 		t.Fatalf("resolveHabitatID() = %q, want hab-1", habitatID)
 	}
@@ -188,6 +204,7 @@ func TestResolveQueueAndHabitatNoInputSelection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveQueue() error = %v", err)
 	}
+
 	if queue.ID != "q-1" {
 		t.Fatalf("resolveQueue().ID = %q, want q-1", queue.ID)
 	}

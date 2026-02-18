@@ -44,6 +44,7 @@ func Run(ctx context.Context, cfg *Config) error {
 
 	// Create and run the harness
 	model := NewRootModel(ctx, cfg)
+
 	return model.Run()
 }
 

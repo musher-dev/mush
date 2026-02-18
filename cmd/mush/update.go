@@ -56,6 +56,7 @@ func runUpdate(cmd *cobra.Command, out *output.Writer, targetVersion string, for
 	if currentVersion == "dev" && targetVersion == "" {
 		out.Warning("Development build — cannot determine current version")
 		out.Info("Install a release build: https://github.com/musher-dev/mush/releases")
+
 		return nil
 	}
 
@@ -82,20 +83,27 @@ func runUpdate(cmd *cobra.Command, out *output.Writer, targetVersion string, for
 		if spin != nil {
 			spin.StopWithFailure(fmt.Sprintf("Failed to check for updates: %v", err))
 		}
+
 		if strings.Contains(err.Error(), "403") {
 			out.Info("Set GITHUB_TOKEN to avoid rate limits")
 		}
+
 		return fmt.Errorf("update check failed: %w", err)
 	}
 
 	// JSON output mode — print check result and exit without applying
 	if out.JSON {
-		return out.PrintJSON(info)
+		if printErr := out.PrintJSON(info); printErr != nil {
+			return fmt.Errorf("print update info as json: %w", printErr)
+		}
+
+		return nil
 	}
 
 	if !info.UpdateAvailable && !force {
 		spin.StopWithSuccess(fmt.Sprintf("Already up to date (v%s)", currentVersion))
 		saveCheckState(currentVersion, info.LatestVersion, info.ReleaseURL)
+
 		return nil
 	}
 
@@ -114,7 +122,11 @@ func runUpdate(cmd *cobra.Command, out *output.Writer, targetVersion string, for
 	// Check write permissions and re-exec with sudo if needed
 	execPath, err := selfupdate.ExecutablePath()
 	if err == nil && update.NeedsElevation(execPath) {
-		return update.ReExecWithSudo()
+		if sudoErr := update.ReExecWithSudo(); sudoErr != nil {
+			return fmt.Errorf("re-exec updater with sudo: %w", sudoErr)
+		}
+
+		return nil
 	}
 
 	// Apply update
@@ -133,6 +145,7 @@ func runUpdate(cmd *cobra.Command, out *output.Writer, targetVersion string, for
 	}
 
 	saveCheckState(currentVersion, info.LatestVersion, info.ReleaseURL)
+
 	return nil
 }
 
@@ -140,7 +153,11 @@ func updateToVersion(ctx context.Context, out *output.Writer, updater *update.Up
 	// Check write permissions and re-exec with sudo if needed
 	execPath, err := selfupdate.ExecutablePath()
 	if err == nil && update.NeedsElevation(execPath) {
-		return update.ReExecWithSudo()
+		if sudoErr := update.ReExecWithSudo(); sudoErr != nil {
+			return fmt.Errorf("re-exec updater with sudo: %w", sudoErr)
+		}
+
+		return nil
 	}
 
 	// Skip spinner in JSON mode to avoid corrupting stdout
@@ -155,15 +172,18 @@ func updateToVersion(ctx context.Context, out *output.Writer, updater *update.Up
 		if spin != nil {
 			spin.StopWithFailure(fmt.Sprintf("Failed to install v%s: %v", version, err))
 		}
+
 		if strings.Contains(err.Error(), "not found") {
 			out.Info("Check available versions at https://github.com/musher-dev/mush/releases")
 		}
+
 		return fmt.Errorf("install failed: %w", err)
 	}
 
 	if spin != nil {
 		spin.StopWithSuccess(fmt.Sprintf("Installed v%s", release.Version()))
 	}
+
 	return nil
 }
 

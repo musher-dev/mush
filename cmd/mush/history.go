@@ -37,24 +37,34 @@ func newHistoryListCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := output.FromContext(cmd.Context())
 			dir := config.Load().HistoryDir()
+
 			sessions, err := transcript.ListSessions(dir)
 			if err != nil {
-				return err
+				return fmt.Errorf("list transcript sessions: %w", err)
 			}
+
 			if out.JSON {
-				return out.PrintJSON(sessions)
+				if err := out.PrintJSON(sessions); err != nil {
+					return fmt.Errorf("print transcript sessions json: %w", err)
+				}
+
+				return nil
 			}
+
 			if len(sessions) == 0 {
 				out.Muted("No transcript sessions found.")
 				return nil
 			}
-			for _, s := range sessions {
+
+			for _, session := range sessions {
 				closed := "open"
-				if s.ClosedAt != nil {
-					closed = s.ClosedAt.Format(time.RFC3339)
+				if session.ClosedAt != nil {
+					closed = session.ClosedAt.Format(time.RFC3339)
 				}
-				out.Print("%s  started=%s  closed=%s\n", s.SessionID, s.StartedAt.Format(time.RFC3339), closed)
+
+				out.Print("%s  started=%s  closed=%s\n", session.SessionID, session.StartedAt.Format(time.RFC3339), closed)
 			}
+
 			return nil
 		},
 	}
@@ -80,8 +90,10 @@ func newHistoryViewCmd() *cobra.Command {
 			defer cancel()
 
 			sigCh := make(chan os.Signal, 1)
+
 			signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 			defer signal.Stop(sigCh)
+
 			go func() {
 				select {
 				case <-sigCh:
@@ -91,28 +103,34 @@ func newHistoryViewCmd() *cobra.Command {
 			}()
 
 			var lastSeq uint64
+
 			events, err := transcript.ReadEvents(dir, sessionID)
 			if err != nil {
 				if !follow {
-					return err
+					return fmt.Errorf("read transcript events: %w", err)
 				}
 			} else {
-				for _, ev := range events {
-					if ev.Seq <= lastSeq {
+				for _, event := range events {
+					if event.Seq <= lastSeq {
 						continue
 					}
-					line := ev.Text
+
+					line := event.Text
 					if !raw {
 						line = ansi.Strip(line)
 					}
+
 					if search != "" && !strings.Contains(strings.ToLower(line), strings.ToLower(search)) {
-						lastSeq = ev.Seq
+						lastSeq = event.Seq
 						continue
 					}
+
 					out.Print("%s\n", strings.TrimRight(line, "\n"))
-					lastSeq = ev.Seq
+
+					lastSeq = event.Seq
 				}
 			}
+
 			if !follow {
 				return nil
 			}
@@ -121,23 +139,29 @@ func newHistoryViewCmd() *cobra.Command {
 			for {
 				liveEvents, nextOffset, err := transcript.ReadLiveEventsFrom(dir, sessionID, liveOffset)
 				if err != nil {
-					return err
+					return fmt.Errorf("read live transcript events: %w", err)
 				}
+
 				liveOffset = nextOffset
-				for _, ev := range liveEvents {
-					if ev.Seq <= lastSeq {
+
+				for _, event := range liveEvents {
+					if event.Seq <= lastSeq {
 						continue
 					}
-					line := ev.Text
+
+					line := event.Text
 					if !raw {
 						line = ansi.Strip(line)
 					}
+
 					if search != "" && !strings.Contains(strings.ToLower(line), strings.ToLower(search)) {
-						lastSeq = ev.Seq
+						lastSeq = event.Seq
 						continue
 					}
+
 					out.Print("%s\n", strings.TrimRight(line, "\n"))
-					lastSeq = ev.Seq
+
+					lastSeq = event.Seq
 				}
 
 				select {
@@ -151,6 +175,7 @@ func newHistoryViewCmd() *cobra.Command {
 	cmd.Flags().StringVar(&search, "search", "", "Filter output to lines containing this substring")
 	cmd.Flags().BoolVar(&follow, "follow", false, "Follow updates as new transcript events are written")
 	cmd.Flags().BoolVar(&raw, "raw", false, "Show raw output including ANSI escape sequences")
+
 	return cmd
 }
 
@@ -164,22 +189,27 @@ func newHistoryPruneCmd() *cobra.Command {
 			out := output.FromContext(cmd.Context())
 			cfg := config.Load()
 			window := cfg.HistoryRetention()
+
 			if olderThan != "" {
 				d, err := time.ParseDuration(olderThan)
 				if err != nil {
 					return fmt.Errorf("invalid duration for --older-than: %w", err)
 				}
+
 				window = d
 			}
 
 			removed, err := transcript.PruneOlderThan(cfg.HistoryDir(), time.Now().Add(-window))
 			if err != nil {
-				return err
+				return fmt.Errorf("prune transcript sessions: %w", err)
 			}
+
 			out.Success("Removed %d transcript session(s)", removed)
+
 			return nil
 		},
 	}
 	cmd.Flags().StringVar(&olderThan, "older-than", "", "Override retention window (example: 168h)")
+
 	return cmd
 }

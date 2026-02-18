@@ -91,6 +91,7 @@ func credentialsFilePath() string {
 	if err != nil {
 		return ""
 	}
+
 	return filepath.Join(home, ".config", "mush", "credentials")
 }
 
@@ -141,5 +142,10 @@ func deleteCredentialsFile() error {
 	if os.IsNotExist(err) {
 		return fmt.Errorf("credentials file not found")
 	}
-	return err
+
+	if err != nil {
+		return fmt.Errorf("remove credentials file: %w", err)
+	}
+
+	return nil
 }

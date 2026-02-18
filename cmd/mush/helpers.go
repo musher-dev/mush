@@ -22,7 +22,9 @@ func newAPIClient() (auth.CredentialSource, *client.Client, error) {
 	if apiKey == "" {
 		return "", nil, clierrors.NotAuthenticated()
 	}
+
 	cfg := config.Load()
 	c := client.New(cfg.APIURL(), apiKey)
+
 	return source, c, nil
 }

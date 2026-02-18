@@ -23,6 +23,7 @@ func TestAssertGolden(t *testing.T) {
 		// This should not fail
 		mockT := &testing.T{}
 		AssertGolden(mockT, goldenContent, "test.golden")
+
 		if mockT.Failed() {
 			t.Error("AssertGolden should pass when content matches")
 		}
@@ -63,6 +64,7 @@ func TestReadGolden(t *testing.T) {
 
 func TestGoldenPath(t *testing.T) {
 	got := GoldenPath("test.golden")
+
 	want := filepath.Join("testdata", "test.golden")
 	if got != want {
 		t.Errorf("GoldenPath() = %q, want %q", got, want)

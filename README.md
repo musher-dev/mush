@@ -4,6 +4,8 @@ Local worker runtime for the Musher platform.
 
 Mush connects your machine to the Musher job stream, claims jobs, executes handlers using Claude Code, and reports results back.
 
+![Mush CLI Demo](docs/vhs/gif/demo.gif)
+
 ## Installation
 
 ```bash
@@ -179,8 +181,8 @@ task build              # Creates ./mush binary
 ### Development Workflow
 
 ```bash
-task fmt                # Format code
-task check              # Run all checks (fmt + lint + vuln + test)
+task fmt                # Format Go code + imports
+task check              # Run all checks (fmt + lint + vuln + shell + workflow + test)
 task test               # Run tests only
 ```
 

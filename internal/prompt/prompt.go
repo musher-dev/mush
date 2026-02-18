@@ -61,6 +61,7 @@ func (p *Prompter) Password(prompt string) (string, error) {
 
 	// Read password without echo
 	password, err := term.ReadPassword(int(os.Stdin.Fd()))
+
 	p.out.Println() // Print newline after password input
 
 	if err != nil {
@@ -73,9 +74,11 @@ func (p *Prompter) Password(prompt string) (string, error) {
 // Select prompts the user to select from a list of options.
 func (p *Prompter) Select(message string, options []string) (int, error) {
 	p.out.Println(message)
+
 	for i, opt := range options {
 		p.out.Print("  [%d] %s\n", i+1, opt)
 	}
+
 	p.out.Println()
 
 	for {
@@ -101,38 +104,84 @@ func (p *Prompter) Select(message string, options []string) (int, error) {
 	}
 }
 
-// SelectHabitat prompts the user to select a habitat from a list.
-func SelectHabitat(habitats []client.HabitatSummary, out *output.Writer) (*client.HabitatSummary, error) {
-	out.Println()
-	out.Print("Available habitats:\n\n")
+type selectableSummary interface {
+	GetSlug() string
+	GetName() string
+	GetStatus() string
+}
 
-	for i, h := range habitats {
-		// Format: [1] local-dev    (Local development)
-		status := ""
-		switch h.Status {
-		case "online":
-			status = "[online]"
-		case "offline":
-			status = "[offline]"
-		case "degraded":
-			status = "[degraded]"
-		}
-		out.Print("  [%d] %-20s %s %s\n", i+1, h.Slug, h.Name, status)
+type habitatOption struct {
+	client.HabitatSummary
+}
+
+func (o *habitatOption) GetSlug() string {
+	return o.Slug
+}
+
+func (o *habitatOption) GetName() string {
+	return o.Name
+}
+
+func (o *habitatOption) GetStatus() string {
+	switch o.Status {
+	case "online":
+		return "[online]"
+	case "offline":
+		return "[offline]"
+	case "degraded":
+		return "[degraded]"
+	default:
+		return ""
+	}
+}
+
+type queueOption struct {
+	client.QueueSummary
+}
+
+func (o *queueOption) GetSlug() string {
+	return o.Slug
+}
+
+func (o *queueOption) GetName() string {
+	return o.Name
+}
+
+func (o *queueOption) GetStatus() string {
+	switch o.Status {
+	case "active":
+		return "[active]"
+	case "paused":
+		return "[paused]"
+	case "draining":
+		return "[draining]"
+	default:
+		return ""
+	}
+}
+
+func selectSummary[T selectableSummary](title, itemLabel string, entries []T, out *output.Writer) (int, error) {
+	out.Println()
+	out.Print("Available %s:\n\n", title)
+
+	for index, entry := range entries {
+		out.Print("  [%d] %-20s %s %s\n", index+1, entry.GetSlug(), entry.GetName(), entry.GetStatus())
 	}
 
 	out.Println()
 
 	reader := bufio.NewReader(os.Stdin)
+
 	for {
-		if len(habitats) == 1 {
-			out.Print("Select habitat [1]: ")
+		if len(entries) == 1 {
+			out.Print("Select %s [1]: ", itemLabel)
 		} else {
-			out.Print("Select habitat [1-%d]: ", len(habitats))
+			out.Print("Select %s [1-%d]: ", itemLabel, len(entries))
 		}
 
 		input, err := reader.ReadString('\n')
 		if err != nil {
-			return nil, fmt.Errorf("failed to read input: %w", err)
+			return -1, fmt.Errorf("failed to read input: %w", err)
 		}
 
 		input = strings.TrimSpace(input)
@@ -140,62 +189,44 @@ func SelectHabitat(habitats []client.HabitatSummary, out *output.Writer) (*clien
 			continue
 		}
 
-		num, err := strconv.Atoi(input)
-		if err != nil || num < 1 || num > len(habitats) {
-			out.Warning("Invalid selection. Please enter a number between 1 and %d", len(habitats))
+		selectedNumber, err := strconv.Atoi(input)
+		if err != nil || selectedNumber < 1 || selectedNumber > len(entries) {
+			out.Warning("Invalid selection. Please enter a number between 1 and %d", len(entries))
 			continue
 		}
 
-		return &habitats[num-1], nil
+		return selectedNumber - 1, nil
 	}
+}
+
+// SelectHabitat prompts the user to select a habitat from a list.
+func SelectHabitat(habitats []client.HabitatSummary, out *output.Writer) (*client.HabitatSummary, error) {
+	options := make([]*habitatOption, 0, len(habitats))
+	for _, habitat := range habitats {
+		options = append(options, &habitatOption{HabitatSummary: habitat})
+	}
+
+	selectedIndex, err := selectSummary("habitats", "habitat", options, out)
+	if err != nil {
+		return nil, err
+	}
+
+	return &habitats[selectedIndex], nil
 }
 
 // SelectQueue prompts the user to select a queue from a list.
 func SelectQueue(queues []client.QueueSummary, out *output.Writer) (*client.QueueSummary, error) {
-	out.Println()
-	out.Print("Available queues:\n\n")
-
-	for i, q := range queues {
-		status := ""
-		switch q.Status {
-		case "active":
-			status = "[active]"
-		case "paused":
-			status = "[paused]"
-		case "draining":
-			status = "[draining]"
-		}
-		out.Print("  [%d] %-20s %s %s\n", i+1, q.Slug, q.Name, status)
+	options := make([]*queueOption, 0, len(queues))
+	for _, queue := range queues {
+		options = append(options, &queueOption{QueueSummary: queue})
 	}
 
-	out.Println()
-
-	reader := bufio.NewReader(os.Stdin)
-	for {
-		if len(queues) == 1 {
-			out.Print("Select queue [1]: ")
-		} else {
-			out.Print("Select queue [1-%d]: ", len(queues))
-		}
-
-		input, err := reader.ReadString('\n')
-		if err != nil {
-			return nil, fmt.Errorf("failed to read input: %w", err)
-		}
-
-		input = strings.TrimSpace(input)
-		if input == "" {
-			continue
-		}
-
-		num, err := strconv.Atoi(input)
-		if err != nil || num < 1 || num > len(queues) {
-			out.Warning("Invalid selection. Please enter a number between 1 and %d", len(queues))
-			continue
-		}
-
-		return &queues[num-1], nil
+	selectedIndex, err := selectSummary("queues", "queue", options, out)
+	if err != nil {
+		return nil, err
 	}
+
+	return &queues[selectedIndex], nil
 }
 
 // APIKey prompts the user for an API key.
@@ -203,6 +234,7 @@ func APIKey(out *output.Writer) (string, error) {
 	out.Print("Enter your API key: ")
 
 	reader := bufio.NewReader(os.Stdin)
+
 	input, err := reader.ReadString('\n')
 	if err != nil {
 		return "", fmt.Errorf("failed to read input: %w", err)
