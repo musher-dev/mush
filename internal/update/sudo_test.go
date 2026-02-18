@@ -23,6 +23,7 @@ func TestNeedsElevation_ReadOnlyDir(t *testing.T) {
 	}
 
 	tmp := t.TempDir()
+
 	readOnly := filepath.Join(tmp, "readonly")
 	if err := os.MkdirAll(readOnly, 0o555); err != nil {
 		t.Fatal(err)

@@ -91,16 +91,21 @@ func (c *Config) Set(key string, value interface{}) error {
 	// Ensure config directory exists
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return err
+		return fmt.Errorf("resolve user home directory: %w", err)
 	}
 
 	configDir := filepath.Join(home, ".config", "mush")
 	if err := os.MkdirAll(configDir, 0o700); err != nil {
-		return err
+		return fmt.Errorf("create config directory: %w", err)
 	}
 
 	configFile := filepath.Join(configDir, "config.yaml")
-	return c.v.WriteConfigAs(configFile)
+
+	if err := c.v.WriteConfigAs(configFile); err != nil {
+		return fmt.Errorf("write config file: %w", err)
+	}
+
+	return nil
 }
 
 // All returns all configuration as a map.
@@ -144,5 +149,6 @@ func (c *Config) HistoryRetention() time.Duration {
 	if err != nil || d <= 0 {
 		return 30 * 24 * time.Hour
 	}
+
 	return d
 }

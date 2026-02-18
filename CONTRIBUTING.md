@@ -21,7 +21,7 @@ task setup
 # Format code
 task fmt
 
-# Run all checks (format, lint, vuln scan, tests)
+# Run all checks (format, lint, vuln scan, shell/workflow lint, tests)
 task check
 
 # Run tests only
@@ -62,8 +62,9 @@ task run -- link --dry-run
 
 ## Code Style
 
-- **Formatting**: `gofumpt` (enforced by `task fmt`)
-- **Linting**: `golangci-lint` (enforced by `task check:lint`)
+- **Formatting**: `golangci-lint fmt` with `gofumpt` + `goimports` (enforced by `task fmt` / `task check:fmt`)
+- **Linting**: `golangci-lint` with strict rules (including `varnamelen`, complexity, test rigor, and `nolint` hygiene) via `task check:lint`
+- **Shell/Workflows**: `shellcheck` + `shfmt` + `actionlint` via `task check:shell` and `task check:workflow`
 - **Output**: All user-facing output goes through `internal/output.Writer` — never use `fmt.Print*` directly in commands
 - **Commands**: Follow the noun-verb pattern (`mush <resource> <verb>`)
 - **Errors**: Return errors with context (`fmt.Errorf("context: %w", err)`), never panic
@@ -75,6 +76,9 @@ See [CLAUDE.md](./CLAUDE.md) for detailed architecture and patterns.
 ```bash
 # Run all tests
 task check:test
+
+# Run all static quality checks
+task check
 
 # Run a specific test
 go test ./internal/auth/... -run TestKeyring

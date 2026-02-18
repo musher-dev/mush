@@ -1,0 +1,41 @@
+name: VHS Demo GIFs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/vhs/**/*.tape'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  generate:
+    name: Generate Demo GIFs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+
+      - name: Build mush
+        run: |
+          go build -o mush ./cmd/mush
+          echo "${{ github.workspace }}" >> "$GITHUB_PATH"
+
+      - name: Generate GIFs
+        uses: charmbracelet/vhs-action@v2
+        with:
+          path: 'docs/vhs/demo.tape'
+          install-fonts: true
+
+      - name: Commit updated GIFs
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: 'docs(vhs): regenerate demo GIFs [skip ci]'
+          file_pattern: 'docs/vhs/gif/*.gif'

@@ -12,6 +12,7 @@ import (
 func setTestHome(t *testing.T, dir string) {
 	t.Helper()
 	t.Setenv("HOME", dir)
+
 	if runtime.GOOS == "windows" {
 		t.Setenv("USERPROFILE", dir)
 	}
@@ -25,9 +26,11 @@ func TestLoadState_NoFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadState returned error: %v", err)
 	}
+
 	if !state.LastCheckedAt.IsZero() {
 		t.Errorf("expected zero LastCheckedAt, got %v", state.LastCheckedAt)
 	}
+
 	if state.LatestVersion != "" {
 		t.Errorf("expected empty LatestVersion, got %q", state.LatestVersion)
 	}
@@ -63,12 +66,15 @@ func TestSaveAndLoadState(t *testing.T) {
 	if !loaded.LastCheckedAt.Equal(now) {
 		t.Errorf("LastCheckedAt: got %v, want %v", loaded.LastCheckedAt, now)
 	}
+
 	if loaded.LatestVersion != "1.2.3" {
 		t.Errorf("LatestVersion: got %q, want %q", loaded.LatestVersion, "1.2.3")
 	}
+
 	if loaded.CurrentVersion != "1.0.0" {
 		t.Errorf("CurrentVersion: got %q, want %q", loaded.CurrentVersion, "1.0.0")
 	}
+
 	if loaded.ReleaseURL != "https://example.com/release" {
 		t.Errorf("ReleaseURL: got %q, want %q", loaded.ReleaseURL, "https://example.com/release")
 	}
@@ -92,6 +98,7 @@ func TestSaveState_OverwritesExisting(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadState: %v", err)
 	}
+
 	if loaded.LatestVersion != "2.0.0" {
 		t.Errorf("expected 2.0.0 after overwrite, got %q", loaded.LatestVersion)
 	}
@@ -201,6 +208,7 @@ func TestLoadState_CorruptedFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadState returned error for corrupted file: %v", err)
 	}
+
 	if !state.LastCheckedAt.IsZero() {
 		t.Error("expected zero-value state for corrupted file")
 	}

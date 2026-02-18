@@ -183,6 +183,7 @@ func checkClaudeCLI(ctx context.Context) Result {
 
 	// Try to get version
 	cmd := exec.CommandContext(ctx, "claude", "--version")
+
 	out, err := cmd.Output()
 	if err != nil {
 		return Result{

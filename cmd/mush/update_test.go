@@ -15,6 +15,7 @@ func TestUpdateCmd_DisabledByEnv(t *testing.T) {
 	t.Setenv("MUSH_UPDATE_DISABLED", "1")
 
 	var stdout, stderr bytes.Buffer
+
 	term := &terminal.Info{IsTTY: false}
 	out := output.NewWriter(&stdout, &stderr, term)
 	ctx := out.WithContext(t.Context())
@@ -38,9 +39,11 @@ func TestUpdateCmd_DevBuild(t *testing.T) {
 
 	oldVersion := buildinfo.Version
 	buildinfo.Version = "dev"
+
 	defer func() { buildinfo.Version = oldVersion }()
 
 	var stdout, stderr bytes.Buffer
+
 	term := &terminal.Info{IsTTY: false}
 	out := output.NewWriter(&stdout, &stderr, term)
 	ctx := out.WithContext(t.Context())
@@ -69,9 +72,11 @@ func TestUpdateCmd_VersionTrimPrefix(t *testing.T) {
 
 	oldVersion := buildinfo.Version
 	buildinfo.Version = "1.0.0"
+
 	defer func() { buildinfo.Version = oldVersion }()
 
 	var stdout, stderr bytes.Buffer
+
 	term := &terminal.Info{IsTTY: false}
 	out := output.NewWriter(&stdout, &stderr, term)
 	ctx := out.WithContext(t.Context())
@@ -88,6 +93,7 @@ func TestUpdateCmd_VersionTrimPrefix(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for non-existent version")
 	}
+
 	if strings.Contains(err.Error(), "Development build") {
 		t.Errorf("should not hit dev build path when --version is set")
 	}

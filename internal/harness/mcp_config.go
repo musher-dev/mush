@@ -44,12 +44,15 @@ func normalizeRefreshInterval(seconds int) time.Duration {
 	if seconds <= 0 {
 		seconds = defaultRunnerConfigRefreshSeconds
 	}
+
 	if seconds < minRunnerConfigRefreshSeconds {
 		seconds = minRunnerConfigRefreshSeconds
 	}
+
 	if seconds > maxRunnerConfigRefreshSeconds {
 		seconds = maxRunnerConfigRefreshSeconds
 	}
+
 	return time.Duration(seconds) * time.Second
 }
 
@@ -62,39 +65,43 @@ func buildMCPProviderSpecs(cfg *client.RunnerConfigResponse, now time.Time) []mc
 	for name := range cfg.Providers {
 		providers = append(providers, name)
 	}
+
 	sort.Strings(providers)
 
 	specs := make([]mcpProviderSpec, 0, len(providers))
 	for _, name := range providers {
-		p := cfg.Providers[name]
-		if !p.Flags.MCP || p.MCP == nil || p.Credential == nil {
-			continue
-		}
-		if p.Status != "" && !strings.EqualFold(p.Status, "active") {
-			continue
-		}
-		if p.MCP.URL == "" || p.Credential.AccessToken == "" {
-			continue
-		}
-		if p.Credential.ExpiresAt != nil && now.Add(tokenExpirySkew).After(*p.Credential.ExpiresAt) {
+		providerConfig := cfg.Providers[name]
+		if !providerConfig.Flags.MCP || providerConfig.MCP == nil || providerConfig.Credential == nil {
 			continue
 		}
 
-		tokenType := strings.TrimSpace(p.Credential.TokenType)
+		if providerConfig.Status != "" && !strings.EqualFold(providerConfig.Status, "active") {
+			continue
+		}
+
+		if providerConfig.MCP.URL == "" || providerConfig.Credential.AccessToken == "" {
+			continue
+		}
+
+		if providerConfig.Credential.ExpiresAt != nil && now.Add(tokenExpirySkew).After(*providerConfig.Credential.ExpiresAt) {
+			continue
+		}
+
+		tokenType := strings.TrimSpace(providerConfig.Credential.TokenType)
 		if tokenType == "" {
 			tokenType = "bearer"
 		}
 
 		expiresAt := ""
-		if p.Credential.ExpiresAt != nil {
-			expiresAt = p.Credential.ExpiresAt.UTC().Format(time.RFC3339Nano)
+		if providerConfig.Credential.ExpiresAt != nil {
+			expiresAt = providerConfig.Credential.ExpiresAt.UTC().Format(time.RFC3339Nano)
 		}
 
 		specs = append(specs, mcpProviderSpec{
 			Name:      name,
-			URL:       p.MCP.URL,
+			URL:       providerConfig.MCP.URL,
 			TokenType: strings.ToLower(tokenType),
-			Token:     p.Credential.AccessToken,
+			Token:     providerConfig.Credential.AccessToken,
 			ExpiresAt: expiresAt,
 		})
 	}
@@ -106,11 +113,14 @@ func mcpSignature(specs []mcpProviderSpec) (string, error) {
 	if len(specs) == 0 {
 		return "", nil
 	}
+
 	encoded, err := json.Marshal(specs)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("marshal mcp provider specs: %w", err)
 	}
+
 	sum := sha256.Sum256(encoded)
+
 	return hex.EncodeToString(sum[:]), nil
 }
 
@@ -127,6 +137,7 @@ func buildClaudeMCPConfig(specs []mcpProviderSpec) ([]byte, error) {
 		if strings.EqualFold(spec.TokenType, "basic") {
 			authScheme = "Basic"
 		}
+
 		cfg.MCPServers[spec.Name] = claudeMCPServer{
 			Type: "http",
 			URL:  spec.URL,
@@ -136,19 +147,27 @@ func buildClaudeMCPConfig(specs []mcpProviderSpec) ([]byte, error) {
 		}
 	}
 
-	return json.MarshalIndent(cfg, "", "  ")
+	encodedConfig, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("marshal claude mcp config: %w", err)
+	}
+
+	return encodedConfig, nil
 }
 
 func createClaudeMCPConfigFile(cfg *client.RunnerConfigResponse, now time.Time) (path, sig string, cleanup func() error, err error) {
 	specs := buildMCPProviderSpecs(cfg, now)
+
 	signature, err := mcpSignature(specs)
 	if err != nil {
 		return "", "", nil, err
 	}
+
 	content, err := buildClaudeMCPConfig(specs)
 	if err != nil {
 		return "", "", nil, err
 	}
+
 	if len(content) == 0 {
 		return "", signature, nil, nil
 	}
@@ -157,17 +176,22 @@ func createClaudeMCPConfigFile(cfg *client.RunnerConfigResponse, now time.Time) 
 	if err != nil {
 		return "", "", nil, fmt.Errorf("failed to create mcp config file: %w", err)
 	}
+
 	path = file.Name()
 	if _, err := file.Write(content); err != nil {
 		_ = file.Close()
 		_ = os.Remove(path)
+
 		return "", "", nil, fmt.Errorf("failed to write mcp config file: %w", err)
 	}
+
 	if err := file.Chmod(0o600); err != nil {
 		_ = file.Close()
 		_ = os.Remove(path)
+
 		return "", "", nil, fmt.Errorf("failed to set mcp config permissions: %w", err)
 	}
+
 	if err := file.Close(); err != nil {
 		_ = os.Remove(path)
 		return "", "", nil, fmt.Errorf("failed to close mcp config file: %w", err)
@@ -177,9 +201,11 @@ func createClaudeMCPConfigFile(cfg *client.RunnerConfigResponse, now time.Time) 
 		if path == "" {
 			return nil
 		}
+
 		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-			return err
+			return fmt.Errorf("remove mcp config file: %w", err)
 		}
+
 		return nil
 	}
 
@@ -196,6 +222,8 @@ func loadedMCPProviderNames(cfg *client.RunnerConfigResponse, now time.Time) []s
 	for _, spec := range specs {
 		names = append(names, spec.Name)
 	}
+
 	sort.Strings(names) // defensive: buildMCPProviderSpecs already sorts, but guard against future changes
+
 	return names
 }

@@ -52,6 +52,7 @@ func TestBuildMCPProviderSpecs(t *testing.T) {
 	if len(specs) != 1 {
 		t.Fatalf("spec count = %d, want 1", len(specs))
 	}
+
 	if specs[0].Name != "linear" {
 		t.Fatalf("provider = %q, want linear", specs[0].Name)
 	}
@@ -79,12 +80,15 @@ func TestCreateClaudeMCPConfigFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("createClaudeMCPConfigFile() error = %v", err)
 	}
+
 	if path == "" {
 		t.Fatalf("expected non-empty path")
 	}
+
 	if sig == "" {
 		t.Fatalf("expected non-empty signature")
 	}
+
 	if cleanup == nil {
 		t.Fatalf("expected cleanup callback")
 	}
@@ -98,10 +102,12 @@ func TestCreateClaudeMCPConfigFile(t *testing.T) {
 	if err := json.Unmarshal(data, &parsed); err != nil {
 		t.Fatalf("unmarshal mcp file: %v", err)
 	}
+
 	mcpServers, ok := parsed["mcpServers"].(map[string]any)
 	if !ok {
 		t.Fatalf("missing mcpServers")
 	}
+
 	if _, ok := mcpServers["linear"]; !ok {
 		t.Fatalf("missing linear server entry")
 	}
@@ -109,6 +115,7 @@ func TestCreateClaudeMCPConfigFile(t *testing.T) {
 	if err := cleanup(); err != nil {
 		t.Fatalf("cleanup error: %v", err)
 	}
+
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Fatalf("expected config file removed, stat err: %v", err)
 	}
@@ -118,9 +125,11 @@ func TestNormalizeRefreshInterval(t *testing.T) {
 	if got := normalizeRefreshInterval(0); got != 300*time.Second {
 		t.Fatalf("normalize(0) = %s, want 300s", got)
 	}
+
 	if got := normalizeRefreshInterval(10); got != 60*time.Second {
 		t.Fatalf("normalize(10) = %s, want 60s", got)
 	}
+
 	if got := normalizeRefreshInterval(3600); got != 900*time.Second {
 		t.Fatalf("normalize(3600) = %s, want 900s", got)
 	}
@@ -166,6 +175,7 @@ func TestLoadedMCPProviderNames(t *testing.T) {
 	if len(names) != 2 {
 		t.Fatalf("name count = %d, want 2", len(names))
 	}
+
 	if names[0] != "alpha" || names[1] != "zeta" {
 		t.Fatalf("names = %#v, want [alpha zeta]", names)
 	}

@@ -122,29 +122,29 @@ done
 detect_os() {
   os="$(uname -s)"
   case "$os" in
-    Linux)  echo "linux" ;;
+    Linux) echo "linux" ;;
     Darwin) echo "darwin" ;;
-    *)      err "Unsupported operating system: $os" ;;
+    *) err "Unsupported operating system: $os" ;;
   esac
 }
 
 detect_arch() {
   arch="$(uname -m)"
   case "$arch" in
-    x86_64 | amd64)   echo "amd64" ;;
-    aarch64 | arm64)   echo "arm64" ;;
-    *)                 err "Unsupported architecture: $arch" ;;
+    x86_64 | amd64) echo "amd64" ;;
+    aarch64 | arm64) echo "arm64" ;;
+    *) err "Unsupported architecture: $arch" ;;
   esac
 }
 
 # ── Download helpers ─────────────────────────────────────────────────────────
 
 has_curl() {
-  command -v curl > /dev/null 2>&1
+  command -v curl >/dev/null 2>&1
 }
 
 has_wget() {
-  command -v wget > /dev/null 2>&1
+  command -v wget >/dev/null 2>&1
 }
 
 download() {
@@ -175,22 +175,22 @@ resolve_latest_version() {
   if has_curl; then
     if [ "${MUSH_INSTALL_INSECURE:-}" = "1" ]; then
       url=$(curl -fsSLI -o /dev/null -w '%{url_effective}' \
-        "${BASE_URL}/releases/latest" 2>/dev/null) || \
+        "${BASE_URL}/releases/latest" 2>/dev/null) ||
         err "Failed to resolve latest version. Check ${BASE_URL}/releases"
     else
       url=$(curl --proto '=https' --tlsv1.2 -fsSLI -o /dev/null -w '%{url_effective}' \
-        "${BASE_URL}/releases/latest" 2>/dev/null) || \
+        "${BASE_URL}/releases/latest" 2>/dev/null) ||
         err "Failed to resolve latest version. Check ${BASE_URL}/releases"
     fi
   elif has_wget; then
     if [ "${MUSH_INSTALL_INSECURE:-}" = "1" ]; then
       url=$(wget --max-redirect=0 -S \
-        "${BASE_URL}/releases/latest" 2>&1 | \
+        "${BASE_URL}/releases/latest" 2>&1 |
         sed -n 's/.*Location: *//p' | tr -d '\r') || true
     else
       # wget doesn't have a clean redirect-follow option; parse Location header
       url=$(wget --https-only --max-redirect=0 -S \
-        "${BASE_URL}/releases/latest" 2>&1 | \
+        "${BASE_URL}/releases/latest" 2>&1 |
         sed -n 's/.*Location: *//p' | tr -d '\r') || true
     fi
     [ -n "$url" ] || err "Failed to resolve latest version."
@@ -214,9 +214,9 @@ verify_checksum() {
   expected=$(awk -v name="$archive_name" '$2 == name { print $1; exit }' "$checksums_file")
   [ -n "$expected" ] || err "Archive '$archive_name' not found in checksums file"
 
-  if command -v sha256sum > /dev/null 2>&1; then
+  if command -v sha256sum >/dev/null 2>&1; then
     actual=$(sha256sum "$file" | awk '{print $1}')
-  elif command -v shasum > /dev/null 2>&1; then
+  elif command -v shasum >/dev/null 2>&1; then
     actual=$(shasum -a 256 "$file" | awk '{print $1}')
   else
     err "Neither sha256sum nor shasum found. Cannot verify checksum."
@@ -251,7 +251,7 @@ maybe_sudo() {
     return
   fi
 
-  if command -v sudo > /dev/null 2>&1; then
+  if command -v sudo >/dev/null 2>&1; then
     echo "sudo"
   else
     err "Cannot write to $target and sudo is not available. Try: --prefix ~/.local"
@@ -261,35 +261,35 @@ maybe_sudo() {
 # ── tmux helpers ─────────────────────────────────────────────────────────────
 
 has_tmux() {
-  command -v tmux > /dev/null 2>&1
+  command -v tmux >/dev/null 2>&1
 }
 
 detect_pkg_manager() {
-  if command -v brew > /dev/null 2>&1; then
+  if command -v brew >/dev/null 2>&1; then
     echo "brew"
     return
   fi
-  if command -v apt-get > /dev/null 2>&1; then
+  if command -v apt-get >/dev/null 2>&1; then
     echo "apt-get"
     return
   fi
-  if command -v dnf > /dev/null 2>&1; then
+  if command -v dnf >/dev/null 2>&1; then
     echo "dnf"
     return
   fi
-  if command -v yum > /dev/null 2>&1; then
+  if command -v yum >/dev/null 2>&1; then
     echo "yum"
     return
   fi
-  if command -v pacman > /dev/null 2>&1; then
+  if command -v pacman >/dev/null 2>&1; then
     echo "pacman"
     return
   fi
-  if command -v zypper > /dev/null 2>&1; then
+  if command -v zypper >/dev/null 2>&1; then
     echo "zypper"
     return
   fi
-  if command -v apk > /dev/null 2>&1; then
+  if command -v apk >/dev/null 2>&1; then
     echo "apk"
     return
   fi
@@ -299,7 +299,7 @@ package_install_sudo_prefix() {
   if [ "$(id -u)" -eq 0 ]; then
     return
   fi
-  if command -v sudo > /dev/null 2>&1; then
+  if command -v sudo >/dev/null 2>&1; then
     echo "sudo"
     return
   fi
@@ -418,7 +418,10 @@ main() {
     printf "Proceed with installation? [Y/n] "
     read -r reply
     case "$reply" in
-      [nN]*) say "Aborted."; exit 0 ;;
+      [nN]*)
+        say "Aborted."
+        exit 0
+        ;;
     esac
   fi
 

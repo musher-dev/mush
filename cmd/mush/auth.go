@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"strings"
 
@@ -42,7 +43,7 @@ Your API key will be stored securely in your system's keyring
 You can also set the MUSHER_API_KEY environment variable.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := output.FromContext(cmd.Context())
-			p := prompt.New(out)
+			prompter := prompt.New(out)
 
 			// Check if already authenticated via env var
 			if key := os.Getenv("MUSHER_API_KEY"); key != "" {
@@ -56,14 +57,15 @@ You can also set the MUSHER_API_KEY environment variable.`,
 				apiKey = apiKeyFlag
 			} else {
 				// Interactive flow: prompt for API key
-				if !p.CanPrompt() {
+				if !prompter.CanPrompt() {
 					return clierrors.CannotPrompt("MUSHER_API_KEY")
 				}
 
 				var err error
-				apiKey, err = p.Password("Enter your Musher API key")
+
+				apiKey, err = prompter.Password("Enter your Musher API key")
 				if err != nil {
-					return err
+					return fmt.Errorf("read api key prompt: %w", err)
 				}
 			}
 
@@ -76,8 +78,9 @@ You can also set the MUSHER_API_KEY environment variable.`,
 			spin.Start()
 
 			cfg := config.Load()
-			c := client.New(cfg.APIURL(), apiKey)
-			identity, err := c.ValidateKey(cmd.Context())
+			apiClient := client.New(cfg.APIURL(), apiKey)
+
+			identity, err := apiClient.ValidateKey(cmd.Context())
 			if err != nil {
 				spin.StopWithFailure("Invalid API key")
 				return clierrors.AuthFailed(err)
@@ -91,11 +94,13 @@ You can also set the MUSHER_API_KEY environment variable.`,
 			}
 
 			out.Success("Authenticated as %s (Workspace: %s)", identity.CredentialName, identity.WorkspaceName)
+
 			return nil
 		},
 	}
 
 	cmd.Flags().StringVar(&apiKeyFlag, "api-key", "", "API key for non-interactive login (prefer MUSHER_API_KEY env var to avoid shell history exposure)")
+
 	return cmd
 }
 
@@ -113,7 +118,7 @@ func newAuthStatusCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := output.FromContext(cmd.Context())
 
-			source, c, err := newAPIClient()
+			source, apiClient, err := newAPIClient()
 			if err != nil {
 				return err
 			}
@@ -122,7 +127,7 @@ func newAuthStatusCmd() *cobra.Command {
 			spin := out.Spinner("Checking credentials")
 			spin.Start()
 
-			identity, err := c.ValidateKey(cmd.Context())
+			identity, err := apiClient.ValidateKey(cmd.Context())
 			if err != nil {
 				spin.StopWithFailure("Credentials invalid")
 				return clierrors.CredentialsInvalid(err)
@@ -131,16 +136,21 @@ func newAuthStatusCmd() *cobra.Command {
 			spin.StopWithSuccess("Authenticated")
 
 			if out.JSON {
-				return out.PrintJSON(AuthStatus{
+				if err := out.PrintJSON(AuthStatus{
 					Source:     string(source),
 					Credential: identity.CredentialName,
 					Workspace:  identity.WorkspaceName,
-				})
+				}); err != nil {
+					return fmt.Errorf("print auth status json: %w", err)
+				}
+
+				return nil
 			}
 
 			out.Print("Source:     %s\n", source)
 			out.Print("Credential: %s\n", identity.CredentialName)
 			out.Print("Workspace:  %s\n", identity.WorkspaceName)
+
 			return nil
 		},
 	}
@@ -159,6 +169,7 @@ func newAuthLogoutCmd() *cobra.Command {
 					out.Muted("No stored credentials found")
 					return nil
 				}
+
 				return clierrors.ConfigFailed("clear credentials", err)
 			}
 
@@ -168,6 +179,7 @@ func newAuthLogoutCmd() *cobra.Command {
 				out.Println()
 				out.Warning("MUSHER_API_KEY environment variable is still set")
 			}
+
 			return nil
 		},
 	}

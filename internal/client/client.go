@@ -8,13 +8,11 @@
 package client
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
-	neturl "net/url"
 	"strings"
 	"time"
 
@@ -320,6 +318,7 @@ func (j *Job) GetRenderedInstruction() string {
 	if j.Execution != nil {
 		return j.Execution.GetRenderedInstruction()
 	}
+
 	return ""
 }
 
@@ -329,10 +328,12 @@ func (j *Job) GetDisplayName() string {
 		if name, ok := j.InputData["name"].(string); ok && name != "" {
 			return name
 		}
+
 		if title, ok := j.InputData["title"].(string); ok && title != "" {
 			return title
 		}
 	}
+
 	return "Job"
 }
 
@@ -347,9 +348,11 @@ func NewWithHTTPClient(baseURL, apiKey string, httpClient *http.Client) *Client 
 	if httpClient == nil {
 		httpClient = &http.Client{Timeout: DefaultTimeout}
 	}
+
 	if httpClient.Timeout == 0 {
 		httpClient.Timeout = DefaultTimeout
 	}
+
 	return &Client{
 		baseURL:    baseURL,
 		apiKey:     apiKey,
@@ -420,210 +423,6 @@ func (c *Client) GetRunnerConfig(ctx context.Context) (*RunnerConfigResponse, er
 	return &cfg, nil
 }
 
-// ClaimJob attempts to claim a job from the queue.
-// This is a long-poll endpoint that blocks until a job is available or timeout.
-func (c *Client) ClaimJob(ctx context.Context, habitatID, queueID string, waitTimeoutSeconds int) (*Job, error) {
-	url := fmt.Sprintf("%s/api/v1/runner/jobs:claim?wait_timeout_seconds=%d", c.baseURL, waitTimeoutSeconds)
-
-	if queueID != "" {
-		habitatID = ""
-	}
-	if queueID == "" && habitatID == "" {
-		return nil, fmt.Errorf("must provide either habitatID or queueID")
-	}
-
-	body := JobClaimRequest{
-		QueueID:         queueID,
-		HabitatID:       habitatID,
-		LeaseDurationMs: DefaultLeaseDurationMs,
-	}
-	jsonBody, err := encodeJSON(body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	req, err := c.newRequest(ctx, "POST", url, bytes.NewReader(jsonBody))
-	if err != nil {
-		return nil, err
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to claim job: %w", err)
-	}
-	defer resp.Body.Close()
-
-	// 204 No Content = no jobs available
-	if resp.StatusCode == http.StatusNoContent {
-		return nil, nil
-	}
-
-	// 200 with null body = no jobs available
-	if resp.StatusCode == http.StatusOK {
-		respBody, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read response: %w", err)
-		}
-
-		trimmed := bytes.TrimSpace(respBody)
-		if string(trimmed) == "null" || len(trimmed) == 0 {
-			return nil, nil
-		}
-
-		var response JobClaimResponse
-		if err := json.Unmarshal(respBody, &response); err != nil {
-			return nil, fmt.Errorf("failed to parse job: %w", err)
-		}
-
-		job := response.Job
-		job.Instruction = response.Instruction
-		job.Execution = response.Execution
-		job.WebhookConfig = response.WebhookConfig
-		job.ExecutionError = response.ExecutionError
-		return &job, nil
-	}
-
-	return nil, unexpectedStatus("claim job", resp.StatusCode, resp.Body)
-}
-
-// StartJob marks a claimed job as running.
-func (c *Client) StartJob(ctx context.Context, jobID string) (*Job, error) {
-	url := fmt.Sprintf("%s/api/v1/runner/jobs/%s:start", c.baseURL, jobID)
-
-	req, err := c.newRequest(ctx, "POST", url, emptyJSONBody())
-	if err != nil {
-		return nil, err
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to start job: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, unexpectedStatus("start job", resp.StatusCode, resp.Body)
-	}
-
-	var job Job
-	if err := decodeJSON(resp.Body, &job, "failed to parse response"); err != nil {
-		return nil, err
-	}
-
-	return &job, nil
-}
-
-// HeartbeatJob sends a heartbeat for a claimed job to extend the lease.
-func (c *Client) HeartbeatJob(ctx context.Context, jobID string) (*Job, error) {
-	url := fmt.Sprintf("%s/api/v1/runner/jobs/%s:heartbeat", c.baseURL, jobID)
-
-	req, err := c.newRequest(ctx, "POST", url, emptyJSONBody())
-	if err != nil {
-		return nil, err
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send heartbeat: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, unexpectedStatus("heartbeat job", resp.StatusCode, resp.Body)
-	}
-
-	var job Job
-	if err := decodeJSON(resp.Body, &job, "failed to parse response"); err != nil {
-		return nil, err
-	}
-
-	return &job, nil
-}
-
-// CompleteJob marks a job as successfully completed.
-func (c *Client) CompleteJob(ctx context.Context, jobID string, output map[string]any) error {
-	url := fmt.Sprintf("%s/api/v1/runner/jobs/%s:complete", c.baseURL, jobID)
-
-	body := JobCompleteRequest{
-		OutputData: output,
-	}
-	jsonBody, err := encodeJSON(body)
-	if err != nil {
-		return fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	req, err := c.newRequest(ctx, "POST", url, bytes.NewReader(jsonBody))
-	if err != nil {
-		return err
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to complete job: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return unexpectedStatus("complete job", resp.StatusCode, resp.Body)
-	}
-
-	return nil
-}
-
-// FailJob marks a job as failed.
-func (c *Client) FailJob(ctx context.Context, jobID, errorCode, errorMsg string, shouldRetry bool) error {
-	url := fmt.Sprintf("%s/api/v1/runner/jobs/%s:fail", c.baseURL, jobID)
-
-	body := JobFailRequest{
-		ErrorCode:    errorCode,
-		ErrorMessage: errorMsg,
-		ShouldRetry:  shouldRetry,
-	}
-	jsonBody, err := encodeJSON(body)
-	if err != nil {
-		return fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	req, err := c.newRequest(ctx, "POST", url, bytes.NewReader(jsonBody))
-	if err != nil {
-		return err
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to fail job: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return unexpectedStatus("fail job", resp.StatusCode, resp.Body)
-	}
-
-	return nil
-}
-
-// ReleaseJob releases a job back to the queue without completing.
-func (c *Client) ReleaseJob(ctx context.Context, jobID string) error {
-	url := fmt.Sprintf("%s/api/v1/runner/jobs/%s:release", c.baseURL, jobID)
-
-	req, err := c.newRequest(ctx, "POST", url, emptyJSONBody())
-	if err != nil {
-		return err
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to release job: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return unexpectedStatus("release job", resp.StatusCode, resp.Body)
-	}
-
-	return nil
-}
-
 func (c *Client) setRequestHeaders(req *http.Request) {
 	req.Header.Set("Authorization", "Bearer "+c.apiKey)
 	req.Header.Set("Content-Type", "application/json")
@@ -635,18 +434,26 @@ func (c *Client) newRequest(ctx context.Context, method, url string, body io.Rea
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
+
 	c.setRequestHeaders(req)
+
 	return req, nil
 }
 
 func encodeJSON(v any) ([]byte, error) {
-	return json.Marshal(v)
+	data, err := json.Marshal(v)
+	if err != nil {
+		return nil, fmt.Errorf("marshal json: %w", err)
+	}
+
+	return data, nil
 }
 
 func decodeJSON(body io.Reader, dst any, msg string) error {
 	if err := json.NewDecoder(body).Decode(dst); err != nil {
 		return fmt.Errorf("%s: %w", msg, err)
 	}
+
 	return nil
 }
 
@@ -660,198 +467,6 @@ func unexpectedStatus(operation string, statusCode int, body io.Reader) error {
 	if readErr != nil {
 		return fmt.Errorf("%s failed with status %d (failed to read body: %w)", operation, statusCode, readErr)
 	}
+
 	return fmt.Errorf("%s failed with status %d: %s", operation, statusCode, string(respBody))
-}
-
-// RegisterLink registers a new link with the platform.
-// Called on mush start. Returns link ID for subsequent heartbeats/deregister.
-func (c *Client) RegisterLink(ctx context.Context, req *RegisterLinkRequest) (*RegisterLinkResponse, error) {
-	url := c.baseURL + "/api/v1/runner/links:register"
-
-	jsonBody, err := encodeJSON(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	httpReq, err := c.newRequest(ctx, "POST", url, bytes.NewReader(jsonBody))
-	if err != nil {
-		return nil, err
-	}
-
-	resp, err := c.httpClient.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("failed to register link: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusCreated {
-		return nil, unexpectedStatus("register link", resp.StatusCode, resp.Body)
-	}
-
-	var result RegisterLinkResponse
-	if err := decodeJSON(resp.Body, &result, "failed to parse response"); err != nil {
-		return nil, err
-	}
-
-	return &result, nil
-}
-
-// HeartbeatLink sends a heartbeat for a link.
-// Should be called every 30 seconds to keep the link alive.
-func (c *Client) HeartbeatLink(ctx context.Context, linkID, currentJobID string) (*LinkHeartbeatResponse, error) {
-	url := fmt.Sprintf("%s/api/v1/runner/links/%s:heartbeat", c.baseURL, linkID)
-
-	req := LinkHeartbeatRequest{
-		CurrentJobID: currentJobID,
-	}
-	jsonBody, err := encodeJSON(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	httpReq, err := c.newRequest(ctx, "POST", url, bytes.NewReader(jsonBody))
-	if err != nil {
-		return nil, err
-	}
-
-	resp, err := c.httpClient.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("failed to heartbeat link: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, unexpectedStatus("heartbeat link", resp.StatusCode, resp.Body)
-	}
-
-	var result LinkHeartbeatResponse
-	if err := decodeJSON(resp.Body, &result, "failed to parse response"); err != nil {
-		return nil, err
-	}
-
-	return &result, nil
-}
-
-// DeregisterLink gracefully disconnects a link.
-// Called on mush shutdown (SIGTERM/SIGINT).
-func (c *Client) DeregisterLink(ctx context.Context, linkID string, req DeregisterLinkRequest) error {
-	url := fmt.Sprintf("%s/api/v1/runner/links/%s:deregister", c.baseURL, linkID)
-
-	jsonBody, err := encodeJSON(req)
-	if err != nil {
-		return fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	httpReq, err := c.newRequest(ctx, "POST", url, bytes.NewReader(jsonBody))
-	if err != nil {
-		return err
-	}
-
-	resp, err := c.httpClient.Do(httpReq)
-	if err != nil {
-		return fmt.Errorf("failed to deregister link: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return unexpectedStatus("deregister link", resp.StatusCode, resp.Body)
-	}
-
-	return nil
-}
-
-// ListHabitats fetches available habitats in the runner's workspace.
-func (c *Client) ListHabitats(ctx context.Context) ([]HabitatSummary, error) {
-	url := c.baseURL + "/api/v1/runner/habitats"
-
-	req, err := c.newRequest(ctx, "GET", url, http.NoBody)
-	if err != nil {
-		return nil, err
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch habitats: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, unexpectedStatus("list habitats", resp.StatusCode, resp.Body)
-	}
-
-	var habitats []HabitatSummary
-	if err := decodeJSON(resp.Body, &habitats, "failed to parse habitats"); err != nil {
-		return nil, err
-	}
-
-	return habitats, nil
-}
-
-// ListQueues fetches active queues, optionally filtered by habitat.
-func (c *Client) ListQueues(ctx context.Context, habitatID string) ([]QueueSummary, error) {
-	endpoint, err := neturl.Parse(c.baseURL + "/api/v1/queues")
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse queue endpoint: %w", err)
-	}
-
-	query := endpoint.Query()
-	query.Set("status", "active")
-	query.Set("limit", "100")
-	if habitatID != "" {
-		query.Set("habitat_id", habitatID)
-	}
-	endpoint.RawQuery = query.Encode()
-
-	req, err := c.newRequest(ctx, "GET", endpoint.String(), http.NoBody)
-	if err != nil {
-		return nil, err
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch queues: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, unexpectedStatus("list queues", resp.StatusCode, resp.Body)
-	}
-
-	var response queueListResponse
-	if err := decodeJSON(resp.Body, &response, "failed to parse queues"); err != nil {
-		return nil, err
-	}
-
-	return response.Data, nil
-}
-
-// GetQueueInstructionAvailability checks if a queue has an active instruction.
-func (c *Client) GetQueueInstructionAvailability(ctx context.Context, queueID string) (*InstructionAvailability, error) {
-	url := fmt.Sprintf("%s/api/v1/runner/queues/%s/instruction-availability", c.baseURL, queueID)
-
-	req, err := c.newRequest(ctx, "GET", url, http.NoBody)
-	if err != nil {
-		return nil, err
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch instruction availability: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusNotFound {
-		return nil, fmt.Errorf("queue not found: %s", queueID)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, unexpectedStatus("instruction availability", resp.StatusCode, resp.Body)
-	}
-
-	var availability InstructionAvailability
-	if err := decodeJSON(resp.Body, &availability, "failed to parse instruction availability"); err != nil {
-		return nil, err
-	}
-
-	return &availability, nil
 }

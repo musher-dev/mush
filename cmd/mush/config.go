@@ -45,12 +45,14 @@ func newConfigListCmd() *cobra.Command {
 				out.Print("  history.dir       Transcript storage directory (default: ~/.config/mush/history)\n")
 				out.Print("  history.lines     In-memory transcript lines per session (default: 10000)\n")
 				out.Print("  history.retention Default prune window (default: 720h)\n")
+
 				return nil
 			}
 
 			for key, value := range settings {
 				out.Print("%s = %v\n", key, value)
 			}
+
 			return nil
 		},
 	}
@@ -73,6 +75,7 @@ func newConfigGetCmd() *cobra.Command {
 			}
 
 			out.Print("%s = %v\n", key, value)
+
 			return nil
 		},
 	}
@@ -93,6 +96,7 @@ func newConfigSetCmd() *cobra.Command {
 			}
 
 			out.Success("Set %s = %s", key, value)
+
 			return nil
 		},
 	}

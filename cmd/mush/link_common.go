@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/spf13/cobra"
 
@@ -20,7 +21,7 @@ func resolveHabitatID(ctx context.Context, c *client.Client, habitatFlag string,
 		habitats, err := c.ListHabitats(ctx)
 		if err != nil {
 			out.Failure("Failed to fetch habitats")
-			return "", err
+			return "", fmt.Errorf("fetch habitats: %w", err)
 		}
 
 		// Try to find by slug or ID
@@ -38,7 +39,7 @@ func resolveHabitatID(ctx context.Context, c *client.Client, habitatFlag string,
 	habitats, err := c.ListHabitats(ctx)
 	if err != nil {
 		out.Failure("Failed to fetch habitats")
-		return "", err
+		return "", fmt.Errorf("fetch habitats: %w", err)
 	}
 
 	if len(habitats) == 0 {
@@ -51,16 +52,18 @@ func resolveHabitatID(ctx context.Context, c *client.Client, habitatFlag string,
 			out.Print("Linking to habitat: %s (%s)\n", habitats[0].Name, habitats[0].Slug)
 			return habitats[0].ID, nil
 		}
+
 		return "", clierrors.HabitatRequired()
 	}
 
 	// Interactive mode: always prompt
 	selected, err := prompt.SelectHabitat(habitats, out)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("select habitat: %w", err)
 	}
 
 	out.Print("Linking to habitat: %s (%s)\n", selected.Name, selected.Slug)
+
 	return selected.ID, nil
 }
 
@@ -75,7 +78,7 @@ func resolveQueue(
 	queues, err := c.ListQueues(ctx, habitatID)
 	if err != nil {
 		out.Failure("Failed to fetch queues")
-		return client.QueueSummary{}, err
+		return client.QueueSummary{}, fmt.Errorf("fetch queues: %w", err)
 	}
 
 	if queueFlag != "" {
@@ -85,6 +88,7 @@ func resolveQueue(
 				return q, nil
 			}
 		}
+
 		return client.QueueSummary{}, clierrors.QueueNotFound(queueFlag)
 	}
 
@@ -98,16 +102,18 @@ func resolveQueue(
 			out.Print("Filtering by queue: %s (%s)\n", queues[0].Name, queues[0].Slug)
 			return queues[0], nil
 		}
+
 		return client.QueueSummary{}, clierrors.QueueRequired()
 	}
 
 	// Interactive mode: always prompt
 	selected, err := prompt.SelectQueue(queues, out)
 	if err != nil {
-		return client.QueueSummary{}, err
+		return client.QueueSummary{}, fmt.Errorf("select queue: %w", err)
 	}
 
 	out.Print("Filtering by queue: %s (%s)\n", selected.Name, selected.Slug)
+
 	return *selected, nil
 }
 
@@ -146,12 +152,16 @@ func newLinkStatusCmd() *cobra.Command {
 			spin.StopWithSuccess("Connected")
 
 			if out.JSON {
-				return out.PrintJSON(LinkStatus{
+				if err := out.PrintJSON(LinkStatus{
 					Source:     string(source),
 					Credential: identity.CredentialName,
 					Workspace:  identity.WorkspaceName,
 					Active:     false,
-				})
+				}); err != nil {
+					return fmt.Errorf("print link status json: %w", err)
+				}
+
+				return nil
 			}
 
 			out.Println()
@@ -181,6 +191,7 @@ This command is provided for programmatic disconnection.`,
 			out := output.FromContext(cmd.Context())
 			out.Info("Links are disconnected via Ctrl+C when running 'mush link'")
 			out.Muted("No active link to disconnect.")
+
 			return nil
 		},
 	}

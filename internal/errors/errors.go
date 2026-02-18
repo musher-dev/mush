@@ -42,6 +42,7 @@ func (e *CLIError) Error() string {
 	if e.Cause != nil {
 		return fmt.Sprintf("%s: %v", e.Message, e.Cause)
 	}
+
 	return e.Message
 }
 
@@ -160,12 +161,15 @@ func NoInstructionsForQueue(queueName, queueSlug string) *CLIError {
 	if label == "" {
 		label = queueSlug
 	}
+
 	if queueName != "" && queueSlug != "" {
 		label = fmt.Sprintf("%s (%s)", queueName, queueSlug)
 	}
+
 	if label == "" {
 		label = "unknown"
 	}
+
 	return &CLIError{
 		Message: fmt.Sprintf("No active instructions found for queue: %s", label),
 		Hint:    "Create and activate an instruction for this queue in the console, then rerun 'mush link'",
@@ -232,11 +236,13 @@ func LinkRegistrationFailed(cause error) *CLIError {
 // ExecutionTimedOut returns an error for execution timeout with context.
 func ExecutionTimedOut(timeout string, lastTools []string) *CLIError {
 	hint := "Increase timeout or simplify the job"
+
 	if len(lastTools) > 0 {
 		// Show last tool for context
 		lastTool := lastTools[len(lastTools)-1]
 		hint += fmt.Sprintf(". Last activity: %s", lastTool)
 	}
+
 	return &CLIError{
 		Message: fmt.Sprintf("Execution timed out after %s", timeout),
 		Hint:    hint,
@@ -275,6 +281,7 @@ func ClaudeExecutionFailed(exitCode int, stderr string) *CLIError {
 			if len(stderr) > 200 {
 				stderr = stderr[:200] + "..."
 			}
+
 			hint = stderr
 		}
 	}
@@ -321,5 +328,6 @@ func containsAny(s string, substrings ...string) bool {
 			return true
 		}
 	}
+
 	return false
 }

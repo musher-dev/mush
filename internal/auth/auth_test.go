@@ -43,6 +43,7 @@ func TestGetCredentials_FromEnv(t *testing.T) {
 				if source != tt.wantSource {
 					t.Errorf("source = %v, want %v", source, tt.wantSource)
 				}
+
 				if key != tt.wantKey {
 					t.Errorf("key = %v, want %v", key, tt.wantKey)
 				}
@@ -110,6 +111,7 @@ func TestWriteAndReadCredentialsFile(t *testing.T) {
 
 	// Verify file permissions
 	path := credentialsFilePath()
+
 	info, err := os.Stat(path)
 	if err != nil {
 		t.Fatalf("os.Stat() error = %v", err)

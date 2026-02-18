@@ -24,25 +24,31 @@ import (
 
 func requireLocalListener(t *testing.T) {
 	t.Helper()
+
 	lc := net.ListenConfig{}
+
 	ln, err := lc.Listen(t.Context(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Skipf("local listener not available in this environment: %v", err)
 		return
 	}
+
 	_ = ln.Close()
 }
 
 // scriptPath returns the absolute path to install.sh.
 func scriptPath(t *testing.T) string {
 	t.Helper()
+
 	p, err := filepath.Abs("../../install.sh")
 	if err != nil {
 		t.Fatalf("resolving install.sh path: %v", err)
 	}
+
 	if _, err := os.Stat(p); err != nil {
 		t.Fatalf("install.sh not found at %s: %v", p, err)
 	}
+
 	return p
 }
 
@@ -57,14 +63,18 @@ type runResult struct {
 // with a small margin, falling back to a 30s timeout if no deadline is set.
 func testContext(t *testing.T) context.Context {
 	t.Helper()
+
 	const fallback = 30 * time.Second
 	if dl, ok := t.Deadline(); ok {
 		ctx, cancel := context.WithDeadline(t.Context(), dl.Add(-time.Second))
 		t.Cleanup(cancel)
+
 		return ctx
 	}
+
 	ctx, cancel := context.WithTimeout(t.Context(), fallback)
 	t.Cleanup(cancel)
+
 	return ctx
 }
 
@@ -73,14 +83,17 @@ func runScript(t *testing.T, args, env []string) runResult {
 	t.Helper()
 	cmdArgs := append([]string{scriptPath(t)}, args...)
 	cmd := exec.CommandContext(testContext(t), "sh", cmdArgs...)
+
 	cmd.Env = append(os.Environ(), env...)
 
 	var stdout, stderr bytes.Buffer
+
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
 	err := cmd.Run()
 	exitCode := 0
+
 	if err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
@@ -89,6 +102,7 @@ func runScript(t *testing.T, args, env []string) runResult {
 			t.Fatalf("running install.sh: %v", err)
 		}
 	}
+
 	return runResult{
 		stdout:   stdout.String(),
 		stderr:   stderr.String(),
@@ -101,15 +115,18 @@ func runFunction(t *testing.T, fnCall string, env []string) runResult {
 	t.Helper()
 	script := fmt.Sprintf(". '%s'\n%s", scriptPath(t), fnCall)
 	cmd := exec.CommandContext(testContext(t), "sh", "-c", script)
+
 	cmd.Env = append(os.Environ(), "INSTALL_SH_TESTING=1")
 	cmd.Env = append(cmd.Env, env...)
 
 	var stdout, stderr bytes.Buffer
+
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
 	err := cmd.Run()
 	exitCode := 0
+
 	if err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
@@ -118,6 +135,7 @@ func runFunction(t *testing.T, fnCall string, env []string) runResult {
 			t.Fatalf("running function %q: %v\nstderr: %s", fnCall, err, stderr.String())
 		}
 	}
+
 	return runResult{
 		stdout:   stdout.String(),
 		stderr:   stderr.String(),
@@ -131,10 +149,12 @@ func makeFakeArchive(t *testing.T) (archiveData []byte, checksumHex string) {
 	t.Helper()
 
 	var buf bytes.Buffer
+
 	gw := gzip.NewWriter(&buf)
 	tw := tar.NewWriter(gw)
 
 	content := []byte("#!/bin/sh\necho \"mush v0.0.0-test\"\n")
+
 	hdr := &tar.Header{
 		Name: "mush",
 		Mode: 0o755,
@@ -143,18 +163,22 @@ func makeFakeArchive(t *testing.T) (archiveData []byte, checksumHex string) {
 	if err := tw.WriteHeader(hdr); err != nil {
 		t.Fatalf("writing tar header: %v", err)
 	}
+
 	if _, err := tw.Write(content); err != nil {
 		t.Fatalf("writing tar content: %v", err)
 	}
+
 	if err := tw.Close(); err != nil {
 		t.Fatalf("closing tar writer: %v", err)
 	}
+
 	if err := gw.Close(); err != nil {
 		t.Fatalf("closing gzip writer: %v", err)
 	}
 
 	archiveBytes := buf.Bytes()
 	sum := sha256.Sum256(archiveBytes)
+
 	return archiveBytes, fmt.Sprintf("%x", sum)
 }
 
@@ -162,7 +186,9 @@ func makeFakeArchive(t *testing.T) (archiveData []byte, checksumHex string) {
 func newMockGitHub(t *testing.T, version string, archiveBytes []byte, checksumContent string) *httptest.Server {
 	t.Helper()
 	requireLocalListener(t)
+
 	tag := "v" + version
+
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == "/releases/latest":
@@ -182,38 +208,47 @@ func newMockGitHub(t *testing.T, version string, archiveBytes []byte, checksumCo
 // fakeUname creates a fake uname script in a temp directory and returns the dir path.
 func fakeUname(t *testing.T, output string) string {
 	t.Helper()
+
 	binDir := filepath.Join(t.TempDir(), "bin")
 	if err := os.MkdirAll(binDir, 0o755); err != nil {
 		t.Fatalf("creating bin dir: %v", err)
 	}
+
 	script := fmt.Sprintf("#!/bin/sh\necho '%s'\n", output)
+
 	unamePath := filepath.Join(binDir, "uname")
 	if err := os.WriteFile(unamePath, []byte(script), 0o755); err != nil {
 		t.Fatalf("writing fake uname: %v", err)
 	}
+
 	return binDir
 }
 
 // fakeCommands creates executable stubs for command names in PATH and returns the directory.
 func fakeCommands(t *testing.T, names ...string) string {
 	t.Helper()
+
 	binDir := filepath.Join(t.TempDir(), "bin")
 	if err := os.MkdirAll(binDir, 0o755); err != nil {
 		t.Fatalf("creating bin dir: %v", err)
 	}
+
 	for _, name := range names {
 		path := filepath.Join(binDir, name)
+
 		script := "#!/bin/sh\nexit 0\n"
 		if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
 			t.Fatalf("writing fake %s: %v", name, err)
 		}
 	}
+
 	return binDir
 }
 
 // writeExecutable writes an executable shell script file.
 func writeExecutable(t *testing.T, path, script string) {
 	t.Helper()
+
 	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
 		t.Fatalf("writing executable %s: %v", path, err)
 	}
@@ -223,7 +258,9 @@ func writeExecutable(t *testing.T, path, script string) {
 // on the current host for a given version.
 func hostArchiveName(t *testing.T, version string) string {
 	t.Helper()
+
 	var osName string
+
 	switch runtime.GOOS {
 	case "linux":
 		osName = "linux"
@@ -234,6 +271,7 @@ func hostArchiveName(t *testing.T, version string) string {
 	}
 
 	var archName string
+
 	switch runtime.GOARCH {
 	case "amd64":
 		archName = "amd64"
@@ -307,9 +345,11 @@ func TestArgumentParsing(t *testing.T) {
 				t.Errorf("exit code = %d, want %d\nstdout: %s\nstderr: %s",
 					result.exitCode, tt.wantExit, result.stdout, result.stderr)
 			}
+
 			if tt.wantStdout != "" && !strings.Contains(result.stdout, tt.wantStdout) {
 				t.Errorf("stdout missing %q\ngot: %s", tt.wantStdout, result.stdout)
 			}
+
 			if tt.wantStderr != "" && !strings.Contains(result.stderr, tt.wantStderr) {
 				t.Errorf("stderr missing %q\ngot: %s", tt.wantStderr, result.stderr)
 			}
@@ -338,6 +378,7 @@ func TestDetectPkgManager(t *testing.T) {
 			if result.exitCode != 0 {
 				t.Fatalf("exit code = %d, want 0\nstderr: %s", result.exitCode, result.stderr)
 			}
+
 			got := strings.TrimSpace(result.stdout)
 			if got != tt.want {
 				t.Fatalf("detect_pkg_manager = %q, want %q", got, tt.want)
@@ -349,10 +390,12 @@ func TestDetectPkgManager(t *testing.T) {
 func TestInstallTmux(t *testing.T) {
 	t.Run("already installed is no-op", func(t *testing.T) {
 		path := fakeCommands(t, "tmux")
+
 		result := runFunction(t, "install_tmux", []string{"PATH=" + path})
 		if result.exitCode != 0 {
 			t.Fatalf("exit code = %d, want 0\nstderr: %s", result.exitCode, result.stderr)
 		}
+
 		if !strings.Contains(result.stdout, "already installed") {
 			t.Fatalf("stdout = %q, expected already installed message", result.stdout)
 		}
@@ -360,10 +403,12 @@ func TestInstallTmux(t *testing.T) {
 
 	t.Run("missing manager fails", func(t *testing.T) {
 		path := fakeCommands(t)
+
 		result := runFunction(t, "install_tmux", []string{"PATH=" + path})
 		if result.exitCode == 0 {
 			t.Fatal("expected non-zero exit code")
 		}
+
 		if !strings.Contains(result.stderr, "no supported package manager found") {
 			t.Fatalf("stderr = %q, expected no manager message", result.stderr)
 		}
@@ -394,9 +439,11 @@ func TestDetectOS(t *testing.T) {
 			if result.exitCode != tt.wantExit {
 				t.Errorf("exit code = %d, want %d\nstderr: %s", result.exitCode, tt.wantExit, result.stderr)
 			}
+
 			if tt.wantOutput != "" && strings.TrimSpace(result.stdout) != tt.wantOutput {
 				t.Errorf("output = %q, want %q", strings.TrimSpace(result.stdout), tt.wantOutput)
 			}
+
 			if tt.wantStderr != "" && !strings.Contains(result.stderr, tt.wantStderr) {
 				t.Errorf("stderr missing %q\ngot: %s", tt.wantStderr, result.stderr)
 			}
@@ -426,9 +473,11 @@ func TestDetectArch(t *testing.T) {
 			if result.exitCode != tt.wantExit {
 				t.Errorf("exit code = %d, want %d\nstderr: %s", result.exitCode, tt.wantExit, result.stderr)
 			}
+
 			if tt.wantOutput != "" && strings.TrimSpace(result.stdout) != tt.wantOutput {
 				t.Errorf("output = %q, want %q", strings.TrimSpace(result.stdout), tt.wantOutput)
 			}
+
 			if tt.wantStderr != "" && !strings.Contains(result.stderr, tt.wantStderr) {
 				t.Errorf("stderr missing %q\ngot: %s", tt.wantStderr, result.stderr)
 			}
@@ -441,6 +490,7 @@ func TestDetectArch(t *testing.T) {
 func TestResolveLatestVersion(t *testing.T) {
 	t.Run("follows redirect and extracts tag", func(t *testing.T) {
 		requireLocalListener(t)
+
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.URL.Path == "/releases/latest" {
 				http.Redirect(w, r, "/releases/tag/v1.2.3", http.StatusFound)
@@ -459,6 +509,7 @@ func TestResolveLatestVersion(t *testing.T) {
 		if result.exitCode != 0 {
 			t.Fatalf("exit code = %d, want 0\nstderr: %s", result.exitCode, result.stderr)
 		}
+
 		got := strings.TrimSpace(result.stdout)
 		if got != "v1.2.3" {
 			t.Errorf("resolved version = %q, want %q", got, "v1.2.3")
@@ -467,6 +518,7 @@ func TestResolveLatestVersion(t *testing.T) {
 
 	t.Run("server error", func(t *testing.T) {
 		requireLocalListener(t)
+
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
 		}))
@@ -535,6 +587,7 @@ func TestVerifyChecksum(t *testing.T) {
 			}
 
 			checksumFile := filepath.Join(tmpDir, "checksums.txt")
+
 			checksumContent := fmt.Sprintf("%s  test.tar.gz\n", checksumHex)
 			if err := os.WriteFile(checksumFile, []byte(checksumContent), 0o644); err != nil {
 				t.Fatalf("writing checksums: %v", err)
@@ -546,6 +599,7 @@ func TestVerifyChecksum(t *testing.T) {
 			if result.exitCode != tt.wantExit {
 				t.Errorf("exit code = %d, want %d\nstderr: %s", result.exitCode, tt.wantExit, result.stderr)
 			}
+
 			if tt.wantStderr != "" && !strings.Contains(result.stderr, tt.wantStderr) {
 				t.Errorf("stderr missing %q\ngot: %s", tt.wantStderr, result.stderr)
 			}
@@ -563,6 +617,7 @@ func TestMaybeSudo(t *testing.T) {
 		if result.exitCode != 0 {
 			t.Errorf("exit code = %d, want 0\nstderr: %s", result.exitCode, result.stderr)
 		}
+
 		if strings.TrimSpace(result.stdout) != "" {
 			t.Errorf("stdout = %q, want empty (no sudo needed)", result.stdout)
 		}
@@ -576,6 +631,7 @@ func TestMaybeSudo(t *testing.T) {
 		if result.exitCode != 0 {
 			t.Errorf("exit code = %d, want 0\nstderr: %s", result.exitCode, result.stderr)
 		}
+
 		if strings.TrimSpace(result.stdout) != "" {
 			t.Errorf("stdout = %q, want empty (no sudo needed)", result.stdout)
 		}
@@ -591,6 +647,7 @@ func TestCheckPath(t *testing.T) {
 		if result.exitCode != 0 {
 			t.Errorf("exit code = %d, want 0", result.exitCode)
 		}
+
 		if strings.Contains(result.stdout, "not in your PATH") {
 			t.Error("should not warn about /usr/bin being missing from PATH")
 		}
@@ -626,15 +683,18 @@ func TestEndToEnd(t *testing.T) {
 			t.Fatalf("exit code = %d, want 0\nstdout: %s\nstderr: %s",
 				result.exitCode, result.stdout, result.stderr)
 		}
+
 		if !strings.Contains(result.stdout, "Successfully installed") {
 			t.Errorf("stdout missing success message\ngot: %s", result.stdout)
 		}
 
 		binPath := filepath.Join(prefix, "bin", "mush")
+
 		info, err := os.Stat(binPath)
 		if err != nil {
 			t.Fatalf("binary not found at %s: %v", binPath, err)
 		}
+
 		if info.Mode()&0o111 == 0 {
 			t.Errorf("binary is not executable: mode %o", info.Mode())
 		}
@@ -658,6 +718,7 @@ func TestEndToEnd(t *testing.T) {
 		if result.exitCode == 0 {
 			t.Error("expected non-zero exit code for checksum failure")
 		}
+
 		if !strings.Contains(result.stderr, "Checksum mismatch") {
 			t.Errorf("stderr missing checksum mismatch message\ngot: %s", result.stderr)
 		}
@@ -665,6 +726,7 @@ func TestEndToEnd(t *testing.T) {
 
 	t.Run("download failure 404", func(t *testing.T) {
 		requireLocalListener(t)
+
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			http.NotFound(w, r)
 		}))
@@ -699,6 +761,7 @@ func TestEndToEnd(t *testing.T) {
 			t.Fatalf("exit code = %d, want 0\nstdout: %s\nstderr: %s",
 				result.exitCode, result.stdout, result.stderr)
 		}
+
 		if !strings.Contains(result.stdout, "not in your PATH") {
 			t.Errorf("stdout missing PATH warning\ngot: %s", result.stdout)
 		}
@@ -716,6 +779,7 @@ func TestEndToEnd(t *testing.T) {
 		if err := os.MkdirAll(fakeBin, 0o755); err != nil {
 			t.Fatalf("creating fake bin dir: %v", err)
 		}
+
 		marker := filepath.Join(t.TempDir(), "apt-get.log")
 		tmuxPath := filepath.Join(fakeBin, "tmux")
 
@@ -752,13 +816,16 @@ exit 0
 		if err != nil {
 			t.Fatalf("reading apt-get marker: %v", err)
 		}
+
 		logText := string(logData)
 		if !strings.Contains(logText, "update") {
 			t.Fatalf("expected apt-get update invocation, got %q", logText)
 		}
+
 		if !strings.Contains(logText, "install -y tmux") {
 			t.Fatalf("expected apt-get install invocation, got %q", logText)
 		}
+
 		if _, err := os.Stat(tmuxPath); err != nil {
 			t.Fatalf("expected fake tmux binary to be created: %v", err)
 		}
@@ -770,7 +837,9 @@ exit 0
 // other entry, so all other tools (uname, sh, etc.) remain accessible.
 func pathWithout(t *testing.T, bin string) string {
 	t.Helper()
+
 	var dirs []string
+
 	for _, dir := range filepath.SplitList(os.Getenv("PATH")) {
 		if _, err := os.Stat(filepath.Join(dir, bin)); err != nil {
 			dirs = append(dirs, dir)
@@ -778,18 +847,23 @@ func pathWithout(t *testing.T, bin string) string {
 		}
 		// Create a shadow directory with symlinks to everything except bin.
 		shadow := t.TempDir()
+
 		entries, err := os.ReadDir(dir)
 		if err != nil {
 			dirs = append(dirs, dir)
 			continue
 		}
+
 		for _, e := range entries {
 			if e.Name() == bin {
 				continue
 			}
+
 			os.Symlink(filepath.Join(dir, e.Name()), filepath.Join(shadow, e.Name()))
 		}
+
 		dirs = append(dirs, shadow)
 	}
+
 	return strings.Join(dirs, string(os.PathListSeparator))
 }

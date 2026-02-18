@@ -87,6 +87,7 @@ func FromContext(ctx context.Context) *Writer {
 	if w, ok := ctx.Value(contextKey{}).(*Writer); ok {
 		return w
 	}
+
 	return Default()
 }
 
@@ -121,7 +122,12 @@ func (w *Writer) Println(args ...interface{}) {
 func (w *Writer) PrintJSON(v interface{}) error {
 	enc := json.NewEncoder(w.Out)
 	enc.SetIndent("", "  ")
-	return enc.Encode(v)
+
+	if err := enc.Encode(v); err != nil {
+		return fmt.Errorf("encode json output: %w", err)
+	}
+
+	return nil
 }
 
 // Error writes to stderr.
@@ -139,7 +145,13 @@ func (w *Writer) Write(p []byte) (n int, err error) {
 	if w.Quiet {
 		return len(p), nil
 	}
-	return w.Out.Write(p)
+
+	written, writeErr := w.Out.Write(p)
+	if writeErr != nil {
+		return written, fmt.Errorf("write output: %w", writeErr)
+	}
+
+	return written, nil
 }
 
 // Debug writes to stdout only in verbose mode.
@@ -163,6 +175,7 @@ func (w *Writer) Success(format string, args ...interface{}) {
 	if w.Quiet {
 		return
 	}
+
 	msg := fmt.Sprintf(format, args...)
 	w.writeStatus(w.Out, w.successColor, CheckMark, msg)
 }
@@ -178,6 +191,7 @@ func (w *Writer) Warning(format string, args ...interface{}) {
 	if w.Quiet {
 		return
 	}
+
 	msg := fmt.Sprintf(format, args...)
 	w.writeStatus(w.Out, w.warningColor, WarningMark, msg)
 }
@@ -187,6 +201,7 @@ func (w *Writer) Info(format string, args ...interface{}) {
 	if w.Quiet {
 		return
 	}
+
 	msg := fmt.Sprintf(format, args...)
 	w.writeStatus(w.Out, w.infoColor, InfoMark, msg)
 }
@@ -196,6 +211,7 @@ func (w *Writer) Muted(format string, args ...interface{}) {
 	if w.Quiet {
 		return
 	}
+
 	msg := fmt.Sprintf(format, args...)
 	if w.terminal.ColorEnabled() {
 		w.mutedColor.Fprintln(w.Out, msg)
@@ -204,7 +220,7 @@ func (w *Writer) Muted(format string, args ...interface{}) {
 	}
 }
 
-// Status symbols
+// Status symbols.
 const (
 	CheckMark   = "\u2713" // ✓
 	XMark       = "\u2717" // ✗
@@ -244,6 +260,7 @@ func (s *Spinner) Start() {
 		s.writer.Print("%s... ", s.message)
 		return
 	}
+
 	s.spinner.Start()
 }
 
@@ -252,6 +269,7 @@ func (s *Spinner) Stop() {
 	if s.disabled {
 		return
 	}
+
 	s.spinner.Stop()
 }
 
@@ -259,12 +277,16 @@ func (s *Spinner) Stop() {
 func (s *Spinner) StopWithSuccess(message string) {
 	if s.disabled {
 		s.writer.Println("done")
+
 		if message != "" {
 			s.writer.Success("%s", message)
 		}
+
 		return
 	}
+
 	s.spinner.Stop()
+
 	if message != "" {
 		s.writer.Success("%s", message)
 	}
@@ -274,12 +296,16 @@ func (s *Spinner) StopWithSuccess(message string) {
 func (s *Spinner) StopWithFailure(message string) {
 	if s.disabled {
 		s.writer.Println("failed")
+
 		if message != "" {
 			s.writer.Failure("%s", message)
 		}
+
 		return
 	}
+
 	s.spinner.Stop()
+
 	if message != "" {
 		s.writer.Failure("%s", message)
 	}
@@ -289,12 +315,16 @@ func (s *Spinner) StopWithFailure(message string) {
 func (s *Spinner) StopWithWarning(message string) {
 	if s.disabled {
 		s.writer.Println("warning")
+
 		if message != "" {
 			s.writer.Warning("%s", message)
 		}
+
 		return
 	}
+
 	s.spinner.Stop()
+
 	if message != "" {
 		s.writer.Warning("%s", message)
 	}

@@ -120,6 +120,7 @@ func (u *Updater) ApplyVersion(ctx context.Context, version string) (*selfupdate
 	if err != nil {
 		return nil, fmt.Errorf("detect version %s: %w", version, err)
 	}
+
 	if !found {
 		return nil, fmt.Errorf("version %s not found", version)
 	}

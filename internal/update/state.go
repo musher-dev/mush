@@ -2,6 +2,7 @@ package update
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -26,8 +27,9 @@ type State struct {
 func statePath() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("resolve user home directory: %w", err)
 	}
+
 	return filepath.Join(home, ".config", "mush", stateFileName), nil
 }
 
@@ -43,33 +45,34 @@ func LoadState() (*State, error) {
 		if os.IsNotExist(err) {
 			return &State{}, nil
 		}
-		return nil, err
+
+		return nil, fmt.Errorf("read update state file: %w", err)
 	}
 
-	var s State
-	if err := json.Unmarshal(data, &s); err != nil {
+	var state State
+	if err := json.Unmarshal(data, &state); err != nil {
 		// Corrupted state file; treat as empty
 		return &State{}, nil //nolint:nilerr // graceful: corrupted state file treated as empty
 	}
 
-	return &s, nil
+	return &state, nil
 }
 
 // SaveState writes the state file atomically.
-func SaveState(s *State) error {
+func SaveState(state *State) error {
 	path, err := statePath()
 	if err != nil {
-		return err
+		return fmt.Errorf("resolve update state path: %w", err)
 	}
 
 	dir := filepath.Dir(path)
 	if mkdirErr := os.MkdirAll(dir, 0o700); mkdirErr != nil {
-		return mkdirErr
+		return fmt.Errorf("create update state directory: %w", mkdirErr)
 	}
 
-	data, err := json.Marshal(s)
+	data, err := json.Marshal(state)
 	if err != nil {
-		return err
+		return fmt.Errorf("marshal update state: %w", err)
 	}
 
 	// Atomic write: unique temp file + rename.
@@ -78,29 +81,35 @@ func SaveState(s *State) error {
 	// fall back to remove + rename. Clean up temp file on failure.
 	tmpFile, err := os.CreateTemp(dir, stateFileName+".*.tmp")
 	if err != nil {
-		return err
+		return fmt.Errorf("create temp update state file: %w", err)
 	}
+
 	tmp := tmpFile.Name()
 	if _, writeErr := tmpFile.Write(data); writeErr != nil {
 		_ = tmpFile.Close()
 		_ = os.Remove(tmp)
-		return writeErr
+
+		return fmt.Errorf("write temp update state: %w", writeErr)
 	}
+
 	if closeErr := tmpFile.Close(); closeErr != nil {
 		_ = os.Remove(tmp)
-		return closeErr
+		return fmt.Errorf("close temp update state file: %w", closeErr)
 	}
+
 	if err := os.Rename(tmp, path); err != nil {
 		// Fallback for Windows: remove dest then retry rename
 		if removeErr := os.Remove(path); removeErr != nil && !os.IsNotExist(removeErr) {
 			_ = os.Remove(tmp) // best-effort cleanup
-			return removeErr
+			return fmt.Errorf("remove existing update state file: %w", removeErr)
 		}
+
 		if retryErr := os.Rename(tmp, path); retryErr != nil {
 			_ = os.Remove(tmp) // best-effort cleanup
-			return retryErr
+			return fmt.Errorf("replace update state file: %w", retryErr)
 		}
 	}
+
 	return nil
 }
 
@@ -109,6 +118,7 @@ func (s *State) ShouldCheck() bool {
 	if s.LastCheckedAt.IsZero() {
 		return true
 	}
+
 	return time.Since(s.LastCheckedAt) >= checkInterval
 }
 

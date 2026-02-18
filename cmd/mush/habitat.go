@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+
 	"github.com/spf13/cobra"
 
 	clierrors "github.com/musher-dev/mush/internal/errors"
@@ -31,7 +33,7 @@ func newHabitatListCmd() *cobra.Command {
 			out := output.FromContext(cmd.Context())
 
 			// Get credentials and create client
-			_, c, err := newAPIClient()
+			_, apiClient, err := newAPIClient()
 			if err != nil {
 				return err
 			}
@@ -40,10 +42,10 @@ func newHabitatListCmd() *cobra.Command {
 			spin := out.Spinner("Fetching habitats")
 			spin.Start()
 
-			habitats, err := c.ListHabitats(cmd.Context())
+			habitats, err := apiClient.ListHabitats(cmd.Context())
 			if err != nil {
 				spin.StopWithFailure("Failed to fetch habitats")
-				return err
+				return fmt.Errorf("list habitats: %w", err)
 			}
 
 			spin.StopWithSuccess("Found habitats")
@@ -53,7 +55,11 @@ func newHabitatListCmd() *cobra.Command {
 			}
 
 			if out.JSON {
-				return out.PrintJSON(habitats)
+				if err := out.PrintJSON(habitats); err != nil {
+					return fmt.Errorf("print habitats json: %w", err)
+				}
+
+				return nil
 			}
 
 			out.Println()
@@ -63,13 +69,14 @@ func newHabitatListCmd() *cobra.Command {
 			out.Print("%-20s %-30s %-10s %-10s\n", "----", "----", "------", "----")
 
 			// Print habitats
-			for _, h := range habitats {
+			for _, habitat := range habitats {
 				// Truncate name if too long
-				name := h.Name
+				name := habitat.Name
 				if len(name) > 28 {
 					name = name[:25] + "..."
 				}
-				out.Print("%-18s %-30s %-10s %-10s\n", h.Slug, name, h.Status, h.HabitatType)
+
+				out.Print("%-18s %-30s %-10s %-10s\n", habitat.Slug, name, habitat.Status, habitat.HabitatType)
 			}
 
 			return nil

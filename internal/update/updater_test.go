@@ -22,6 +22,7 @@ func (f *fakeSource) ListReleases(context.Context, selfupdate.Repository) ([]sel
 	if f.err != nil {
 		return nil, f.err
 	}
+
 	return f.releases, nil
 }
 
@@ -64,6 +65,7 @@ func (a *fakeAsset) GetBrowserDownloadURL() string { return a.url }
 
 func newTestUpdater(t *testing.T, source selfupdate.Source) *Updater {
 	t.Helper()
+
 	updater, err := selfupdate.NewUpdater(selfupdate.Config{
 		Source: source,
 		OS:     runtime.GOOS,
@@ -72,6 +74,7 @@ func newTestUpdater(t *testing.T, source selfupdate.Source) *Updater {
 	if err != nil {
 		t.Fatalf("create test updater: %v", err)
 	}
+
 	return &Updater{updater: updater}
 }
 
@@ -89,18 +92,22 @@ func testRelease(version string, withAsset bool) selfupdate.SourceRelease {
 			&fakeAsset{id: 1, name: assetName, url: "https://example.com/download/" + assetName, size: 1},
 		}
 	}
+
 	return rel
 }
 
 func TestCheckLatestNewerAvailable(t *testing.T) {
 	u := newTestUpdater(t, &fakeSource{releases: []selfupdate.SourceRelease{testRelease("2.0.0", true)}})
+
 	info, err := u.CheckLatest(t.Context(), "1.0.0")
 	if err != nil {
 		t.Fatalf("CheckLatest returned error: %v", err)
 	}
+
 	if !info.UpdateAvailable {
 		t.Error("expected UpdateAvailable to be true")
 	}
+
 	if info.LatestVersion != "2.0.0" {
 		t.Errorf("LatestVersion: got %q, want %q", info.LatestVersion, "2.0.0")
 	}
@@ -108,10 +115,12 @@ func TestCheckLatestNewerAvailable(t *testing.T) {
 
 func TestCheckLatestUpToDate(t *testing.T) {
 	u := newTestUpdater(t, &fakeSource{releases: []selfupdate.SourceRelease{testRelease("1.0.0", true)}})
+
 	info, err := u.CheckLatest(t.Context(), "1.0.0")
 	if err != nil {
 		t.Fatalf("CheckLatest returned error: %v", err)
 	}
+
 	if info.UpdateAvailable {
 		t.Error("expected UpdateAvailable to be false")
 	}
@@ -119,6 +128,7 @@ func TestCheckLatestUpToDate(t *testing.T) {
 
 func TestCheckLatestAPIError(t *testing.T) {
 	u := newTestUpdater(t, &fakeSource{err: errors.New("boom")})
+
 	_, err := u.CheckLatest(t.Context(), "1.0.0")
 	if err == nil {
 		t.Fatal("expected error")
@@ -127,10 +137,12 @@ func TestCheckLatestAPIError(t *testing.T) {
 
 func TestCheckLatestDevBuild(t *testing.T) {
 	u := newTestUpdater(t, &fakeSource{releases: []selfupdate.SourceRelease{testRelease("1.0.0", true)}})
+
 	info, err := u.CheckLatest(t.Context(), "dev")
 	if err != nil {
 		t.Fatalf("CheckLatest returned error: %v", err)
 	}
+
 	if !info.UpdateAvailable {
 		t.Error("expected UpdateAvailable to be true for dev build")
 	}
@@ -138,13 +150,16 @@ func TestCheckLatestDevBuild(t *testing.T) {
 
 func TestCheckLatestNoReleases(t *testing.T) {
 	u := newTestUpdater(t, &fakeSource{releases: []selfupdate.SourceRelease{}})
+
 	info, err := u.CheckLatest(t.Context(), "1.0.0")
 	if err != nil {
 		t.Fatalf("CheckLatest returned error: %v", err)
 	}
+
 	if info.UpdateAvailable {
 		t.Error("expected UpdateAvailable to be false when no releases found")
 	}
+
 	if info.LatestVersion != "1.0.0" {
 		t.Errorf("LatestVersion should fall back to current: got %q", info.LatestVersion)
 	}
@@ -152,10 +167,12 @@ func TestCheckLatestNoReleases(t *testing.T) {
 
 func TestCheckLatestNoMatchingAssets(t *testing.T) {
 	u := newTestUpdater(t, &fakeSource{releases: []selfupdate.SourceRelease{testRelease("2.0.0", false)}})
+
 	info, err := u.CheckLatest(t.Context(), "1.0.0")
 	if err != nil {
 		t.Fatalf("CheckLatest returned error: %v", err)
 	}
+
 	if info.UpdateAvailable {
 		t.Error("expected UpdateAvailable to be false when no matching assets")
 	}
