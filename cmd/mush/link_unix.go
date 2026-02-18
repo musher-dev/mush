@@ -22,10 +22,10 @@ import (
 
 func newLinkCmd() *cobra.Command {
 	var (
-		dryRun    bool
-		queueID   string
-		habitat   string
-		agentType string
+		dryRun      bool
+		queueID     string
+		habitat     string
+		harnessType string
 	)
 
 	cmd := &cobra.Command{
@@ -40,46 +40,45 @@ The link will:
   1. Connect to the Musher platform
   2. Register with the selected habitat
   3. Poll for available jobs
-  4. Execute handlers locally using the appropriate agent (Claude, Bash)
+  4. Execute handlers locally using the appropriate harness (Claude, Bash)
   5. Report results back to the platform
 
-Agent Types:
-  --agent claude  Only handle Claude Code jobs
-  --agent bash    Only handle Bash script jobs
-  (default)       Handle all supported agent types
+Harness Types:
+  --harness claude  Only handle Claude Code jobs
+  --harness bash    Only handle Bash script jobs
+  (default)         Handle all supported harness types
 
 Press Ctrl+C once to interrupt Claude; press Ctrl+C again quickly to exit.
 Press Ctrl+Q to exit the watch UI immediately.
 Press Ctrl+S to toggle copy mode (Esc to return to live input).
 
 Examples:
-  mush link                  # Watch mode, all agents
-  mush link --agent claude   # Watch mode, Claude only
-  mush link --agent bash     # Watch mode, Bash only
-  mush link --habitat local  # Link to specific habitat by slug
-  mush link --dry-run        # Verify connection without claiming jobs`,
+  mush link                    # Watch mode, all harnesses
+  mush link --harness claude   # Watch mode, Claude only
+  mush link --harness bash     # Watch mode, Bash only
+  mush link --habitat local    # Link to specific habitat by slug
+  mush link --dry-run          # Verify connection without claiming jobs`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := output.FromContext(cmd.Context())
 
-			// Validate agent type if specified
-			var supportedAgents []string
-			if agentType != "" {
-				agentType = strings.ToLower(agentType)
-				if agentType != "claude" && agentType != "bash" {
-					return clierrors.InvalidAgentType(agentType)
+			// Validate harness type if specified.
+			var supportedHarnesses []string
+			if harnessType != "" {
+				normalized, err := normalizeHarnessType(harnessType)
+				if err != nil {
+					return err
 				}
-				supportedAgents = []string{agentType}
+				supportedHarnesses = []string{normalized}
 			} else {
-				// Default: support all agents
-				supportedAgents = []string{"claude", "bash"}
+				supportedHarnesses = defaultSupportedHarnesses()
 			}
 
-			// Check if required agents are available
+			// Check if required harnesses are available.
 			hasClaude := false
 			hasBash := false
 			claudeUnavailable := false
-			for _, at := range supportedAgents {
-				switch at {
+			for _, h := range supportedHarnesses {
+				switch h {
 				case "claude":
 					hasClaude = true
 					if !claude.Available() {
@@ -87,7 +86,7 @@ Examples:
 						case dryRun:
 							out.Warning("Claude Code CLI not found (dry-run mode, continuing)")
 							out.Println()
-						case len(supportedAgents) == 1:
+						case len(supportedHarnesses) == 1:
 							return clierrors.ClaudeNotFound()
 						default:
 							claudeUnavailable = true
@@ -99,14 +98,14 @@ Examples:
 				}
 			}
 			if !dryRun && claudeUnavailable && hasClaude && hasBash {
-				out.Warning("Claude Code CLI not found, disabling Claude agent (bash still enabled)")
-				filtered := supportedAgents[:0]
-				for _, at := range supportedAgents {
-					if at != "claude" {
-						filtered = append(filtered, at)
+				out.Warning("Claude Code CLI not found, disabling Claude harness (bash still enabled)")
+				filtered := supportedHarnesses[:0]
+				for _, h := range supportedHarnesses {
+					if h != "claude" {
+						filtered = append(filtered, h)
 					}
 				}
-				supportedAgents = filtered
+				supportedHarnesses = filtered
 				out.Println()
 			}
 
@@ -159,9 +158,9 @@ Examples:
 			}
 
 			out.Print("Surface: watch\n")
-			out.Print("Agents: %s\n", strings.Join(supportedAgents, ", "))
+			out.Print("Harnesses: %s\n", strings.Join(supportedHarnesses, ", "))
 			out.Print("Queue ID: %s\n", queueID)
-			if slices.Contains(supportedAgents, "claude") {
+			if slices.Contains(supportedHarnesses, "claude") {
 				mcpServers := harness.LoadedMCPServers(runnerConfig, time.Now())
 				if len(mcpServers) == 0 {
 					out.Print("MCP servers: none\n")
@@ -190,7 +189,7 @@ Examples:
 			defer stop()
 
 			out.Println()
-			err = runWatchLink(ctx, c, habitatID, queueID, supportedAgents, runnerConfig)
+			err = runWatchLink(ctx, c, habitatID, queueID, supportedHarnesses, runnerConfig)
 			if err != nil {
 				return err
 			}
@@ -205,7 +204,7 @@ Examples:
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Verify connection without claiming jobs")
 	cmd.Flags().StringVarP(&queueID, "queue-id", "q", "", "Filter jobs by queue ID")
 	cmd.Flags().StringVar(&habitat, "habitat", "", "Habitat slug or ID to link to")
-	cmd.Flags().StringVarP(&agentType, "agent", "a", "", "Specific agent type: claude, bash (default: all)")
+	cmd.Flags().StringVar(&harnessType, "harness", "", "Specific harness type: claude, bash (default: all)")
 
 	cmd.AddCommand(newLinkStatusCmd())
 	return cmd
@@ -215,19 +214,33 @@ func runWatchLink(
 	ctx context.Context,
 	c *client.Client,
 	habitatID, queueID string,
-	supportedAgents []string,
+	supportedHarnesses []string,
 	runnerConfig *client.RunnerConfigResponse,
 ) error {
 	localCfg := config.Load()
 	cfg := &harness.Config{
-		Client:            c,
-		HabitatID:         habitatID,
-		QueueID:           queueID,
-		SupportedAgents:   supportedAgents,
-		RunnerConfig:      runnerConfig,
-		TranscriptEnabled: localCfg.HistoryEnabled(),
-		TranscriptDir:     localCfg.HistoryDir(),
-		TranscriptLines:   localCfg.HistoryLines(),
+		Client:             c,
+		HabitatID:          habitatID,
+		QueueID:            queueID,
+		SupportedHarnesses: supportedHarnesses,
+		RunnerConfig:       runnerConfig,
+		TranscriptEnabled:  localCfg.HistoryEnabled(),
+		TranscriptDir:      localCfg.HistoryDir(),
+		TranscriptLines:    localCfg.HistoryLines(),
 	}
 	return harness.Run(ctx, cfg)
+}
+
+func normalizeHarnessType(harnessType string) (string, error) {
+	normalized := strings.ToLower(strings.TrimSpace(harnessType))
+	switch normalized {
+	case "claude", "bash":
+		return normalized, nil
+	default:
+		return "", clierrors.InvalidHarnessType(normalized)
+	}
+}
+
+func defaultSupportedHarnesses() []string {
+	return []string{"claude", "bash"}
 }

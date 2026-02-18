@@ -24,15 +24,15 @@ import (
 
 // Config holds configuration for the harness.
 type Config struct {
-	Client            *client.Client
-	HabitatID         string
-	QueueID           string
-	SupportedAgents   []string
-	InstanceID        string
-	RunnerConfig      *client.RunnerConfigResponse
-	TranscriptEnabled bool
-	TranscriptDir     string
-	TranscriptLines   int
+	Client             *client.Client
+	HabitatID          string
+	QueueID            string
+	SupportedHarnesses []string
+	InstanceID         string
+	RunnerConfig       *client.RunnerConfigResponse
+	TranscriptEnabled  bool
+	TranscriptDir      string
+	TranscriptLines    int
 }
 
 // Run starts the harness TUI.

@@ -42,6 +42,7 @@ mush init                      Interactive onboarding wizard
 mush doctor                    Run diagnostic checks
 
 mush link                      Link to habitat and start processing
+mush link --harness <type>     Use a specific harness (claude or bash)
 mush link --habitat <slug>     Link to specific habitat
 mush link --dry-run            Verify connection without claiming jobs
 mush link status               Show link status

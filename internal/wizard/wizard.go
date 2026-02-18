@@ -134,7 +134,7 @@ func (w *Wizard) Run(ctx context.Context) error {
 	w.out.Println("Step 2: Select Habitat")
 	w.out.Println("----------------------")
 	w.out.Println("Select a habitat to link to. Habitats are execution contexts")
-	w.out.Println("where agents connect and jobs are routed.")
+	w.out.Println("where harnesses connect and jobs are routed.")
 	w.out.Println()
 
 	// Fetch habitats

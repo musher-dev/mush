@@ -146,8 +146,8 @@ type DeregisterLinkRequest struct {
 }
 
 // InstructionConfig represents the instruction template configuration from API.
-// This defines *what* to execute (the template). The CLI's Agent interface
-// (ClaudeAgent, BashAgent) executes instructions.
+// This defines *what* to execute (the template). The CLI's harness layer
+// executes instructions.
 type InstructionConfig struct {
 	ID          string `json:"id"`
 	Name        string `json:"name"`
@@ -162,8 +162,8 @@ type SandboxConfig struct {
 	AllowedPaths   []string `json:"allowedPaths"`
 }
 
-// AgentConstraints holds agent-agnostic execution limits.
-type AgentConstraints struct {
+// HarnessConstraints holds harness-agnostic execution limits.
+type HarnessConstraints struct {
 	// MaxTurns limits the number of agentic turns (API round-trips) before stopping.
 	MaxTurns int `json:"maxTurns,omitempty"`
 
@@ -189,8 +189,8 @@ type ClaudeConfig struct {
 // ExecutionConfig contains everything needed to execute a job.
 // The server renders the Jinja2 template and provides the fully prepared instruction.
 type ExecutionConfig struct {
-	// AgentType specifies which agent to use ("claude", "bash").
-	AgentType string `json:"agentType,omitempty"`
+	// HarnessType specifies which harness to use ("claude", "bash").
+	HarnessType string `json:"harnessType,omitempty"`
 
 	// RenderedInstruction is the fully rendered prompt/command (template already applied).
 	RenderedInstruction string `json:"renderedInstruction,omitempty"`
@@ -207,16 +207,16 @@ type ExecutionConfig struct {
 	// Sandbox contains optional sandbox configuration.
 	Sandbox *SandboxConfig `json:"sandbox,omitempty"`
 
-	// Constraints holds agent-agnostic execution limits.
-	Constraints *AgentConstraints `json:"constraints,omitempty"`
+	// Constraints holds harness-agnostic execution limits.
+	Constraints *HarnessConstraints `json:"constraints,omitempty"`
 
-	// Claude holds Claude-specific configuration (when AgentType is "claude").
+	// Claude holds Claude-specific configuration (when HarnessType is "claude").
 	Claude *ClaudeConfig `json:"claude,omitempty"`
 }
 
-// GetAgentType returns the agent type.
-func (e *ExecutionConfig) GetAgentType() string {
-	return e.AgentType
+// GetHarnessType returns the harness type.
+func (e *ExecutionConfig) GetHarnessType() string {
+	return e.HarnessType
 }
 
 // GetRenderedInstruction returns the rendered instruction.
@@ -302,12 +302,12 @@ type JobClaimResponse struct {
 	ExecutionError string             `json:"executionError,omitempty"`
 }
 
-// GetAgentType returns the agent type for this job, checking multiple sources.
-func (j *Job) GetAgentType() string {
+// GetHarnessType returns the harness type for this job, checking multiple sources.
+func (j *Job) GetHarnessType() string {
 	// Prefer ExecutionConfig
 	if j.Execution != nil {
-		if agentType := j.Execution.GetAgentType(); agentType != "" {
-			return agentType
+		if harnessType := j.Execution.GetHarnessType(); harnessType != "" {
+			return harnessType
 		}
 	}
 

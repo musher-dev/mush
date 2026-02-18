@@ -304,11 +304,11 @@ func ClaudeNotFound() *CLIError {
 	}
 }
 
-// InvalidAgentType returns an error for an unsupported agent type.
-func InvalidAgentType(agentType string) *CLIError {
+// InvalidHarnessType returns an error for an unsupported harness type.
+func InvalidHarnessType(harnessType string) *CLIError {
 	return &CLIError{
-		Message: fmt.Sprintf("Invalid agent type: %s", agentType),
-		Hint:    "Supported agent types: claude, bash",
+		Message: fmt.Sprintf("Invalid harness type: %s", harnessType),
+		Hint:    "Supported harness types: claude, bash",
 		Code:    ExitUsage,
 	}
 }
