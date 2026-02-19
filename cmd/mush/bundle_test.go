@@ -63,6 +63,7 @@ func TestBundleCommandHasNoRunSubcommand(t *testing.T) {
 	cmd := newBundleCmd()
 
 	hasLoad := false
+
 	for _, sub := range cmd.Commands() {
 		switch sub.Name() {
 		case "load":
