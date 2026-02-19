@@ -3,22 +3,22 @@
 package harness
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"os"
-	"os/exec"
 	"strings"
 	"syscall"
 	"testing"
 	"time"
-
-	"github.com/creack/pty"
 
 	"github.com/musher-dev/mush/internal/client"
 )
 
 func TestHandleCtrlCExitsImmediatelyWithoutActiveClaudeJob(t *testing.T) {
 	m := &RootModel{
-		done: make(chan struct{}),
+		done:      make(chan struct{}),
+		executors: make(map[string]Executor),
 	}
 
 	if !m.handleCtrlC() {
@@ -41,11 +41,16 @@ func TestHandleCtrlCFirstPressInterruptsClaude(t *testing.T) {
 	defer w.Close()
 
 	now := time.Unix(1000, 0)
+
+	// Create a mock claude executor that captures input.
+	ce := &mockInputReceiver{w: w}
+
 	m := &RootModel{
-		done:            make(chan struct{}),
-		ptmx:            w,
-		now:             func() time.Time { return now },
-		ctrlCExitWindow: 2 * time.Second,
+		done:               make(chan struct{}),
+		executors:          map[string]Executor{"claude": ce},
+		supportedHarnesses: []string{"claude"},
+		now:                func() time.Time { return now },
+		ctrlCExitWindow:    2 * time.Second,
 		currentJob: &client.Job{
 			Execution: &client.ExecutionConfig{HarnessType: "claude"},
 		},
@@ -81,11 +86,15 @@ func TestHandleCtrlCSecondPressExitsWithinWindow(t *testing.T) {
 
 	base := time.Unix(2000, 0)
 	current := base
+
+	ce := &mockInputReceiver{w: w}
+
 	m := &RootModel{
-		done:            make(chan struct{}),
-		ptmx:            w,
-		now:             func() time.Time { return current },
-		ctrlCExitWindow: 2 * time.Second,
+		done:               make(chan struct{}),
+		executors:          map[string]Executor{"claude": ce},
+		supportedHarnesses: []string{"claude"},
+		now:                func() time.Time { return current },
+		ctrlCExitWindow:    2 * time.Second,
 		currentJob: &client.Job{
 			Execution: &client.ExecutionConfig{HarnessType: "claude"},
 		},
@@ -105,80 +114,6 @@ func TestHandleCtrlCSecondPressExitsWithinWindow(t *testing.T) {
 	case <-m.done:
 	default:
 		t.Fatal("expected done channel to be closed after second Ctrl+C")
-	}
-}
-
-func TestStartPTYDoesNotSetSetpgid(t *testing.T) {
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("os.Pipe() error = %v", err)
-	}
-	defer r.Close()
-	defer w.Close()
-
-	var gotCmd *exec.Cmd
-
-	m := &RootModel{
-		ctx:      t.Context(),
-		width:    80,
-		height:   24,
-		done:     make(chan struct{}),
-		ptyReady: make(chan *os.File, 1),
-		startPTYWithSize: func(cmd *exec.Cmd, _ *pty.Winsize) (*os.File, error) {
-			gotCmd = cmd
-			return r, nil
-		},
-	}
-	defer m.closePTY()
-
-	if err := m.startPTY(); err != nil {
-		t.Fatalf("startPTY() error = %v", err)
-	}
-
-	if gotCmd == nil {
-		t.Fatal("expected startPTYWithSize to receive command")
-	}
-
-	if gotCmd.SysProcAttr != nil && gotCmd.SysProcAttr.Setpgid {
-		t.Fatal("Setpgid should not be set when launching via pty.StartWithSize")
-	}
-}
-
-func TestSendSignalPrefersProcessGroup(t *testing.T) {
-	var targets []int
-
-	m := &RootModel{
-		killProcess: func(target int, _ syscall.Signal) error {
-			targets = append(targets, target)
-			return nil
-		},
-	}
-
-	m.sendSignal(1234, 4321, syscall.SIGTERM)
-
-	if len(targets) != 1 || targets[0] != -4321 {
-		t.Fatalf("sendSignal targets = %v, want [-4321]", targets)
-	}
-}
-
-func TestSendSignalFallsBackToPIDWhenGroupSignalFails(t *testing.T) {
-	var targets []int
-
-	m := &RootModel{
-		killProcess: func(target int, _ syscall.Signal) error {
-			targets = append(targets, target)
-			if target < 0 {
-				return errors.New("group signal failed")
-			}
-
-			return nil
-		},
-	}
-
-	m.sendSignal(1234, 4321, syscall.SIGTERM)
-
-	if len(targets) != 2 || targets[0] != -4321 || targets[1] != 1234 {
-		t.Fatalf("sendSignal fallback targets = %v, want [-4321 1234]", targets)
 	}
 }
 
@@ -203,4 +138,25 @@ func containsAll(s string, subs []string) bool {
 	}
 
 	return true
+}
+
+// mockInputReceiver is a test double for InputReceiver.
+type mockInputReceiver struct {
+	w *os.File
+}
+
+func (m *mockInputReceiver) Setup(_ context.Context, _ *SetupOptions) error { return nil }
+func (m *mockInputReceiver) Execute(_ context.Context, _ *client.Job) (*ExecResult, error) {
+	return &ExecResult{}, nil
+}
+func (m *mockInputReceiver) Reset(_ context.Context) error { return nil }
+func (m *mockInputReceiver) Teardown()                     {}
+
+func (m *mockInputReceiver) WriteInput(p []byte) (int, error) {
+	n, err := m.w.Write(p)
+	if err != nil {
+		return n, fmt.Errorf("write input: %w", err)
+	}
+
+	return n, nil
 }

@@ -178,6 +178,7 @@ Get started:
 	rootCmd.AddCommand(newLinkCmd())
 	rootCmd.AddCommand(newUnlinkCmd())
 	rootCmd.AddCommand(newHabitatCmd())
+	rootCmd.AddCommand(newBundleCmd())
 
 	// Resource commands (noun-first)
 	rootCmd.AddCommand(newAuthCmd())

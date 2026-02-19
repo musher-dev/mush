@@ -13,7 +13,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/musher-dev/mush/internal/claude"
 	"github.com/musher-dev/mush/internal/client"
 	"github.com/musher-dev/mush/internal/config"
 	clierrors "github.com/musher-dev/mush/internal/errors"
@@ -77,38 +76,40 @@ Examples:
 			}
 
 			// Check if required harnesses are available.
-			hasClaude := false
-			hasBash := false
-			claudeUnavailable := false
+			var unavailable []string
 
 			for _, h := range supportedHarnesses {
-				switch h {
-				case "claude":
-					hasClaude = true
+				info, ok := harness.Lookup(h)
+				if !ok {
+					continue
+				}
 
-					if !claude.Available() {
-						switch {
-						case dryRun:
-							out.Warning("Claude Code CLI not found (dry-run mode, continuing)")
-							out.Println()
-						case len(supportedHarnesses) == 1:
+				if !info.Available() {
+					switch {
+					case dryRun:
+						out.Warning("%s CLI not found (dry-run mode, continuing)", h)
+						out.Println()
+					case len(supportedHarnesses) == 1:
+						// Single harness mode: fail immediately.
+						if h == "claude" {
 							return clierrors.ClaudeNotFound()
-						default:
-							claudeUnavailable = true
 						}
+
+						return clierrors.HarnessNotAvailable(h)
+					default:
+						unavailable = append(unavailable, h)
 					}
-				case "bash":
-					hasBash = true
-					// Bash availability is checked at execution time (exec.LookPath("bash")).
 				}
 			}
 
-			if !dryRun && claudeUnavailable && hasClaude && hasBash {
-				out.Warning("Claude Code CLI not found, disabling Claude harness (bash still enabled)")
+			if !dryRun && len(unavailable) > 0 && len(unavailable) < len(supportedHarnesses) {
+				for _, h := range unavailable {
+					out.Warning("%s CLI not found, disabling %s harness", h, h)
+				}
 
 				filtered := supportedHarnesses[:0]
 				for _, h := range supportedHarnesses {
-					if h != "claude" {
+					if !slices.Contains(unavailable, h) {
 						filtered = append(filtered, h)
 					}
 				}
@@ -257,14 +258,14 @@ func runWatchLink(
 
 func normalizeHarnessType(harnessType string) (string, error) {
 	normalized := strings.ToLower(strings.TrimSpace(harnessType))
-	switch normalized {
-	case "claude", "bash":
+
+	if _, ok := harness.Lookup(normalized); ok {
 		return normalized, nil
-	default:
-		return "", clierrors.InvalidHarnessType(normalized)
 	}
+
+	return "", clierrors.InvalidHarnessType(normalized, harness.RegisteredNames())
 }
 
 func defaultSupportedHarnesses() []string {
-	return []string{"claude", "bash"}
+	return harness.AvailableNames()
 }
