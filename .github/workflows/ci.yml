@@ -9,34 +9,8 @@ permissions:
   contents: read
 
 jobs:
-  shellcheck:
-    name: Lint Shell Scripts
-    runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Get changed files
-        id: changed
-        uses: tj-actions/changed-files@v47
-        with:
-          files: |
-            **/*.sh
-
-      - name: Run ShellCheck
-        if: steps.changed.outputs.any_changed == 'true'
-        run: |
-          SHELLCHECK_VERSION="v0.11.0"
-          curl -fsSL -o /tmp/shellcheck.tar.xz \
-            "https://github.com/koalaman/shellcheck/releases/download/${SHELLCHECK_VERSION}/shellcheck-${SHELLCHECK_VERSION}.linux.x86_64.tar.xz"
-          tar -xJf /tmp/shellcheck.tar.xz -C /tmp
-          SHELLCHECK_BIN="/tmp/shellcheck-${SHELLCHECK_VERSION}/shellcheck"
-          "$SHELLCHECK_BIN" --version
-          echo "Checking: ${{ steps.changed.outputs.all_changed_files }}"
-          "$SHELLCHECK_BIN" ${{ steps.changed.outputs.all_changed_files }}
-
   quality:
-    name: Build, Format, Lint, and Test
+    name: Task Quality Gate
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -47,29 +21,26 @@ jobs:
           go-version-file: 'go.mod'
           cache: true
 
-      - name: Install Tools
+      - name: Install Task
         run: |
-          go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.10.1
-          go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
+          go install github.com/go-task/task/v3/cmd/task@v3.48.0
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
-      # Format check using configured golangci-lint formatters
-      - name: Check Formatting
-        run: golangci-lint fmt --diff ./...
+      - name: Install shellcheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
 
-      - name: Lint
-        run: golangci-lint run ./...
+      - name: Install project tools
+        run: |
+          task setup:tools
 
-      # Vulnerability scanning
-      - name: Security Scan
-        run: govulncheck ./...
-
-      # Tests with race detection
-      - name: Test
-        run: go test -v -race -coverprofile=coverage.txt ./...
+      - name: Run CI quality checks
+        run: task check:ci
 
       # Optional: Upload coverage
       - name: Upload Coverage
         uses: codecov/codecov-action@v5
         with:
-          files: coverage.txt
+          files: coverage.out
         if: github.event_name == 'push'

@@ -1,55 +1,80 @@
 # Mush
 
-Local worker runtime for the Musher platform.
+[![CI](https://github.com/musher-dev/mush/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/musher-dev/mush/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/musher-dev/mush)](https://github.com/musher-dev/mush/releases)
+[![Go](https://img.shields.io/github/go-mod/go-version/musher-dev/mush)](https://go.dev/)
+[![License](https://img.shields.io/github/license/musher-dev/mush)](./LICENSE)
 
-Mush connects your machine to the Musher job stream, claims jobs, executes handlers using Claude Code, and reports results back.
+Local worker runtime for the [Musher](https://musher.dev) platform.
 
 ![Mush CLI Demo](docs/vhs/gif/demo.gif)
+
+- Connects dev machines to the Musher job queue via long-polling
+- Executes jobs locally using Claude Code (PTY) or Bash harnesses
+- Interactive watch UI with live output, copy mode, and graceful interrupt handling
+- Manages versioned agent bundles (pull, install, run)
+- Built-in diagnostics, self-update, and shell completions
 
 ## Installation
 
 ```bash
-# macOS / Linux (recommended)
-curl -sSL https://raw.githubusercontent.com/musher-dev/mush/main/install.sh | sh
+curl -fsSL https://get.musher.dev | sh
+```
 
+<details>
+<summary>Other install methods</summary>
+
+```bash
 # Install a specific version
-curl -sSL https://raw.githubusercontent.com/musher-dev/mush/main/install.sh | sh -s -- --version 0.2.0
+curl -fsSL https://get.musher.dev | sh -s -- --version <version>
 
-# Install and also install tmux if missing (opt-in)
-curl -sSL https://raw.githubusercontent.com/musher-dev/mush/main/install.sh | sh -s -- --install-tmux
+# Install and also install tmux if missing
+curl -fsSL https://get.musher.dev | sh -s -- --install-tmux
 
 # From source
 go install github.com/musher-dev/mush/cmd/mush@latest
 ```
 
+</details>
+
 ## Quick Start
 
 ```bash
-# Authenticate
-mush auth login
-
-# View available habitats
-mush habitat list
-
-# Link to a habitat and start processing jobs (watch mode)
-mush link
+mush init              # Guided setup (authenticates + validates)
+mush habitat list      # View available habitats
+mush link              # Start processing jobs
 ```
+
+Run `mush doctor` to verify your setup at any time.
 
 ## Commands
 
-Mush uses a **Resource-First (Noun-Verb)** command structure:
+Mush uses noun-verb command structure. Run `mush <command> --help` for details.
+
+### Core
 
 ```
-mush init                      Interactive onboarding wizard
+mush init                      Guided onboarding wizard
 mush doctor                    Run diagnostic checks
+mush update                    Update to the latest version
+mush version                   Show version information
+mush completion <shell>        Generate shell completion scripts
+```
 
+### Link
+
+```
 mush link                      Link to habitat and start processing
-mush link --harness <type>     Use a specific harness (claude or bash)
 mush link --habitat <slug>     Link to specific habitat
+mush link --harness <type>     Use a specific harness (claude or bash)
 mush link --dry-run            Verify connection without claiming jobs
 mush link status               Show link status
 mush unlink                    Gracefully disconnect
+```
 
+### Resources
+
+```
 mush habitat list              List available habitats
 
 mush auth login                Authenticate with your API key
@@ -59,51 +84,27 @@ mush auth logout               Clear stored credentials
 mush config list               List configuration
 mush config get <key>          Get configuration value
 mush config set <key> <value>  Set configuration value
-
-mush version                   Show version info
-mush --help                    Show help
 ```
 
-## Global Flags
-
-| Flag | Purpose |
-|------|---------|
-| `--json` | Output in JSON format |
-| `--quiet` | Minimal output (for CI) |
-| `--no-color` | Disable colored output |
-| `--no-input` | Disable interactive prompts |
-| `--verbose` / `-v` | Enable debug logging |
-
-## Configuration
-
-Mush looks for configuration in this order:
-
-1. **Environment variables** (highest priority)
-   - `MUSHER_API_KEY` — API key
-   - `MUSH_API_URL` — Platform API URL
-
-2. **Config file** (`~/.config/mush/config.yaml`)
-   ```yaml
-   api:
-     url: https://api.musher.dev
-   worker:
-     poll_interval: 30
-     heartbeat_interval: 30
-   ```
-
-## How It Works
+### History
 
 ```
-Linear Issue → Musher Queue → Mush (linked to habitat) → Claude Code → Result
+mush history list              List stored transcript sessions
+mush history view <id>         View transcript events for a session
+mush history prune             Delete sessions older than a duration
 ```
 
-1. **Authenticate**: Mush authenticates with the Musher platform
-2. **Select Habitat**: Choose an execution context for job routing
-3. **Link**: Mush links to the habitat and polls for jobs
-4. **Claim**: When a job is available, Mush claims it (acquires a lease)
-5. **Execute**: Mush executes jobs in an interactive watch UI (Claude via PTY; Bash via subprocess)
-6. **Heartbeat**: While executing, Mush sends heartbeats to maintain the lease
-7. **Complete**: Results are reported back to the platform
+### Bundles
+
+```
+mush bundle run <slug>         Run a bundle in an ephemeral session
+mush bundle install <slug>     Install bundle assets into the current project
+mush bundle list               List local bundle cache and installed bundles
+mush bundle info <slug>        Show local details for a bundle
+mush bundle uninstall <slug>   Remove installed bundle assets
+```
+
+Bundle resolution goes through `/api/v1/bundles:resolve` and uses returned registry credentials for OCI pulls. If none are returned, Mush falls back to your local OCI keychain.
 
 ## Watch Controls
 
@@ -114,92 +115,63 @@ When running `mush link` in watch mode:
 - `Ctrl+Q`: exits watch mode immediately.
 - `Ctrl+S`: toggles copy mode (`Esc` returns to live input).
 
-## Repository Structure
+## Configuration
 
-```
-mush/
-├── cmd/mush/          # CLI entry point and commands
-│   ├── main.go         # Root command setup, global flags
-│   ├── link_unix.go    # link command (watch mode, Unix)
-│   ├── link_other.go   # link command stub (non-Unix)
-│   ├── link_common.go  # shared link helpers + status/unlink
-│   ├── habitat.go      # habitat list commands
-│   ├── auth.go         # auth login/status/logout
-│   ├── config.go       # config list/get/set
-│   ├── init.go         # Onboarding wizard
-│   ├── doctor.go       # Diagnostic command
-│   └── completion.go   # shell completion output
-├── internal/
-│   ├── auth/           # Credential storage (keyring + file fallback)
-│   ├── client/         # API client for Musher platform
-│   ├── claude/         # Claude Code CLI availability checks
-│   ├── config/         # Viper configuration management
-│   ├── doctor/         # Diagnostic check framework
-│   ├── errors/         # CLI error types and handling
-│   ├── harness/        # Watch UI (PTY + scroll region)
-│   ├── output/         # CLI output handling (colors, spinners)
-│   ├── prompt/         # Interactive user prompts
-│   ├── terminal/       # TTY detection and capabilities
-│   └── wizard/         # Init wizard flow
-├── testdata/           # Test fixtures
-├── go.mod
-├── Taskfile.yml        # Build automation
-└── .goreleaser.yaml    # Release configuration
-```
+Mush looks for configuration in this order (highest priority first):
 
-## Running Locally
+1. **Environment variables**
 
-For development, you can run mush without installing.
+   | Variable | Purpose |
+   |----------|---------|
+   | `MUSHER_API_KEY` | API key for authentication |
+   | `MUSH_API_URL` | Platform API URL override |
 
-### Prerequisites
+2. **OS Keyring** (credentials only)
 
-- Go 1.26+
-- [Task](https://taskfile.dev) (optional, for convenience commands)
+3. **Config file** (`~/.config/mush/config.yaml`)
 
-### Quick Start
+   ```yaml
+   api:
+     url: https://api.musher.dev
+   worker:
+     poll_interval: 30
+     heartbeat_interval: 30
+   ```
 
-```bash
-# Install dependencies
-go mod download
+4. **Built-in defaults**
 
-# Run directly with go run
-go run ./cmd/mush --help
-go run ./cmd/mush auth login
-go run ./cmd/mush link
+### Global Flags
 
-# Or use Task
-task setup              # Install dependencies and tools
-task run -- --help      # Run with arguments
-task run -- auth login  # Authenticate
-task run -- link        # Link to a habitat
+| Flag | Purpose |
+|------|---------|
+| `--json` | Output in JSON format |
+| `--quiet` | Minimal output (for CI) |
+| `--no-color` | Disable colored output |
+| `--no-input` | Disable interactive prompts |
+| `--verbose` / `-v` | Enable debug logging |
 
-# Build and run binary
-task build              # Creates ./mush binary
-./mush --help
+## How It Works
+
+```mermaid
+flowchart LR
+    A[Issue Tracker] --> B[Musher Queue]
+    B --> C[mush link]
+    C --> D[Claude Code / Bash]
+    D --> E[Result]
 ```
 
-### Development Workflow
+1. **Authenticate** — Mush authenticates with the Musher platform
+2. **Select Habitat** — Choose an execution context for job routing
+3. **Link** — Mush links to the habitat and polls for jobs
+4. **Claim** — When a job is available, Mush claims it (acquires a lease)
+5. **Execute** — Jobs run in an interactive watch UI (Claude via PTY; Bash via subprocess)
+6. **Heartbeat** — While executing, Mush sends heartbeats to maintain the lease
+7. **Complete** — Results are reported back to the platform
 
-```bash
-task fmt                # Format Go code + imports
-task check              # Run all checks (fmt + lint + vuln + shell + workflow + test)
-task test               # Run tests only
-```
+## Contributing
 
-## Development
-
-See [CLAUDE.md](./CLAUDE.md) for development patterns.
-
-```bash
-# Setup
-task setup
-
-# Build
-task build
-
-# Run checks
-task check
-```
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for development setup, code style, and testing.
+Architecture details are in [CLAUDE.md](./.claude/CLAUDE.md).
 
 ## License
 

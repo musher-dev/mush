@@ -66,6 +66,27 @@ func TestResolveBundleUsesBundlesResolveEndpoint(t *testing.T) {
 	}
 }
 
+func TestResolveBundleParsesRegistryCredentials(t *testing.T) {
+	t.Parallel()
+
+	clientHTTP := &http.Client{
+		Transport: bundleRoundTripFunc(func(_ *http.Request) (*http.Response, error) {
+			return bundleJSONResponse(http.StatusOK, `{"bundleId":"b1","versionId":"v1","version":"1.2.3","state":"published","ociRef":"registry.example/ws/my-bundle:1.2.3","ociDigest":"sha256:abc","registryUsername":"ro-user","registryPassword":"ro-pass"}`), nil
+		}),
+	}
+
+	c := NewWithHTTPClient("https://example.test", "test-key", clientHTTP)
+
+	resolved, err := c.ResolveBundle(t.Context(), "my-bundle", "1.2.3")
+	if err != nil {
+		t.Fatalf("ResolveBundle() error = %v", err)
+	}
+
+	if resolved.RegistryUsername != "ro-user" || resolved.RegistryPassword != "ro-pass" {
+		t.Fatalf("ResolveBundle() registry credentials = (%q,%q), want (ro-user,ro-pass)", resolved.RegistryUsername, resolved.RegistryPassword)
+	}
+}
+
 func TestResolveBundleWithoutVersionUsesLatest(t *testing.T) {
 	t.Parallel()
 
@@ -99,12 +120,12 @@ func TestResolveBundleWithoutVersionUsesLatest(t *testing.T) {
 	}
 }
 
-func TestResolveBundleRequiresVersionWhenServerDoes(t *testing.T) {
+func TestResolveBundleReturnsBadRequestError(t *testing.T) {
 	t.Parallel()
 
 	clientHTTP := &http.Client{
 		Transport: bundleRoundTripFunc(func(_ *http.Request) (*http.Response, error) {
-			return bundleJSONResponse(http.StatusBadRequest, `{"detail":"version is required"}`), nil
+			return bundleJSONResponse(http.StatusBadRequest, `{"detail":"invalid request"}`), nil
 		}),
 	}
 
@@ -113,6 +134,10 @@ func TestResolveBundleRequiresVersionWhenServerDoes(t *testing.T) {
 	_, err := c.ResolveBundle(t.Context(), "my-bundle", "")
 	if err == nil {
 		t.Fatal("ResolveBundle() expected error, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "status 400") {
+		t.Fatalf("ResolveBundle() error = %v, want status 400", err)
 	}
 }
 
