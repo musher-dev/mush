@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.2.0](https://github.com/musher-dev/mush/compare/v2.1.1...v2.2.0) (2026-02-19)
+
+
+### Features
+
+* **bundle:** rename run command to load ([#37](https://github.com/musher-dev/mush/issues/37)) ([d1ed973](https://github.com/musher-dev/mush/commit/d1ed973c7dd2b4fcf6653887e5d5af3e0bb56a36))
+
 ## [2.1.1](https://github.com/musher-dev/mush/compare/v2.1.0...v2.1.1) (2026-02-19)
 
 
