@@ -1,5 +1,21 @@
 # Changelog
 
+## [2.0.0](https://github.com/musher-dev/mush/compare/v1.5.0...v2.0.0) (2026-02-19)
+
+
+### ⚠ BREAKING CHANGES
+
+* **link:** mush link no longer supports --agent/-a; use --harness.
+
+### Features
+
+* **bundle:** add bundle commands with harness abstraction layer ([#32](https://github.com/musher-dev/mush/issues/32)) ([5a577b2](https://github.com/musher-dev/mush/commit/5a577b2ca808035221d3c04724e99bdae7d8b9b3))
+
+
+### Miscellaneous
+
+* **link:** rename runtime selector from agent to harness ([#28](https://github.com/musher-dev/mush/issues/28)) ([7e0d5b3](https://github.com/musher-dev/mush/commit/7e0d5b3905a7b27e1575666c194b38893b0327aa))
+
 ## [Unreleased]
 
 ### Breaking Changes
