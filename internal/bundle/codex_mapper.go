@@ -34,7 +34,7 @@ func (m *CodexAssetMapper) MapAsset(workDir string, layer client.BundleLayer) (s
 	}
 }
 
-// PrepareEphemeral creates a temp directory with assets in Codex's native structure.
-func (m *CodexAssetMapper) PrepareEphemeral(_ context.Context, cachePath string, manifest *client.BundleManifest) (tmpDir string, cleanup func(), err error) {
-	return prepareEphemeralCommon(m, cachePath, manifest)
+// PrepareLoad creates a temp directory with assets in Codex's native structure.
+func (m *CodexAssetMapper) PrepareLoad(_ context.Context, cachePath string, manifest *client.BundleManifest) (tmpDir string, cleanup func(), err error) {
+	return prepareLoadCommon(m, cachePath, manifest)
 }

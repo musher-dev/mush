@@ -27,11 +27,11 @@ func newBundleCmd() *cobra.Command {
 		Use:   "bundle",
 		Short: "Manage agent bundles",
 		Long: `Pull versioned collections of agent assets from the Musher platform
-and either run them ephemerally or install them into a harness's native
+and either load them ephemerally or install them into a harness's native
 directory structure.`,
 	}
 
-	cmd.AddCommand(newBundleRunCmd())
+	cmd.AddCommand(newBundleLoadCmd())
 	cmd.AddCommand(newBundleInstallCmd())
 	cmd.AddCommand(newBundleListCmd())
 	cmd.AddCommand(newBundleInfoCmd())
@@ -40,19 +40,19 @@ directory structure.`,
 	return cmd
 }
 
-func newBundleRunCmd() *cobra.Command {
+func newBundleLoadCmd() *cobra.Command {
 	var harnessType string
 
 	cmd := &cobra.Command{
-		Use:   "run <slug>[:<version>]",
-		Short: "Run a bundle in an ephemeral session",
+		Use:   "load <slug>[:<version>]",
+		Short: "Load a bundle into an ephemeral session",
 		Long: `Pull a bundle and launch a harness with the bundle's assets injected
 into a temporary directory. The session is interactive — exit the harness
 (Ctrl+Q) to clean up.
 
 Examples:
-  mush bundle run my-agent-kit --harness claude
-  mush bundle run my-agent-kit:0.1.0 --harness claude`,
+  mush bundle load my-agent-kit --harness claude
+  mush bundle load my-agent-kit:0.1.0 --harness claude`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := output.FromContext(cmd.Context())
@@ -70,7 +70,7 @@ Examples:
 			// Validate harness type.
 			if harnessType == "" {
 				return &clierrors.CLIError{
-					Message: "Harness type is required for bundle run",
+					Message: "Harness type is required for bundle load",
 					Hint:    fmt.Sprintf("Use --harness flag. Available: %s", joinNames(harness.RegisteredNames())),
 					Code:    clierrors.ExitUsage,
 				}
@@ -84,6 +84,15 @@ Examples:
 			info, ok := harness.Lookup(normalized)
 			if !ok || !info.Available() {
 				return clierrors.HarnessNotAvailable(normalized)
+			}
+
+			// Check for TTY.
+			if !out.Terminal().IsTTY {
+				return &clierrors.CLIError{
+					Message: "Bundle load requires a terminal (TTY)",
+					Hint:    "Run this command directly in a terminal, not in a pipe or script",
+					Code:    clierrors.ExitUsage,
+				}
 			}
 
 			// Authenticate.
@@ -115,42 +124,33 @@ Examples:
 				}
 			}
 
-			// Prepare ephemeral directory.
-			tmpDir, cleanup, err := mapper.PrepareEphemeral(cmd.Context(), cachePath, &resolved.Manifest)
+			// Prepare load directory.
+			tmpDir, cleanup, err := mapper.PrepareLoad(cmd.Context(), cachePath, &resolved.Manifest)
 			if err != nil {
-				return fmt.Errorf("prepare ephemeral directory: %w", err)
+				return fmt.Errorf("prepare load directory: %w", err)
 			}
 
 			defer cleanup()
 
-			out.Success("Bundle assets prepared in ephemeral directory")
+			out.Success("Bundle assets prepared in load directory")
 			out.Print("Assets: %d loaded\n", len(resolved.Manifest.Layers))
 			out.Println()
-
-			// Check for TTY.
-			if !out.Terminal().IsTTY {
-				return &clierrors.CLIError{
-					Message: "Bundle run requires a terminal (TTY)",
-					Hint:    "Run this command directly in a terminal, not in a pipe or script",
-					Code:    clierrors.ExitUsage,
-				}
-			}
 
 			// Setup graceful shutdown.
 			ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
 			defer stop()
 
-			// Run TUI in bundle mode.
+			// Run TUI in load mode.
 			cfg := &harness.Config{
 				SupportedHarnesses: []string{normalized},
-				BundleMode:         true,
+				BundleLoadMode:     true,
 				BundleName:         ref.Slug,
 				BundleVer:          resolved.Version,
 				BundleDir:          tmpDir,
 			}
 
 			if err := harness.Run(ctx, cfg); err != nil {
-				return fmt.Errorf("bundle run: %w", err)
+				return fmt.Errorf("bundle load: %w", err)
 			}
 
 			if cmd.Context().Err() == nil && ctx.Err() != nil {

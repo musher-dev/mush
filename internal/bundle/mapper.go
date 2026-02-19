@@ -16,13 +16,13 @@ type AssetMapper interface {
 	// workDir is the project directory (e.g., current working directory).
 	MapAsset(workDir string, layer client.BundleLayer) (string, error)
 
-	// PrepareEphemeral creates a temp directory with assets in native structure for `bundle run`.
+	// PrepareLoad creates a temp directory with assets in native structure for `bundle load`.
 	// Returns the temp dir path and a cleanup function.
-	PrepareEphemeral(ctx context.Context, cachePath string, manifest *client.BundleManifest) (tmpDir string, cleanup func(), err error)
+	PrepareLoad(ctx context.Context, cachePath string, manifest *client.BundleManifest) (tmpDir string, cleanup func(), err error)
 }
 
-// prepareEphemeralCommon is shared logic for preparing ephemeral dirs across mappers.
-func prepareEphemeralCommon(mapper AssetMapper, cachePath string, manifest *client.BundleManifest) (tmpDir string, cleanup func(), err error) {
+// prepareLoadCommon is shared logic for preparing load dirs across mappers.
+func prepareLoadCommon(mapper AssetMapper, cachePath string, manifest *client.BundleManifest) (tmpDir string, cleanup func(), err error) {
 	tmpDir, err = os.MkdirTemp("", "mush-bundle-*")
 	if err != nil {
 		return "", nil, fmt.Errorf("create temp dir: %w", err)

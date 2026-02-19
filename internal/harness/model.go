@@ -159,11 +159,11 @@ type RootModel struct {
 	heartbeatCtx    context.Context
 	heartbeatCancel context.CancelFunc
 
-	// Bundle mode fields
-	bundleMode bool
-	bundleName string
-	bundleVer  string
-	bundleDir  string
+	// Load mode fields
+	bundleLoadMode bool
+	bundleName     string
+	bundleVer      string
+	bundleDir      string
 
 	// Time and lifecycle behavior knobs (defaulted in constructor; injectable in tests).
 	now                 func() time.Time
@@ -230,7 +230,7 @@ func NewRootModel(ctx context.Context, cfg *Config) *RootModel {
 		transcriptEnabled:   cfg.TranscriptEnabled,
 		transcriptDir:       cfg.TranscriptDir,
 		transcriptLines:     cfg.TranscriptLines,
-		bundleMode:          cfg.BundleMode,
+		bundleLoadMode:      cfg.BundleLoadMode,
 		bundleName:          cfg.BundleName,
 		bundleVer:           cfg.BundleVer,
 		bundleDir:           cfg.BundleDir,
@@ -250,7 +250,7 @@ func (m *RootModel) signalDone() {
 
 // Run starts the harness with scroll region approach.
 func (m *RootModel) Run() error {
-	if m.client == nil && !m.bundleMode {
+	if m.client == nil && !m.bundleLoadMode {
 		return fmt.Errorf("missing client in harness config")
 	}
 
@@ -361,8 +361,8 @@ func (m *RootModel) Run() error {
 		}
 	}()
 
-	if m.bundleMode {
-		return m.runBundleMode()
+	if m.bundleLoadMode {
+		return m.runBundleLoadMode()
 	}
 
 	return m.runLinkMode()
@@ -466,8 +466,8 @@ func (m *RootModel) runLinkMode() error {
 	return nil
 }
 
-// runBundleMode runs a single interactive session with bundle assets.
-func (m *RootModel) runBundleMode() error {
+// runBundleLoadMode runs a single interactive session with bundle assets.
+func (m *RootModel) runBundleLoadMode() error {
 	m.statusMu.Lock()
 	m.status = StatusConnected
 	m.statusMu.Unlock()

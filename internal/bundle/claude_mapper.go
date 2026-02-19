@@ -34,7 +34,7 @@ func (m *ClaudeAssetMapper) MapAsset(workDir string, layer client.BundleLayer) (
 	}
 }
 
-// PrepareEphemeral creates a temp directory with assets in Claude's native structure.
-func (m *ClaudeAssetMapper) PrepareEphemeral(_ context.Context, cachePath string, manifest *client.BundleManifest) (tmpDir string, cleanup func(), err error) {
-	return prepareEphemeralCommon(m, cachePath, manifest)
+// PrepareLoad creates a temp directory with assets in Claude's native structure.
+func (m *ClaudeAssetMapper) PrepareLoad(_ context.Context, cachePath string, manifest *client.BundleManifest) (tmpDir string, cleanup func(), err error) {
+	return prepareLoadCommon(m, cachePath, manifest)
 }
