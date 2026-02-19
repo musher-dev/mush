@@ -3,10 +3,10 @@
 package harness
 
 import (
-	"os"
+	"context"
 	"testing"
 
-	"github.com/creack/pty"
+	"github.com/musher-dev/mush/internal/client"
 )
 
 func TestClampTerminalSize(t *testing.T) {
@@ -63,47 +63,59 @@ func TestPTYRowsForHeight(t *testing.T) {
 	}
 }
 
-func TestHandleResizePropagatesPTYSize(t *testing.T) {
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("os.Pipe() error = %v", err)
-	}
-	defer r.Close()
-	defer w.Close()
-
+func TestHandleResizeCallsResizable(t *testing.T) {
 	type call struct {
-		cols uint16
-		rows uint16
+		cols int
+		rows int
 	}
 
 	var got call
 
 	called := false
 
-	m := &RootModel{
-		width:  80,
-		height: 24,
-		ptmx:   r,
-		setPTYSize: func(_ *os.File, ws *pty.Winsize) error {
+	mockExec := &mockResizable{
+		onResize: func(rows, cols int) {
 			called = true
-			got = call{cols: ws.Cols, rows: ws.Rows}
-
-			return nil
+			got = call{cols: cols, rows: rows}
 		},
+	}
+
+	m := &RootModel{
+		width:              80,
+		height:             24,
+		executors:          map[string]Executor{"claude": mockExec},
+		supportedHarnesses: []string{"claude"},
 	}
 
 	m.handleResize(120, 40)
 
 	if !called {
-		t.Fatal("expected setPTYSize to be called")
+		t.Fatal("expected Resize to be called on executor")
 	}
 
-	if got.cols != 120 || got.rows != uint16(40-StatusBarHeight) {
-		t.Fatalf("setPTYSize called with cols=%d rows=%d, want cols=%d rows=%d",
+	if got.cols != 120 || got.rows != 40-StatusBarHeight {
+		t.Fatalf("Resize called with cols=%d rows=%d, want cols=%d rows=%d",
 			got.cols, got.rows, 120, 40-StatusBarHeight)
 	}
 
 	if m.width != 120 || m.height != 40 {
 		t.Fatalf("model dimensions = (%d,%d), want (120,40)", m.width, m.height)
+	}
+}
+
+// mockResizable is a test double implementing Executor + Resizable.
+type mockResizable struct {
+	onResize func(rows, cols int)
+}
+
+func (m *mockResizable) Setup(_ context.Context, _ *SetupOptions) error { return nil }
+func (m *mockResizable) Execute(_ context.Context, _ *client.Job) (*ExecResult, error) {
+	return &ExecResult{}, nil
+}
+func (m *mockResizable) Reset(_ context.Context) error { return nil }
+func (m *mockResizable) Teardown()                     {}
+func (m *mockResizable) Resize(rows, cols int) {
+	if m.onResize != nil {
+		m.onResize(rows, cols)
 	}
 }

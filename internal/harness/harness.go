@@ -33,6 +33,12 @@ type Config struct {
 	TranscriptEnabled  bool
 	TranscriptDir      string
 	TranscriptLines    int
+
+	// BundleMode runs a single interactive session instead of polling for jobs.
+	BundleMode bool
+	BundleName string // for status bar display
+	BundleVer  string // for status bar display
+	BundleDir  string // temp dir with harness-native asset structure
 }
 
 // Run starts the harness TUI.

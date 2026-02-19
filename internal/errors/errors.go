@@ -312,11 +312,79 @@ func ClaudeNotFound() *CLIError {
 }
 
 // InvalidHarnessType returns an error for an unsupported harness type.
-func InvalidHarnessType(harnessType string) *CLIError {
+func InvalidHarnessType(harnessType string, supported []string) *CLIError {
+	hint := "No harness types registered"
+	if len(supported) > 0 {
+		hint = fmt.Sprintf("Supported harness types: %s", strings.Join(supported, ", "))
+	}
+
 	return &CLIError{
 		Message: fmt.Sprintf("Invalid harness type: %s", harnessType),
-		Hint:    "Supported harness types: claude, bash",
+		Hint:    hint,
 		Code:    ExitUsage,
+	}
+}
+
+// HarnessNotAvailable returns an error when a harness runtime is not installed.
+func HarnessNotAvailable(harnessType string) *CLIError {
+	return &CLIError{
+		Message: fmt.Sprintf("%s CLI not found", harnessType),
+		Hint:    fmt.Sprintf("Install the %s CLI to use this harness type", harnessType),
+		Code:    ExitConfig,
+	}
+}
+
+// CodexNotFound returns an error when Codex CLI is not available.
+func CodexNotFound() *CLIError {
+	return &CLIError{
+		Message: "Codex CLI not found",
+		Hint:    "Install OpenAI Codex CLI: https://github.com/openai/codex",
+		Code:    ExitConfig,
+	}
+}
+
+// BundleNotFound returns an error for an unknown bundle.
+func BundleNotFound(slug string) *CLIError {
+	return &CLIError{
+		Message: fmt.Sprintf("Bundle not found: %s", slug),
+		Hint:    "Check the bundle slug or verify it exists in your workspace",
+		Code:    ExitGeneral,
+	}
+}
+
+// BundleVersionNotFound returns an error for an unknown bundle version.
+func BundleVersionNotFound(slug, version string) *CLIError {
+	return &CLIError{
+		Message: fmt.Sprintf("Bundle version not found: %s:%s", slug, version),
+		Hint:    "Check the version number or omit it to use the latest version",
+		Code:    ExitGeneral,
+	}
+}
+
+// BundleIntegrityFailed returns an error when bundle asset verification fails.
+func BundleIntegrityFailed(path string) *CLIError {
+	return &CLIError{
+		Message: fmt.Sprintf("Bundle integrity check failed for: %s", path),
+		Hint:    "The downloaded asset does not match its expected checksum. Try again or contact support",
+		Code:    ExitGeneral,
+	}
+}
+
+// PathTraversalBlocked returns an error when a path traversal attempt is detected.
+func PathTraversalBlocked(path string) *CLIError {
+	return &CLIError{
+		Message: fmt.Sprintf("Path traversal blocked: %s", path),
+		Hint:    "Bundle assets must not reference paths outside the target directory",
+		Code:    ExitGeneral,
+	}
+}
+
+// InstallConflict returns an error when a bundle asset conflicts with existing files.
+func InstallConflict(path string) *CLIError {
+	return &CLIError{
+		Message: fmt.Sprintf("Install conflict: file already exists at %s", path),
+		Hint:    "Use --force to overwrite existing files",
+		Code:    ExitGeneral,
 	}
 }
 

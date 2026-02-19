@@ -3,17 +3,12 @@
 package harness
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"os/signal"
-	"path/filepath"
-	"slices"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -22,7 +17,6 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/term"
 
-	"github.com/musher-dev/mush/internal/ansi"
 	"github.com/musher-dev/mush/internal/buildinfo"
 	"github.com/musher-dev/mush/internal/client"
 	"github.com/musher-dev/mush/internal/config"
@@ -106,18 +100,11 @@ type RootModel struct {
 	width  int
 	height int
 
-	// PTY management
-	ptyMu sync.Mutex
-	ptmx  *os.File
-	cmd   *exec.Cmd
-	// cmdPGID is the process-group ID for the active Claude process.
-	cmdPGID int
+	// Executor registry: harness type → executor instance.
+	executors map[string]Executor
+
 	// setPTYSize is injectable for tests; defaults to pty.Setsize.
 	setPTYSize func(*os.File, *pty.Winsize) error
-	// startPTYWithSize is injectable for tests; defaults to pty.StartWithSize.
-	startPTYWithSize func(*exec.Cmd, *pty.Winsize) (*os.File, error)
-	// ptyReady delivers active PTY handles to the output reader loop.
-	ptyReady chan *os.File
 
 	// Transcript capture for session history.
 	transcriptStore *transcript.Store
@@ -145,21 +132,13 @@ type RootModel struct {
 	instanceID         string
 	linkID             string
 	signalDir          string
-	restoreHooks       func() error
 	runnerConfig       *client.RunnerConfigResponse
-	mcpConfigPath      string
-	mcpConfigSig       string
-	mcpConfigRemove    func() error
-	loadedMCPNames     []string
 	transcriptEnabled  bool
 	transcriptDir      string
 	transcriptLines    int
 
-	refreshMu              sync.Mutex
-	refreshInterval        time.Duration
-	pendingRunnerConfig    *client.RunnerConfigResponse
-	pendingRunnerConfigSig string
-	claudeRestartNeeded    bool
+	refreshMu       sync.Mutex
+	refreshInterval time.Duration
 
 	// Original terminal state for restoration
 	oldState *term.State
@@ -170,18 +149,17 @@ type RootModel struct {
 
 	// Job lifecycle management
 	jobMu           sync.Mutex
-	outputBuffer    bytes.Buffer  // Captures output during job execution
-	capturing       bool          // True when we're capturing output for a job
-	currentJob      *client.Job   // Currently executing job
-	promptDetected  chan struct{} // Signals that Claude's prompt was detected
-	readyForJob     bool          // True when Claude is ready for input (prompt visible)
-	lastPromptSeen  time.Time     // When we last saw the prompt pattern
-	promptConfirmed bool          // True after debounce confirms prompt
-	bypassAccepted  bool          // True after we've auto-accepted bypass confirmation
-	lastError       string        // Last error message
-	lastErrorTime   time.Time     // Time of the last error
+	currentJob      *client.Job // Currently executing job
+	lastError       string      // Last error message
+	lastErrorTime   time.Time   // Time of the last error
 	heartbeatCtx    context.Context
 	heartbeatCancel context.CancelFunc
+
+	// Bundle mode fields
+	bundleMode bool
+	bundleName string
+	bundleVer  string
+	bundleDir  string
 
 	// Time and lifecycle behavior knobs (defaulted in constructor; injectable in tests).
 	now                 func() time.Time
@@ -243,13 +221,15 @@ func NewRootModel(ctx context.Context, cfg *Config) *RootModel {
 		runnerConfig:        cfg.RunnerConfig,
 		refreshInterval:     normalizeRefreshInterval(0),
 		done:                make(chan struct{}),
-		promptDetected:      make(chan struct{}, 1),
-		ptyReady:            make(chan *os.File, 4),
+		executors:           make(map[string]Executor),
 		setPTYSize:          pty.Setsize,
-		startPTYWithSize:    pty.StartWithSize,
 		transcriptEnabled:   cfg.TranscriptEnabled,
 		transcriptDir:       cfg.TranscriptDir,
 		transcriptLines:     cfg.TranscriptLines,
+		bundleMode:          cfg.BundleMode,
+		bundleName:          cfg.BundleName,
+		bundleVer:           cfg.BundleVer,
+		bundleDir:           cfg.BundleDir,
 		now:                 time.Now,
 		ctrlCExitWindow:     defaultCtrlCExitWindow,
 		ptyShutdownDeadline: defaultPTYShutdownDeadline,
@@ -266,7 +246,7 @@ func (m *RootModel) signalDone() {
 
 // Run starts the harness with scroll region approach.
 func (m *RootModel) Run() error {
-	if m.client == nil {
+	if m.client == nil && !m.bundleMode {
 		return fmt.Errorf("missing client in harness config")
 	}
 
@@ -325,11 +305,8 @@ func (m *RootModel) Run() error {
 		}
 	}
 
-	// Claude-specific wiring (PTY + stop-hook completion).
-	// If the harness is running without the Claude harness, we skip all Claude setup
-	// and only run non-Claude jobs (e.g. bash) in the scroll region.
+	// Create per-run signal directory (used by Claude executor).
 	if m.isHarnessSupported("claude") {
-		// Create per-run signal directory
 		signalDir, mkErr := os.MkdirTemp("", "mush-signals-")
 		if mkErr != nil {
 			return fmt.Errorf("failed to create signal directory: %w", mkErr)
@@ -340,29 +317,56 @@ func (m *RootModel) Run() error {
 		defer func() {
 			_ = os.RemoveAll(signalDir)
 		}()
-
-		// Install Stop hook for completion signaling
-		restoreHooks, hookErr := installStopHook(signalDir)
-		if hookErr != nil {
-			return hookErr
-		}
-
-		m.restoreHooks = restoreHooks
-
-		defer func() {
-			if m.restoreHooks != nil {
-				_ = m.restoreHooks()
-			}
-		}()
-
-		// Build an ephemeral Claude MCP config from runner config, if available.
-		if mcpErr := m.applyRunnerConfigForClaude(m.runnerConfig); mcpErr != nil {
-			m.setLastError(fmt.Sprintf("MCP config disabled: %v", mcpErr))
-		}
-		defer m.cleanupMCPConfigFile()
 	}
 
-	// Register link with the platform
+	// Create executors from registry.
+	ptyRows := m.ptyRowsForHeight(m.height)
+	termWriter := &lockedWriter{mu: &m.termMu, w: os.Stdout}
+
+	for _, harnessType := range m.supportedHarnesses {
+		info, ok := Lookup(harnessType)
+		if !ok {
+			continue
+		}
+
+		executor := info.New()
+
+		setupOpts := SetupOptions{
+			TermWriter:   termWriter,
+			TermWidth:    m.width,
+			TermHeight:   ptyRows,
+			SignalDir:    m.signalDir,
+			RunnerConfig: m.runnerConfig,
+			BundleDir:    m.bundleDir,
+			OnOutput: func(p []byte) {
+				m.appendTranscript("pty", p)
+			},
+			OnExit: m.signalDone,
+		}
+
+		if err := executor.Setup(m.ctx, &setupOpts); err != nil {
+			return fmt.Errorf("failed to setup %s executor: %w", harnessType, err)
+		}
+
+		m.executors[harnessType] = executor
+	}
+
+	defer func() {
+		for _, executor := range m.executors {
+			executor.Teardown()
+		}
+	}()
+
+	if m.bundleMode {
+		return m.runBundleMode()
+	}
+
+	return m.runLinkMode()
+}
+
+// runLinkMode runs the standard job-polling link mode.
+func (m *RootModel) runLinkMode() error {
+	// Register link with the platform.
 	name, metadata := linking.DefaultLinkInfo()
 
 	linkID, err := linking.Register(m.ctx, m.client, m.habitatID, m.instanceID, name, metadata, buildinfo.Version)
@@ -390,15 +394,7 @@ func (m *RootModel) Run() error {
 		}
 	}()
 
-	// Start Claude Code in PTY if it's a supported harness.
-	if m.isHarnessSupported("claude") {
-		if err := m.startPTY(); err != nil {
-			return fmt.Errorf("failed to start PTY: %w", err)
-		}
-		defer m.closePTY()
-	}
-
-	// Start goroutines
+	// Start goroutines.
 	var wg sync.WaitGroup
 
 	// Terminal resize watcher (SIGWINCH + periodic reconciliation).
@@ -410,19 +406,7 @@ func (m *RootModel) Run() error {
 		m.resizeLoop()
 	}()
 
-	// PTY output -> terminal (in scroll region)
-	if m.isHarnessSupported("claude") {
-		wg.Add(1)
-
-		go func() {
-			defer wg.Done()
-
-			m.copyPTYOutput()
-		}()
-	}
-
-	// Stdin -> PTY (with quit key handling). If no PTY is running, we still
-	// consume Ctrl+Q so the user can exit the watch UI.
+	// Stdin → PTY (with quit key handling).
 	wg.Add(1)
 
 	go func() {
@@ -431,7 +415,7 @@ func (m *RootModel) Run() error {
 		m.copyInput()
 	}()
 
-	// Status bar updater
+	// Status bar updater.
 	wg.Add(1)
 
 	go func() {
@@ -440,7 +424,7 @@ func (m *RootModel) Run() error {
 		m.updateStatusLoop()
 	}()
 
-	// Job manager (polls for and processes jobs)
+	// Job manager (polls for and processes jobs).
 	wg.Add(1)
 
 	go func() {
@@ -450,7 +434,7 @@ func (m *RootModel) Run() error {
 	}()
 
 	// Runner config refresh loop for MCP credential rotation.
-	if m.isHarnessSupported("claude") {
+	if _, ok := m.executors["claude"]; ok {
 		wg.Add(1)
 
 		go func() {
@@ -460,8 +444,7 @@ func (m *RootModel) Run() error {
 		}()
 	}
 
-	// Ensure external context cancellation (SIGTERM/SIGINT at command layer) can
-	// always unblock Run() even when local input keys are not pressed.
+	// Ensure external context cancellation can always unblock Run().
 	go func() {
 		select {
 		case <-m.ctx.Done():
@@ -470,10 +453,63 @@ func (m *RootModel) Run() error {
 		}
 	}()
 
-	// Wait for done signal
+	// Wait for done signal.
 	<-m.done
 
-	// Give goroutines time to finish
+	m.cancel()
+	wg.Wait()
+
+	return nil
+}
+
+// runBundleMode runs a single interactive session with bundle assets.
+func (m *RootModel) runBundleMode() error {
+	m.statusMu.Lock()
+	m.status = StatusConnected
+	m.statusMu.Unlock()
+
+	// Start goroutines.
+	var wg sync.WaitGroup
+
+	// Terminal resize watcher.
+	wg.Add(1)
+
+	go func() {
+		defer wg.Done()
+
+		m.resizeLoop()
+	}()
+
+	// Stdin → active executor.
+	wg.Add(1)
+
+	go func() {
+		defer wg.Done()
+
+		m.copyInput()
+	}()
+
+	// Status bar updater.
+	wg.Add(1)
+
+	go func() {
+		defer wg.Done()
+
+		m.updateStatusLoop()
+	}()
+
+	// Ensure external context cancellation can always unblock Run().
+	go func() {
+		select {
+		case <-m.ctx.Done():
+			m.signalDone()
+		case <-m.done:
+		}
+	}()
+
+	// Wait for done signal (user presses Ctrl+Q or executor process exits).
+	<-m.done
+
 	m.cancel()
 	wg.Wait()
 
@@ -662,329 +698,19 @@ func (m *RootModel) handleResize(width, height int) {
 	_, _ = fmt.Fprintf(os.Stdout, escMoveTo, scrollStart, 1)
 	m.termMu.Unlock()
 
-	_ = m.resizeActivePTY(width, m.ptyRowsForHeight(height))
+	rows := m.ptyRowsForHeight(height)
+
+	// Resize all Resizable executors.
+	for _, executor := range m.executors {
+		if r, ok := executor.(Resizable); ok {
+			r.Resize(rows, width)
+		}
+	}
+
 	m.drawStatusBar()
 }
 
-func (m *RootModel) resizeActivePTY(cols, rows int) error {
-	m.ptyMu.Lock()
-	ptmx := m.ptmx
-	m.ptyMu.Unlock()
-
-	if ptmx == nil {
-		return nil
-	}
-
-	setSize := m.setPTYSize
-	if setSize == nil {
-		setSize = pty.Setsize
-	}
-
-	if err := setSize(ptmx, &pty.Winsize{
-		Rows: uint16(rows),
-		Cols: uint16(cols),
-	}); err != nil {
-		m.setLastError(fmt.Sprintf("PTY resize failed: %v", err))
-		return err
-	}
-
-	return nil
-}
-
-// startPTY starts Claude Code in a PTY.
-func (m *RootModel) startPTY() error {
-	// Use --dangerously-skip-permissions to bypass interactive permission dialogs
-	// This is appropriate for automated job execution in the harness
-	args := []string{"--dangerously-skip-permissions"}
-	if m.mcpConfigPath != "" {
-		args = append(args, "--mcp-config", m.mcpConfigPath)
-	}
-
-	cmd := exec.CommandContext(m.ctx, "claude", args...)
-	cmd.Env = append(os.Environ(),
-		"TERM=xterm-256color",
-		"FORCE_COLOR=1",
-		"MUSH_SIGNAL_DIR="+m.signalDir,
-	)
-
-	// Calculate PTY size (full height minus status bar)
-	ptyHeight := m.ptyRowsForHeight(m.height)
-
-	startWithSize := m.startPTYWithSize
-	if startWithSize == nil {
-		startWithSize = pty.StartWithSize
-	}
-
-	ptmx, err := startWithSize(cmd, &pty.Winsize{
-		Rows: uint16(ptyHeight),
-		Cols: uint16(m.width),
-	})
-	if err != nil {
-		return annotateStartPTYError(err, cmd.Path)
-	}
-
-	m.ptyMu.Lock()
-	m.ptmx = ptmx
-	m.cmd = cmd
-	m.cmdPGID = 0
-
-	if cmd.Process != nil && cmd.Process.Pid > 0 {
-		if pgid, pgErr := syscall.Getpgid(cmd.Process.Pid); pgErr == nil {
-			m.cmdPGID = pgid
-		}
-	}
-	m.ptyMu.Unlock()
-
-	// Drain stale handles before delivering the new one, so the reader
-	// always picks up the most recent PTY.
-	for len(m.ptyReady) > 0 {
-		<-m.ptyReady
-	}
-
-	m.ptyReady <- ptmx
-
-	return nil
-}
-
-// closePTY closes the PTY.
-func (m *RootModel) closePTY() {
-	m.ptyMu.Lock()
-	ptmx := m.ptmx
-	cmd := m.cmd
-	pgid := m.cmdPGID
-	m.ptmx = nil
-	m.cmd = nil
-	m.cmdPGID = 0
-	m.ptyMu.Unlock()
-
-	if ptmx != nil {
-		_ = ptmx.Close()
-	}
-
-	if cmd == nil || cmd.Process == nil {
-		return
-	}
-
-	waitCh := make(chan error, 1)
-
-	go func() {
-		waitCh <- cmd.Wait()
-	}()
-
-	m.sendSignal(cmd.Process.Pid, pgid, syscall.SIGTERM)
-
-	shutdownDeadline := m.ptyShutdownDeadline
-	if shutdownDeadline <= 0 {
-		shutdownDeadline = defaultPTYShutdownDeadline
-	}
-
-	select {
-	case <-waitCh:
-		return
-	case <-time.After(shutdownDeadline):
-		m.sendSignal(cmd.Process.Pid, pgid, syscall.SIGKILL)
-
-		select {
-		case <-waitCh:
-		case <-time.After(shutdownDeadline):
-		}
-	}
-}
-
-func (m *RootModel) sendSignal(pid, pgid int, sig syscall.Signal) {
-	kill := m.killProcess
-	if kill == nil {
-		kill = syscall.Kill
-	}
-
-	if pgid > 0 {
-		if err := kill(-pgid, sig); err == nil || errors.Is(err, syscall.ESRCH) {
-			return
-		}
-	}
-
-	if pid <= 0 {
-		return
-	}
-
-	_ = kill(pid, sig)
-}
-
-func annotateStartPTYError(err error, binaryPath string) error {
-	if !errors.Is(err, syscall.EPERM) {
-		return err
-	}
-
-	return fmt.Errorf(
-		"%w (EPERM during PTY start for %q; likely session/exec policy issue. Check executable permissions, filesystem noexec, and macOS quarantine attributes)",
-		err,
-		binaryPath,
-	)
-}
-
-func (m *RootModel) activePTY() *os.File {
-	m.ptyMu.Lock()
-	defer m.ptyMu.Unlock()
-
-	return m.ptmx
-}
-
-// copyPTYOutput copies PTY output to stdout and detects prompt/completion.
-// When readPTYOutput returns (PTY closed or error), the loop waits for a new
-// PTY handle on m.ptyReady — this supports restart without signaling done.
-// Job completion is detected via the Stop hook signal file, not PTY exit.
-func (m *RootModel) copyPTYOutput() {
-	for {
-		select {
-		case <-m.ctx.Done():
-			return
-		case <-m.done:
-			return
-		case ptmx := <-m.ptyReady:
-			if ptmx == nil {
-				continue
-			}
-
-			m.readPTYOutput(ptmx)
-		}
-	}
-}
-
-func (m *RootModel) readPTYOutput(ptmx *os.File) {
-	buf := make([]byte, 4096)
-	// Ring buffer to detect prompt across chunk boundaries
-	promptRing := make([]byte, len(PromptDetectionBytes))
-	promptRingIdx := 0
-	// Buffer for bypass dialog detection
-	var dialogBuf bytes.Buffer
-
-	for {
-		select {
-		case <-m.ctx.Done():
-			return
-		case <-m.done:
-			return
-		default:
-		}
-
-		bytesRead, err := ptmx.Read(buf)
-		if err != nil {
-			return
-		}
-
-		if bytesRead <= 0 {
-			continue
-		}
-
-		// Write to terminal
-		m.termWrite(buf[:bytesRead])
-		m.appendTranscript("pty", buf[:bytesRead])
-
-		// Detect bypass dialog and auto-accept
-		m.jobMu.Lock()
-		if !m.bypassAccepted {
-			dialogBuf.Write(buf[:bytesRead])
-			// Look for "Esc to cancel" which appears at the end of the dialog
-			if bytes.Contains(dialogBuf.Bytes(), []byte("Esc to cancel")) {
-				m.bypassAccepted = true
-				m.jobMu.Unlock()
-				dialogBuf.Reset()
-				// Wait a moment for the TUI to be ready, then send input
-				go func() {
-					time.Sleep(300 * time.Millisecond)
-
-					active := m.activePTY()
-					if active != nil {
-						// Down arrow to select "Yes, I accept"
-						_, _ = active.WriteString("\x1b[B")
-
-						time.Sleep(100 * time.Millisecond)
-						// Enter to confirm
-						_, _ = active.WriteString("\r")
-					}
-				}()
-			} else {
-				m.jobMu.Unlock()
-			}
-		} else {
-			m.jobMu.Unlock()
-		}
-
-		// Capture output if we're processing a job
-		m.jobMu.Lock()
-		if m.capturing {
-			m.outputBuffer.Write(buf[:bytesRead])
-		}
-		// Reset prompt confirmation since new output arrived
-		m.promptConfirmed = false
-		m.jobMu.Unlock()
-
-		// Detect prompt pattern "❯ " to know Claude might be ready
-		for i := 0; i < bytesRead; i++ {
-			promptRing[promptRingIdx] = buf[i]
-			promptRingIdx = (promptRingIdx + 1) % len(PromptDetectionBytes)
-
-			// Check if we have a match (need to check rotated)
-			if m.checkPromptMatch(promptRing, promptRingIdx) {
-				m.onPromptPatternSeen()
-			}
-		}
-	}
-}
-
-// onPromptPatternSeen is called when we see "❯ " in the output.
-// We use debouncing to avoid false positives from permission menus.
-func (m *RootModel) onPromptPatternSeen() {
-	m.jobMu.Lock()
-	m.lastPromptSeen = time.Now()
-	m.jobMu.Unlock()
-
-	// Start a debounce goroutine
-	go func() {
-		time.Sleep(PromptDebounceTime)
-
-		m.jobMu.Lock()
-		// Check if this is still the most recent prompt sighting
-		// and no new output has come (promptConfirmed would be false if output came)
-		timeSincePrompt := time.Since(m.lastPromptSeen)
-		if timeSincePrompt >= PromptDebounceTime-10*time.Millisecond && !m.promptConfirmed {
-			m.promptConfirmed = true
-			m.jobMu.Unlock()
-			m.onPromptConfirmed()
-		} else {
-			m.jobMu.Unlock()
-		}
-	}()
-}
-
-// checkPromptMatch checks if the ring buffer contains the prompt bytes.
-func (m *RootModel) checkPromptMatch(ring []byte, idx int) bool {
-	for i := 0; i < len(PromptDetectionBytes); i++ {
-		ringIdx := (idx + i) % len(ring)
-		if ring[ringIdx] != PromptDetectionBytes[i] {
-			return false
-		}
-	}
-
-	return true
-}
-
-// onPromptConfirmed is called after debounce confirms Claude is at input prompt.
-// This is only used for detecting initial readiness, not job completion.
-// Job completion is detected via the Stop hook signal file.
-func (m *RootModel) onPromptConfirmed() {
-	m.jobMu.Lock()
-	m.readyForJob = true
-	m.jobMu.Unlock()
-
-	// Signal prompt detected (non-blocking)
-	select {
-	case m.promptDetected <- struct{}{}:
-	default:
-	}
-}
-
-// copyInput copies stdin to PTY with quit key handling.
+// copyInput copies stdin to active executor with quit key handling.
 // Uses Ctrl+Q (0x11) as quit key to avoid escape sequence ambiguity.
 func (m *RootModel) copyInput() {
 	buf := make([]byte, 256)
@@ -1005,13 +731,10 @@ func (m *RootModel) copyInput() {
 		for i := 0; i < bytesRead; i++ {
 			if m.isCopyMode() && m.popCopyEscPending() {
 				if buf[i] == '[' || buf[i] == 'O' {
-					// This byte continues an escape sequence (e.g. arrow keys).
-					// Stay in copy mode and swallow this input.
 					buf[i] = 0
 					continue
 				}
-				// Previous ESC was standalone; exit copy mode and process
-				// this byte as normal input.
+
 				m.setCopyMode(false)
 			}
 
@@ -1024,7 +747,7 @@ func (m *RootModel) copyInput() {
 				if m.handleCtrlC() {
 					return
 				}
-				// We already handled forwarding locally; do not write this byte twice.
+
 				buf[i] = 0
 
 				continue
@@ -1032,15 +755,13 @@ func (m *RootModel) copyInput() {
 
 			if buf[i] == ctrlS { // Ctrl+S toggles copy mode
 				m.setCopyMode(!m.isCopyMode())
-				// Drop the key from forwarded data.
+
 				buf[i] = 0
 
 				continue
 			}
 
 			if m.isCopyMode() {
-				// Esc exits copy mode unless it prefixes a terminal escape sequence
-				// like arrows/function keys.
 				if buf[i] == esc {
 					if i+1 < bytesRead && (buf[i+1] == '[' || buf[i+1] == 'O') {
 						buf[i] = 0
@@ -1054,7 +775,7 @@ func (m *RootModel) copyInput() {
 			}
 		}
 
-		// Forward filtered bytes to PTY.
+		// Forward filtered bytes to active InputReceiver executor.
 		out := make([]byte, 0, bytesRead)
 		for i := 0; i < bytesRead; i++ {
 			if buf[i] != 0 {
@@ -1066,15 +787,22 @@ func (m *RootModel) copyInput() {
 			continue
 		}
 
-		if ptmx := m.activePTY(); ptmx != nil {
-			_, _ = ptmx.Write(out)
+		// Write to the first InputReceiver executor.
+		for _, harnessType := range m.supportedHarnesses {
+			if executor, ok := m.executors[harnessType]; ok {
+				if ir, ok := executor.(InputReceiver); ok {
+					_, _ = ir.WriteInput(out)
+
+					break
+				}
+			}
 		}
 	}
 }
 
 func (m *RootModel) handleCtrlC() bool {
-	// When Claude is not actively running a job in PTY, Ctrl+C exits immediately.
-	if !m.hasActiveClaudeJob() || m.activePTY() == nil {
+	// When not actively running a Claude job, Ctrl+C exits immediately.
+	if !m.hasActiveClaudeJob() {
 		m.signalDone()
 		return true
 	}
@@ -1109,8 +837,11 @@ func (m *RootModel) handleCtrlC() bool {
 		return true
 	}
 
-	if ptmx := m.activePTY(); ptmx != nil {
-		_, _ = ptmx.Write([]byte{ctrlC})
+	// Forward Ctrl+C to the Claude executor.
+	if executor, ok := m.executors["claude"]; ok {
+		if ir, ok := executor.(InputReceiver); ok {
+			_, _ = ir.WriteInput([]byte{ctrlC})
+		}
 	}
 
 	m.infof("Interrupt sent to Claude. Press Ctrl+C again within %s to exit watch mode.", window.Round(time.Second))
@@ -1148,14 +879,10 @@ func (m *RootModel) updateStatusLoop() {
 
 // jobManagerLoop manages the job queue and lifecycle by polling the API.
 func (m *RootModel) jobManagerLoop() {
-	// Wait for Claude to be ready (only when a Claude PTY is running).
-	if m.activePTY() != nil {
-		m.waitForClaude()
-	} else {
-		m.statusMu.Lock()
-		m.status = StatusConnected
-		m.statusMu.Unlock()
-	}
+	// Wait for Claude to be ready if it's a supported harness.
+	m.statusMu.Lock()
+	m.status = StatusConnected
+	m.statusMu.Unlock()
 
 	pollInterval := m.cfg.PollInterval()
 	if pollInterval <= 0 {
@@ -1171,14 +898,15 @@ func (m *RootModel) jobManagerLoop() {
 		default:
 		}
 
-		if err := m.maybeRestartClaude(); err != nil {
-			m.setLastError(fmt.Sprintf("Claude restart failed: %v", err))
+		// Check if any Refreshable executors need restart.
+		if err := m.maybeRefreshExecutors(); err != nil {
+			m.setLastError(fmt.Sprintf("Executor refresh failed: %v", err))
 			time.Sleep(2 * time.Second)
 
 			continue
 		}
 
-		// Poll for a job
+		// Poll for a job.
 		job, err := m.client.ClaimJob(m.ctx, m.habitatID, m.queueID, pollInterval)
 		if err != nil {
 			if m.ctx.Err() != nil {
@@ -1205,62 +933,25 @@ func (m *RootModel) jobManagerLoop() {
 			continue
 		}
 
-		// Process the job
+		// Process the job.
 		m.processJob(job)
 	}
 }
 
-// waitForClaude waits until the Claude PTY is ready for input.
-func (m *RootModel) waitForClaude() {
-	m.drainPromptDetected()
-
-	m.statusMu.Lock()
-	m.status = StatusConnected
-	m.statusMu.Unlock()
-
-	select {
-	case <-m.ctx.Done():
-	case <-m.done:
-	case <-m.promptDetected:
-		// Claude is ready (prompt detected)
-	case <-time.After(15 * time.Second):
-		// Fallback timeout
-		m.jobMu.Lock()
-		if m.bypassAccepted {
-			m.jobMu.Unlock()
-			time.Sleep(2 * time.Second)
-		} else {
-			m.jobMu.Unlock()
-		}
-	}
-}
-
-func (m *RootModel) drainPromptDetected() {
-	for {
-		select {
-		case <-m.promptDetected:
-			// Drain stale prompt events.
-		default:
-			return
-		}
-	}
-}
-
-// processJob handles the lifecycle of a single job.
+// processJob handles the lifecycle of a single job using the executor.
 func (m *RootModel) processJob(job *client.Job) {
 	harnessType := job.GetHarnessType()
 
+	executor, ok := m.executors[harnessType]
+	if !ok {
+		m.setLastError(fmt.Sprintf("No executor for harness type: %s", harnessType))
+		m.releaseJob(job)
+
+		return
+	}
+
 	m.jobMu.Lock()
 	m.currentJob = job
-
-	m.readyForJob = false
-	if harnessType == "claude" {
-		m.capturing = true
-		m.outputBuffer.Reset()
-	} else {
-		m.capturing = false
-		m.outputBuffer.Reset()
-	}
 	m.jobMu.Unlock()
 
 	// Update status bar
@@ -1269,7 +960,7 @@ func (m *RootModel) processJob(job *client.Job) {
 	m.statusMu.Unlock()
 	m.drawStatusBar()
 
-	// Start heartbeat for the job
+	// Start heartbeat for the job.
 	m.heartbeatCtx, m.heartbeatCancel = context.WithCancel(m.ctx)
 	go m.heartbeatLoop(m.heartbeatCtx, job.ID)
 
@@ -1277,7 +968,6 @@ func (m *RootModel) processJob(job *client.Job) {
 		m.heartbeatCancel()
 		m.jobMu.Lock()
 		m.currentJob = nil
-		m.capturing = false
 		m.jobMu.Unlock()
 		m.inputMu.Lock()
 		m.lastCtrlCAt = time.Time{}
@@ -1285,187 +975,50 @@ func (m *RootModel) processJob(job *client.Job) {
 		m.statusMu.Lock()
 		m.status = StatusConnected
 		m.statusMu.Unlock()
-		_ = os.Remove(m.currentJobPath())
-		_ = os.Remove(m.signalPath())
 	}()
 
 	if _, err := m.client.StartJob(m.ctx, job.ID); err != nil {
 		m.setLastError(fmt.Sprintf("Start job failed: %v", err))
 	}
 
-	// Clear any prior signal file and record current job (Claude only).
-	if harnessType == "claude" && m.signalDir != "" {
-		_ = os.Remove(m.signalPath())
-		_ = os.WriteFile(m.currentJobPath(), []byte(job.ID), 0o600)
-	}
-
-	// Determine execution timeout: use job-specified value or fall back to default
+	// Determine execution timeout.
 	execTimeout := DefaultExecutionTimeout
 	if job.Execution != nil && job.Execution.TimeoutMs > 0 {
 		execTimeout = time.Duration(job.Execution.TimeoutMs) * time.Millisecond
 	}
 
-	// Execute by harness type.
-	switch harnessType {
-	case "claude":
-		// Get the prompt for Claude
-		prompt, err := m.getPromptFromJob(job)
-		if err != nil {
-			m.setLastError(fmt.Sprintf("Prompt error: %v", err))
-			m.failJobNoRetry(job, "prompt_error", err.Error())
+	execCtx, cancelExec := context.WithTimeout(m.ctx, execTimeout)
+	defer cancelExec()
 
-			return
+	// Execute the job via the executor.
+	result, execErr := executor.Execute(execCtx, job)
+	if execErr != nil {
+		reason := "execution_error"
+		msg := execErr.Error()
+		retry := true
+
+		var ee *ExecError
+		if errors.As(execErr, &ee) {
+			reason = ee.Reason
+			msg = ee.Message
+			retry = ee.Retry
 		}
 
-		// Inject the prompt into the PTY
-		m.injectPrompt(prompt)
-
-		startedAt := time.Now()
-
-		// Wait for completion signal with timeout
-		waitCtx, cancelWait := context.WithTimeout(m.ctx, execTimeout)
-		defer cancelWait()
-
-		output, execErr := m.waitForSignalFile(waitCtx)
-		duration := time.Since(startedAt)
-
-		if execErr != nil {
-			reason := "execution_error"
-			if errors.Is(waitCtx.Err(), context.DeadlineExceeded) {
-				reason = "timeout"
-			}
-
-			m.failJob(job, reason, execErr.Error())
-
-			return
+		if retry {
+			m.failJob(job, reason, msg)
+		} else {
+			m.failJobNoRetry(job, reason, msg)
 		}
-
-		m.completeJob(job, map[string]any{
-			"success":    true,
-			"output":     output,
-			"durationMs": int(duration / time.Millisecond),
-		})
-
-		// Send /clear to reset session
-		m.sendClear()
-
-		// Wait for prompt to reappear after /clear
-		select {
-		case <-m.ctx.Done():
-		case <-m.done:
-		case <-m.promptDetected:
-		case <-time.After(10 * time.Second):
-		}
-
-		time.Sleep(1 * time.Second) // Settle time
-
-		return
-
-	case "bash":
-		command, err := m.getBashCommandFromJob(job)
-		if err != nil {
-			m.setLastError(fmt.Sprintf("Command error: %v", err))
-			m.failJobNoRetry(job, "command_error", err.Error())
-
-			return
-		}
-
-		startedAt := time.Now()
-
-		waitCtx, cancelWait := context.WithTimeout(m.ctx, execTimeout)
-		defer cancelWait()
-
-		outputData, execErr := m.executeBashJob(waitCtx, job, command)
-		duration := time.Since(startedAt)
-
-		if execErr != nil {
-			reason := "bash_error"
-			if errors.Is(waitCtx.Err(), context.DeadlineExceeded) {
-				reason = "timeout"
-			}
-
-			m.failJob(job, reason, execErr.Error())
-
-			return
-		}
-
-		_ = duration // durationMs is set by executeBashJob on success.
-		outputData["success"] = true
-
-		m.completeJob(job, outputData)
-
-		return
-
-	default:
-		m.setLastError(fmt.Sprintf("Unsupported harness type: %s", harnessType))
-		m.releaseJob(job)
 
 		return
 	}
-}
 
-// getPromptFromJob extracts the prompt from a job's data and execution config.
-func (m *RootModel) getPromptFromJob(job *client.Job) (string, error) {
-	if job == nil {
-		return "", fmt.Errorf("job is nil")
+	m.completeJob(job, result.OutputData)
+
+	// Reset the executor for the next job.
+	if err := executor.Reset(m.ctx); err != nil {
+		m.setLastError(fmt.Sprintf("Executor reset failed: %v", err))
 	}
-
-	if rendered := job.GetRenderedInstruction(); rendered != "" {
-		return rendered, nil
-	}
-
-	// If the API returned an execution error, surface it
-	if job.ExecutionError != "" {
-		return "", fmt.Errorf("server execution error: %s", job.ExecutionError)
-	}
-
-	if job.InputData != nil {
-		if instruction, ok := job.InputData["instruction"].(string); ok && instruction != "" {
-			return instruction, nil
-		}
-
-		if title, ok := job.InputData["title"].(string); ok && title != "" {
-			if desc, ok := job.InputData["description"].(string); ok && desc != "" {
-				return title + "\n\n" + desc, nil
-			}
-
-			return title, nil
-		}
-
-		if prompt, ok := job.InputData["prompt"].(string); ok && prompt != "" {
-			return prompt, nil
-		}
-	}
-
-	return "", fmt.Errorf("no prompt found for job")
-}
-
-func (m *RootModel) getBashCommandFromJob(job *client.Job) (string, error) {
-	if job == nil {
-		return "", fmt.Errorf("job is nil")
-	}
-
-	// Prefer pre-rendered instruction from the server.
-	if rendered := job.GetRenderedInstruction(); rendered != "" {
-		return rendered, nil
-	}
-
-	// If the API returned an execution error, surface it
-	if job.ExecutionError != "" {
-		return "", fmt.Errorf("server execution error: %s", job.ExecutionError)
-	}
-
-	if job.InputData != nil {
-		if cmd, ok := job.InputData["command"].(string); ok && cmd != "" {
-			return cmd, nil
-		}
-
-		if script, ok := job.InputData["script"].(string); ok && script != "" {
-			return script, nil
-		}
-	}
-
-	return "", fmt.Errorf("no bash command found for job")
 }
 
 // heartbeatLoop sends periodic heartbeats for the current job.
@@ -1496,89 +1049,11 @@ func (m *RootModel) heartbeatLoop(ctx context.Context, jobID string) {
 	}
 }
 
-// waitForSignalFile polls for a completion signal file from the Stop hook.
-// It returns the captured output string when the signal is detected, or a non-nil
-// error if the context is done (including timeout/cancellation) or if the harness
-// has been stopped.
-func (m *RootModel) waitForSignalFile(ctx context.Context) (string, error) {
-	ticker := time.NewTicker(SignalPollInterval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return "", fmt.Errorf("wait for signal file canceled: %w", ctx.Err())
-		case <-m.done:
-			return "", errors.New("harness stopped")
-		case <-ticker.C:
-			if _, err := os.Stat(m.signalPath()); err != nil {
-				continue
-			}
-
-			_ = os.Remove(m.signalPath()) // Clean up signal
-
-			m.jobMu.Lock()
-			m.capturing = false
-			output := ansi.Strip(m.outputBuffer.String())
-			m.outputBuffer.Reset()
-			m.jobMu.Unlock()
-
-			return output, nil
-		}
-	}
-}
-
-// injectPrompt writes a prompt into the PTY in bulk chunks.
-func (m *RootModel) injectPrompt(prompt string) {
-	ptmx := m.activePTY()
-	if ptmx == nil {
-		return
-	}
-
-	// Write in chunks to respect PTY buffer limits
-	data := []byte(prompt)
-	for len(data) > 0 {
-		chunk := data
-		if len(chunk) > PTYWriteChunkSize {
-			chunk = data[:PTYWriteChunkSize]
-		}
-
-		_, _ = ptmx.Write(chunk)
-
-		data = data[len(chunk):]
-		if len(data) > 0 {
-			time.Sleep(PTYChunkDelay)
-		}
-	}
-
-	// Allow the application to finish processing the pasted content
-	time.Sleep(PTYPasteSettleDelay)
-
-	_, _ = ptmx.WriteString("\r")
-}
-
-// sendClear sends the /clear command to reset Claude's session.
-func (m *RootModel) sendClear() {
-	ptmx := m.activePTY()
-	if ptmx == nil {
-		return
-	}
-
-	time.Sleep(500 * time.Millisecond)
-
-	_, _ = ptmx.WriteString("/clear")
-
-	time.Sleep(PTYPostWriteDelay)
-
-	_, _ = ptmx.WriteString("\r")
-}
-
 // completeJob reports job completion to the API.
 func (m *RootModel) completeJob(job *client.Job, outputData map[string]any) {
 	err := m.client.CompleteJob(m.ctx, job.ID, outputData)
 	if err != nil {
 		m.setLastError(fmt.Sprintf("Complete failed: %v", err))
-		// If completion fails, we should probably try to fail it as a fallback
 		m.failJob(job, "completion_report_failed", err.Error())
 
 		return
@@ -1587,81 +1062,6 @@ func (m *RootModel) completeJob(job *client.Job, outputData map[string]any) {
 	m.statusMu.Lock()
 	m.completed++
 	m.statusMu.Unlock()
-}
-
-func (m *RootModel) executeBashJob(ctx context.Context, job *client.Job, command string) (map[string]any, error) {
-	// Verify bash is available
-	if _, err := exec.LookPath("bash"); err != nil {
-		return nil, fmt.Errorf("bash not found in PATH")
-	}
-
-	cmd := exec.CommandContext(ctx, "bash", "-c", command) //nolint:gosec // G204: command originates from trusted job execution payload
-
-	// Working directory
-	if job.Execution != nil && job.Execution.WorkingDirectory != "" {
-		cmd.Dir = job.Execution.WorkingDirectory
-	}
-
-	// Environment variables
-	cmd.Env = os.Environ()
-
-	if job.Execution != nil {
-		for k, v := range job.Execution.Environment {
-			cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
-		}
-	}
-
-	cmd.Env = append(cmd.Env,
-		fmt.Sprintf("MUSH_JOB_ID=%s", job.ID),
-		fmt.Sprintf("MUSH_JOB_NAME=%s", job.GetDisplayName()),
-		fmt.Sprintf("MUSH_JOB_QUEUE=%s", job.QueueID),
-	)
-
-	var stdoutBuf, stderrBuf bytes.Buffer
-
-	termStdout := &lockedWriter{mu: &m.termMu, w: os.Stdout}
-	termStderr := &lockedWriter{mu: &m.termMu, w: os.Stderr}
-	cmd.Stdout = io.MultiWriter(termStdout, &stdoutBuf)
-	cmd.Stderr = io.MultiWriter(termStderr, &stderrBuf)
-
-	startedAt := time.Now()
-	err := cmd.Run()
-	duration := time.Since(startedAt)
-
-	exitCode := 0
-
-	if err != nil {
-		if ctxErr := ctx.Err(); ctxErr != nil {
-			// Prefer context cancellation/timeout errors over synthetic exit codes.
-			if errors.Is(ctxErr, context.DeadlineExceeded) {
-				return nil, fmt.Errorf("bash execution timed out: %w", ctxErr)
-			}
-
-			return nil, fmt.Errorf("bash execution canceled: %w", ctxErr)
-		}
-
-		exitCode = 1
-
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
-			exitCode = exitErr.ExitCode()
-		}
-
-		msg := strings.TrimSpace(stderrBuf.String())
-		if msg == "" {
-			msg = err.Error()
-		}
-
-		return nil, fmt.Errorf("bash exited with code %d: %s", exitCode, msg)
-	}
-
-	return map[string]any{
-		"output":     ansi.Strip(strings.TrimSpace(stdoutBuf.String())),
-		"stdout":     stdoutBuf.String(),
-		"stderr":     stderrBuf.String(),
-		"exitCode":   exitCode,
-		"durationMs": int(duration / time.Millisecond),
-	}, nil
 }
 
 // releaseJob returns a job to the queue.
@@ -1693,22 +1093,6 @@ func (m *RootModel) failJobNoRetry(job *client.Job, reason, message string) {
 	m.statusMu.Lock()
 	m.failed++
 	m.statusMu.Unlock()
-}
-
-func (m *RootModel) signalPath() string {
-	if m.signalDir == "" {
-		return ""
-	}
-
-	return filepath.Join(m.signalDir, SignalFileName)
-}
-
-func (m *RootModel) currentJobPath() string {
-	if m.signalDir == "" {
-		return ""
-	}
-
-	return filepath.Join(m.signalDir, "current-job")
 }
 
 func (m *RootModel) currentJobID() string {
@@ -1754,117 +1138,50 @@ func (m *RootModel) runnerConfigRefreshLoop() {
 				continue
 			}
 
-			specs := buildMCPProviderSpecs(cfg, time.Now())
-
-			sig, sigErr := mcpSignature(specs)
-			if sigErr != nil {
-				m.setLastError(fmt.Sprintf("Runner config signature failed: %v", sigErr))
-				timer.Reset(interval)
-
-				continue
-			}
-
 			m.refreshMu.Lock()
 			interval = normalizeRefreshInterval(cfg.RefreshAfterSeconds)
-
 			m.refreshInterval = interval
-			if sig != m.mcpConfigSig {
-				m.pendingRunnerConfig = cfg
-				m.pendingRunnerConfigSig = sig
-				m.claudeRestartNeeded = true
+
+			// Check all refreshable executors.
+			for _, executor := range m.executors {
+				if r, ok := executor.(Refreshable); ok {
+					if r.NeedsRefresh(cfg) {
+						m.runnerConfig = cfg
+					}
+				}
 			}
+
 			m.refreshMu.Unlock()
 			timer.Reset(interval)
 		}
 	}
 }
 
-func (m *RootModel) maybeRestartClaude() error {
-	if !m.isHarnessSupported("claude") {
-		return nil
-	}
-
+func (m *RootModel) maybeRefreshExecutors() error {
 	if m.currentJobID() != "" {
 		return nil
 	}
 
 	m.refreshMu.Lock()
-	needsRestart := m.claudeRestartNeeded
-	nextCfg := m.pendingRunnerConfig
-	oldNames := append([]string(nil), m.loadedMCPNames...)
+	cfg := m.runnerConfig
 	m.refreshMu.Unlock()
 
-	if !needsRestart || nextCfg == nil {
-		return nil
-	}
+	for harnessName, executor := range m.executors {
+		r, ok := executor.(Refreshable)
+		if !ok {
+			continue
+		}
 
-	if err := m.applyRunnerConfigForClaude(nextCfg); err != nil {
-		return err
-	}
+		if !r.NeedsRefresh(cfg) {
+			continue
+		}
 
-	m.closePTY()
-
-	if err := m.startPTY(); err != nil {
-		return err
-	}
-
-	m.waitForClaude()
-
-	m.refreshMu.Lock()
-	m.pendingRunnerConfig = nil
-	m.pendingRunnerConfigSig = ""
-	m.claudeRestartNeeded = false
-	newNames := append([]string(nil), m.loadedMCPNames...)
-	m.refreshMu.Unlock()
-
-	if !sameStringSlice(oldNames, newNames) {
-		m.infof("MCP servers reloaded: %s", summarizeMCPServers(newNames))
-	}
-
-	return nil
-}
-
-func (m *RootModel) applyRunnerConfigForClaude(cfg *client.RunnerConfigResponse) error {
-	now := time.Now()
-
-	path, sig, cleanup, err := createClaudeMCPConfigFile(cfg, now)
-	if err != nil {
-		return err
-	}
-
-	names := loadedMCPProviderNames(cfg, now)
-
-	// Swap config file atomically after successful generation.
-	m.refreshMu.Lock()
-	oldCleanup := m.mcpConfigRemove
-	m.mcpConfigPath = path
-	m.mcpConfigSig = sig
-	m.mcpConfigRemove = cleanup
-	m.loadedMCPNames = names
-	m.refreshMu.Unlock()
-
-	m.runnerConfig = cfg
-
-	if oldCleanup != nil {
-		if err := oldCleanup(); err != nil {
-			m.setLastError(fmt.Sprintf("MCP config cleanup: %v", err))
+		if err := r.ApplyRefresh(m.ctx, cfg); err != nil {
+			return fmt.Errorf("apply refresh for %s: %w", harnessName, err)
 		}
 	}
 
 	return nil
-}
-
-func (m *RootModel) cleanupMCPConfigFile() {
-	if m.mcpConfigRemove == nil {
-		return
-	}
-
-	if err := m.mcpConfigRemove(); err != nil {
-		m.setLastError(fmt.Sprintf("MCP config cleanup: %v", err))
-	}
-
-	m.mcpConfigRemove = nil
-	m.mcpConfigPath = ""
 }
 
 func (m *RootModel) infof(format string, args ...any) {
@@ -1879,21 +1196,52 @@ func summarizeMCPServers(names []string) string {
 		return "none"
 	}
 
-	return strings.Join(names, ", ")
+	return joinStrings(names, ", ")
 }
 
-func sameStringSlice(a, compared []string) bool {
-	if len(a) != len(compared) {
+func joinStrings(s []string, sep string) string {
+	result := ""
+
+	for i, v := range s {
+		if i > 0 {
+			result += sep
+		}
+
+		result += v
+	}
+
+	return result
+}
+
+func sameStringSlice(expected, compared []string) bool {
+	if len(expected) != len(compared) {
 		return false
 	}
 
-	aCopy := append([]string(nil), a...)
-	bCopy := append([]string(nil), compared...)
+	aCopy := make([]string, len(expected))
+	copy(aCopy, expected)
 
-	slices.Sort(aCopy)
-	slices.Sort(bCopy)
+	bCopy := make([]string, len(compared))
+	copy(bCopy, compared)
 
-	return slices.Equal(aCopy, bCopy)
+	sortStrings(aCopy)
+	sortStrings(bCopy)
+
+	for i := range aCopy {
+		if aCopy[i] != bCopy[i] {
+			return false
+		}
+	}
+
+	return true
+}
+
+func sortStrings(s []string) {
+	for i := 1; i < len(s); i++ {
+		for j := i; j > 0 && s[j] < s[j-1]; j-- {
+			s[j], s[j-1] = s[j-1], s[j]
+		}
+	}
 }
 
 // restore restores the terminal to its original state.
@@ -1915,4 +1263,16 @@ func (m *RootModel) restore() {
 	if m.oldState != nil {
 		_ = term.Restore(int(os.Stdin.Fd()), m.oldState)
 	}
+}
+
+func annotateStartPTYError(err error, binaryPath string) error {
+	if !errors.Is(err, syscall.EPERM) {
+		return err
+	}
+
+	return fmt.Errorf(
+		"%w (EPERM during PTY start for %q; likely session/exec policy issue. Check executable permissions, filesystem noexec, and macOS quarantine attributes)",
+		err,
+		binaryPath,
+	)
 }
