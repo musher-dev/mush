@@ -7,18 +7,19 @@ import (
 	"io"
 	"net/http"
 	neturl "net/url"
-	"strings"
 )
 
 // BundleResolveResponse is the response from resolving a bundle version.
 type BundleResolveResponse struct {
-	BundleID  string
-	VersionID string
-	Version   string
-	State     string
-	OCIRef    string
-	OCIDigest string
-	Manifest  BundleManifest
+	BundleID         string         `json:"bundleId"`
+	VersionID        string         `json:"versionId"`
+	Version          string         `json:"version"`
+	State            string         `json:"state"`
+	OCIRef           string         `json:"ociRef"`
+	OCIDigest        string         `json:"ociDigest"`
+	RegistryUsername string         `json:"registryUsername"`
+	RegistryPassword string         `json:"registryPassword"`
+	Manifest         BundleManifest `json:"manifest"`
 }
 
 // BundleManifest describes the layers (assets) in a bundle version.
@@ -28,52 +29,11 @@ type BundleManifest struct {
 
 // BundleLayer describes a single asset in a bundle.
 type BundleLayer struct {
-	AssetID       string
-	LogicalPath   string
-	AssetType     string // "skill", "agent_definition", "tool_config"
-	ContentSHA256 string
-	SizeBytes     int64
-}
-
-// UnmarshalJSON supports both camelCase and snake_case payloads.
-func (r *BundleResolveResponse) UnmarshalJSON(data []byte) error {
-	var raw map[string]json.RawMessage
-
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return fmt.Errorf("decode bundle resolve response: %w", err)
-	}
-
-	r.BundleID = stringOr(raw, "bundleId", "bundle_id")
-	r.VersionID = stringOr(raw, "versionId", "version_id")
-	r.Version = stringOr(raw, "version")
-	r.State = stringOr(raw, "state")
-	r.OCIRef = stringOr(raw, "ociRef", "oci_ref")
-	r.OCIDigest = stringOr(raw, "ociDigest", "oci_digest")
-
-	if manifestRaw, ok := firstRaw(raw, "manifest"); ok && len(manifestRaw) > 0 {
-		if err := json.Unmarshal(manifestRaw, &r.Manifest); err != nil {
-			return fmt.Errorf("decode manifest: %w", err)
-		}
-	}
-
-	return nil
-}
-
-// UnmarshalJSON supports both camelCase and snake_case payloads.
-func (l *BundleLayer) UnmarshalJSON(data []byte) error {
-	var raw map[string]json.RawMessage
-
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return fmt.Errorf("decode bundle layer: %w", err)
-	}
-
-	l.AssetID = stringOr(raw, "assetId", "asset_id")
-	l.LogicalPath = stringOr(raw, "logicalPath", "logical_path")
-	l.AssetType = stringOr(raw, "assetType", "asset_type")
-	l.ContentSHA256 = stringOr(raw, "contentSha256", "content_sha256")
-	l.SizeBytes = int64Or(raw, "sizeBytes", "size_bytes")
-
-	return nil
+	AssetID       string `json:"assetId"`
+	LogicalPath   string `json:"logicalPath"`
+	AssetType     string `json:"assetType"` // "skill", "agent_definition", "tool_config"
+	ContentSHA256 string `json:"contentSha256"`
+	SizeBytes     int64  `json:"sizeBytes"`
 }
 
 // ResolveBundle resolves a bundle slug (and optional version) to a concrete version with manifest.
@@ -119,17 +79,6 @@ func (c *Client) resolveBundleAttempt(
 
 	if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusForbidden {
 		return nil, fmt.Errorf("resolve bundle (%s): status %d", path, resp.StatusCode)
-	}
-
-	if resp.StatusCode == http.StatusBadRequest {
-		bodyBytes, _ := io.ReadAll(resp.Body)
-
-		bodyStr := strings.ToLower(string(bodyBytes))
-		if strings.Contains(bodyStr, "version") {
-			return nil, fmt.Errorf("resolve bundle (%s): version is required by server", path)
-		}
-
-		return nil, unexpectedStatus("resolve bundle", resp.StatusCode, strings.NewReader(string(bodyBytes)))
 	}
 
 	if resp.StatusCode != http.StatusOK {
@@ -195,52 +144,5 @@ func extractAssetContent(data []byte) (string, bool) {
 		return content, true
 	}
 
-	if content, ok := payload["content_text"].(string); ok {
-		return content, true
-	}
-
 	return "", false
-}
-
-func stringOr(raw map[string]json.RawMessage, keys ...string) string {
-	for _, key := range keys {
-		valueRaw, ok := raw[key]
-		if !ok {
-			continue
-		}
-
-		var value string
-		if err := json.Unmarshal(valueRaw, &value); err == nil {
-			return value
-		}
-	}
-
-	return ""
-}
-
-func int64Or(raw map[string]json.RawMessage, keys ...string) int64 {
-	for _, key := range keys {
-		valueRaw, ok := raw[key]
-		if !ok {
-			continue
-		}
-
-		var value int64
-		if err := json.Unmarshal(valueRaw, &value); err == nil {
-			return value
-		}
-	}
-
-	return 0
-}
-
-func firstRaw(raw map[string]json.RawMessage, keys ...string) (json.RawMessage, bool) {
-	for _, key := range keys {
-		valueRaw, ok := raw[key]
-		if ok {
-			return valueRaw, true
-		}
-	}
-
-	return nil, false
 }

@@ -23,16 +23,30 @@ import (
 )
 
 // PullOCI pulls a bundle from an OCI registry and extracts its layers.
-func PullOCI(ctx context.Context, ociRef, ociDigest, destDir string) (*client.BundleManifest, error) {
+func PullOCI(
+	ctx context.Context,
+	ociRef,
+	ociDigest,
+	destDir,
+	registryUsername,
+	registryPassword string,
+) (*client.BundleManifest, error) {
 	ref, err := name.ParseReference(ociRef)
 	if err != nil {
 		return nil, fmt.Errorf("parse OCI reference %q: %w", ociRef, err)
 	}
 
-	img, err := remote.Image(ref,
+	imageOptions := []remote.Option{
 		remote.WithContext(ctx),
-		remote.WithAuthFromKeychain(authn.DefaultKeychain),
-	)
+	}
+
+	if basicAuth, ok := ociBasicAuth(registryUsername, registryPassword); ok {
+		imageOptions = append(imageOptions, remote.WithAuth(basicAuth))
+	} else {
+		imageOptions = append(imageOptions, remote.WithAuthFromKeychain(authn.DefaultKeychain))
+	}
+
+	img, err := remote.Image(ref, imageOptions...)
 	if err != nil {
 		return nil, fmt.Errorf("pull OCI image %q: %w", ociRef, err)
 	}
@@ -85,6 +99,17 @@ func PullOCI(ctx context.Context, ociRef, ociDigest, destDir string) (*client.Bu
 	}
 
 	return manifest, nil
+}
+
+func ociBasicAuth(username, password string) (*authn.Basic, bool) {
+	if username == "" || password == "" {
+		return nil, false
+	}
+
+	return &authn.Basic{
+		Username: username,
+		Password: password,
+	}, true
 }
 
 func collectLayerFiles(layer v1.Layer, index int, bySHA map[string][]byte) (err error) {

@@ -1,6 +1,6 @@
 #!/bin/sh
 # Install script for Mush CLI
-# Usage: curl -sSL https://raw.githubusercontent.com/musher-dev/mush/main/install.sh | sh
+# Usage: curl -fsSL https://get.musher.dev | sh
 #
 # Options:
 #   --version VERSION   Install a specific version (default: latest)
@@ -74,16 +74,16 @@ Options:
 
 Examples:
   # Install latest version
-  curl -sSL https://raw.githubusercontent.com/musher-dev/mush/main/install.sh | sh
+  curl -fsSL https://get.musher.dev | sh
 
   # Install specific version
-  curl -sSL https://raw.githubusercontent.com/musher-dev/mush/main/install.sh | sh -s -- --version 0.2.0
+  curl -fsSL https://get.musher.dev | sh -s -- --version 2.0.0
 
   # Install to custom location
-  curl -sSL https://raw.githubusercontent.com/musher-dev/mush/main/install.sh | sh -s -- --prefix /usr/local
+  curl -fsSL https://get.musher.dev | sh -s -- --prefix /usr/local
 
   # Install latest and also install tmux if missing
-  curl -sSL https://raw.githubusercontent.com/musher-dev/mush/main/install.sh | sh -s -- --install-tmux
+  curl -fsSL https://get.musher.dev | sh -s -- --install-tmux
 EOF
 }
 

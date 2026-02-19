@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+tmp_input="$(mktemp)"
+trap 'rm -f "$tmp_input"' EXIT
+cat >"$tmp_input"
+
+PRE_PUSH_REMOTE_NAME="${1:-}" \
+  PRE_PUSH_REMOTE_URL="${2:-}" \
+  PRE_PUSH_STDIN_FILE="$tmp_input" \
+  task hooks:pre-push

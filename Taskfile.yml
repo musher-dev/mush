@@ -23,13 +23,15 @@ tasks:
       - task: setup:tools
 
   setup:tools:
-    desc: Install required Go tools
+    desc: Install required tooling
     cmds:
-      # Note: With Go 1.26+, these can be replaced with `tool` directive in go.mod
-      - go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
-      - go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.10.1
-      - go install mvdan.cc/sh/v3/cmd/shfmt@v3.12.0
-      - go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.8
+      - go install golang.org/x/vuln/cmd/govulncheck
+      - go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint
+      - go install mvdan.cc/sh/v3/cmd/shfmt
+      - go install github.com/rhysd/actionlint/cmd/actionlint
+      - go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen
+      - 'command -v shellcheck >/dev/null 2>&1 || echo "Note: shellcheck is not installed. Install it via your OS package manager."'
+      - 'command -v vhs >/dev/null 2>&1 || echo "Note: vhs is optional and only required for demo GIF generation."'
 
   # ===========================================================================
   # Development
@@ -60,16 +62,11 @@ tasks:
 
   generate:
     desc: Generate API client from OpenAPI spec
+    preconditions:
+      - sh: command -v oapi-codegen >/dev/null 2>&1
+        msg: "oapi-codegen is required. Run 'task setup:tools' first."
     cmds:
-      - |
-        if [ -f ../api/openapi.json ]; then
-          oapi-codegen -package client -generate types,client \
-            ../api/openapi.json > internal/client/generated.go
-          echo "Generated API client from OpenAPI spec"
-        else
-          echo "OpenAPI spec not found at ../api/openapi.json"
-          echo "Run 'task api:dev' first to generate the spec"
-        fi
+      - scripts/generate-client.sh
 
   # ===========================================================================
   # Demo / VHS
@@ -91,34 +88,55 @@ tasks:
   # ===========================================================================
 
   check:
-    desc: Run all checks (fmt + lint + vuln + shell + workflows + test)
+    desc: Run all checks (fmt + mod + lint + vuln + shell + workflows + test + install)
     cmds:
       - task: check:fmt
+      - task: check:mod
       - task: check:lint
       - task: check:vuln
       - task: check:shell
       - task: check:workflow
       - task: check:test
+      - task: check:install
+
+  check:ci:
+    desc: Run CI checks without duplicate test execution (uses coverage test pass)
+    cmds:
+      - task: check:fmt
+      - task: check:mod
+      - task: check:lint
+      - task: check:vuln
+      - task: check:shell
+      - task: check:workflow
+      - task: check:test-cover
 
   # Quick aliases for common operations
   test:
     desc: Run tests (alias for check:test)
     cmds:
-      - go test -v -race ./...
+      - task: check:test
 
   lint:
     desc: Run linter (alias for check:lint)
     cmds:
-      - golangci-lint run ./...
+      - task: check:lint
 
   check:shell:
     desc: Lint shell scripts with shellcheck and shfmt
+    preconditions:
+      - sh: command -v shellcheck >/dev/null 2>&1
+        msg: "shellcheck is required. Install it and retry."
+      - sh: command -v shfmt >/dev/null 2>&1
+        msg: "shfmt is required. Run 'task setup:tools' first."
     cmds:
-      - shellcheck install.sh .devcontainer/scripts/*.sh
-      - shfmt -d -i 2 -ci install.sh .devcontainer/scripts/*.sh
+      - shellcheck install.sh .devcontainer/scripts/*.sh scripts/*.sh .githooks/* .githooks/*.sh
+      - shfmt -d -i 2 -ci install.sh .devcontainer/scripts/*.sh scripts/*.sh .githooks/* .githooks/*.sh
 
   check:workflow:
     desc: Lint GitHub Actions workflows with actionlint
+    preconditions:
+      - sh: command -v actionlint >/dev/null 2>&1
+        msg: "actionlint is required. Run 'task setup:tools' first."
     cmds:
       - actionlint -color
 
@@ -129,18 +147,51 @@ tasks:
 
   check:fmt:
     desc: Check Go formatting and imports (gofumpt + goimports)
+    preconditions:
+      - sh: command -v golangci-lint >/dev/null 2>&1
+        msg: "golangci-lint is required. Run 'task setup:tools' first."
     cmds:
       - golangci-lint fmt --diff ./...
 
+  check:fmt:files:
+    desc: Check Go formatting and imports for specific files
+    preconditions:
+      - sh: command -v golangci-lint >/dev/null 2>&1
+        msg: "golangci-lint is required. Run 'task setup:tools' first."
+      - sh: test -n "{{.CLI_ARGS}}"
+        msg: "Provide file paths via: task check:fmt:files -- <files...>"
+    cmds:
+      - golangci-lint fmt --diff {{.CLI_ARGS}}
+
+  check:mod:
+    desc: Verify module files are tidy
+    cmds:
+      - go mod tidy -diff
+
   check:lint:
     desc: Run golangci-lint v2 (strict)
+    preconditions:
+      - sh: command -v golangci-lint >/dev/null 2>&1
+        msg: "golangci-lint is required. Run 'task setup:tools' first."
     cmds:
       - golangci-lint run ./...
 
+  check:lint:files:
+    desc: Run golangci-lint for specific files/packages
+    preconditions:
+      - sh: command -v golangci-lint >/dev/null 2>&1
+        msg: "golangci-lint is required. Run 'task setup:tools' first."
+      - sh: test -n "{{.CLI_ARGS}}"
+        msg: "Provide targets via: task check:lint:files -- <files...>"
+    cmds:
+      - golangci-lint run {{.CLI_ARGS}}
+
   check:vuln:
     desc: Run govulncheck
+    preconditions:
+      - sh: command -v govulncheck >/dev/null 2>&1
+        msg: "govulncheck is required. Run 'task setup:tools' first."
     cmds:
-      # Note: With Go 1.26+, use `go tool govulncheck` instead
       - govulncheck ./...
 
   check:test:
@@ -148,11 +199,42 @@ tasks:
     cmds:
       - go test -v -race ./...
 
+  check:test:packages:
+    desc: Run tests with race detection for specific packages
+    preconditions:
+      - sh: test -n "{{.CLI_ARGS}}"
+        msg: "Provide package paths via: task check:test:packages -- <packages...>"
+    cmds:
+      - go test -v -race {{.CLI_ARGS}}
+
   check:test-cover:
     desc: Run tests with coverage
     cmds:
       - go test -v -race -coverprofile=coverage.out ./...
       - go tool cover -html=coverage.out -o coverage.html
+
+  check:shell:files:
+    desc: Lint specific shell files with shellcheck and shfmt
+    preconditions:
+      - sh: command -v shellcheck >/dev/null 2>&1
+        msg: "shellcheck is required. Install it and retry."
+      - sh: command -v shfmt >/dev/null 2>&1
+        msg: "shfmt is required. Run 'task setup:tools' first."
+      - sh: test -n "{{.CLI_ARGS}}"
+        msg: "Provide shell files via: task check:shell:files -- <files...>"
+    cmds:
+      - shellcheck {{.CLI_ARGS}}
+      - shfmt -d -i 2 -ci {{.CLI_ARGS}}
+
+  check:workflow:files:
+    desc: Lint specific GitHub Actions workflow files with actionlint
+    preconditions:
+      - sh: command -v actionlint >/dev/null 2>&1
+        msg: "actionlint is required. Run 'task setup:tools' first."
+      - sh: test -n "{{.CLI_ARGS}}"
+        msg: "Provide workflow files via: task check:workflow:files -- <files...>"
+    cmds:
+      - actionlint -color {{.CLI_ARGS}}
 
   # ===========================================================================
   # Formatting
@@ -160,6 +242,9 @@ tasks:
 
   fmt:
     desc: Format Go code and imports
+    preconditions:
+      - sh: command -v golangci-lint >/dev/null 2>&1
+        msg: "golangci-lint is required. Run 'task setup:tools' first."
     cmds:
       - golangci-lint fmt ./...
       - go mod tidy
@@ -172,6 +257,64 @@ tasks:
     desc: Update golden files
     cmds:
       - UPDATE_GOLDEN=1 go test ./...
+
+  # ===========================================================================
+  # Git Hooks
+  # ===========================================================================
+
+  hooks:install:
+    desc: Install repository git hooks via core.hooksPath
+    cmds:
+      - test -d .githooks || (echo ".githooks directory not found" && exit 1)
+      - chmod +x .githooks/*
+      - git config core.hooksPath .githooks
+      - task: hooks:doctor
+
+  hooks:doctor:
+    desc: Verify git hook installation and required tools
+    cmds:
+      - |
+        test "$(git config --get core.hooksPath || true)" = ".githooks" || \
+          (echo "core.hooksPath is not set to .githooks (run: task hooks:install)" && exit 1)
+      - test -x .githooks/pre-commit || (echo "missing executable .githooks/pre-commit" && exit 1)
+      - test -x .githooks/commit-msg || (echo "missing executable .githooks/commit-msg" && exit 1)
+      - test -x .githooks/pre-push || (echo "missing executable .githooks/pre-push" && exit 1)
+      - test -x .githooks/run-pre-commit.sh || (echo "missing executable .githooks/run-pre-commit.sh" && exit 1)
+      - test -x .githooks/run-commit-msg.sh || (echo "missing executable .githooks/run-commit-msg.sh" && exit 1)
+      - test -x .githooks/run-pre-push.sh || (echo "missing executable .githooks/run-pre-push.sh" && exit 1)
+      - 'command -v task >/dev/null 2>&1 || (echo "task is required" && exit 1)'
+      - 'command -v git >/dev/null 2>&1 || (echo "git is required" && exit 1)'
+      - 'command -v golangci-lint >/dev/null 2>&1 || (echo "golangci-lint is required (run: task setup:tools)" && exit 1)'
+      - 'command -v govulncheck >/dev/null 2>&1 || (echo "govulncheck is required (run: task setup:tools)" && exit 1)'
+      - 'command -v shfmt >/dev/null 2>&1 || (echo "shfmt is required (run: task setup:tools)" && exit 1)'
+      - 'command -v actionlint >/dev/null 2>&1 || (echo "actionlint is required (run: task setup:tools)" && exit 1)'
+      - 'command -v shellcheck >/dev/null 2>&1 || (echo "shellcheck is required (install via OS package manager)" && exit 1)'
+
+  hooks:uninstall:
+    desc: Remove repository hook path override
+    cmds:
+      - git config --unset core.hooksPath || true
+
+  hooks:pre-commit:
+    desc: Run pre-commit hook checks
+    cmds:
+      - .githooks/run-pre-commit.sh
+
+  hooks:commit-msg:
+    desc: Run commit-msg hook checks
+    preconditions:
+      - sh: test -n "${COMMIT_MSG_FILE:-}"
+        msg: "COMMIT_MSG_FILE is required"
+    cmds:
+      - .githooks/run-commit-msg.sh "${COMMIT_MSG_FILE}"
+
+  hooks:pre-push:
+    desc: Run pre-push hook checks
+    preconditions:
+      - sh: test -n "${PRE_PUSH_STDIN_FILE:-}"
+        msg: "PRE_PUSH_STDIN_FILE is required"
+    cmds:
+      - .githooks/run-pre-push.sh "${PRE_PUSH_REMOTE_NAME:-}" "${PRE_PUSH_REMOTE_URL:-}" "${PRE_PUSH_STDIN_FILE}"
 
   # ===========================================================================
   # Utilities

@@ -13,7 +13,10 @@ Thanks for your interest in contributing to Mush! This guide will help you get s
 git clone https://github.com/musher-dev/mush.git
 cd mush
 task setup
+task hooks:install
 ```
+
+If you use the devcontainer, hooks are installed automatically during post-create.
 
 ## Development Workflow
 
@@ -21,7 +24,7 @@ task setup
 # Format code
 task fmt
 
-# Run all checks (format, lint, vuln scan, shell/workflow lint, tests)
+# Run all checks (format, mod tidy, lint, vuln scan, shell/workflow lint, tests, install tests)
 task check
 
 # Run tests only
@@ -70,6 +73,15 @@ task run -- link --dry-run
 - **Errors**: Return errors with context (`fmt.Errorf("context: %w", err)`), never panic
 
 See [CLAUDE.md](./CLAUDE.md) for detailed architecture and patterns.
+
+## Tooling and Task Policy
+
+- `Taskfile.yml` is the source of truth for local and CI quality checks.
+- CI invokes `task` targets instead of duplicating check commands inline.
+- Go-based dev tools are pinned in `go.mod` via the Go `tool` directive.
+- Git hooks are repo-managed via `.githooks` and executed through Task targets.
+- Run `task hooks:doctor` to validate hook setup.
+- Hooks are local pre-flight checks; CI remains the final authoritative gate.
 
 ## Testing
 

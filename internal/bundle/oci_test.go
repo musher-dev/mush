@@ -65,3 +65,28 @@ func TestMaterializeFromMetadataRejectsTraversal(t *testing.T) {
 		t.Fatal("materializeFromMetadata() expected error, got nil")
 	}
 }
+
+func TestOCIBasicAuth(t *testing.T) {
+	t.Parallel()
+
+	auth, ok := ociBasicAuth("user", "pass")
+	if !ok {
+		t.Fatal("ociBasicAuth() ok = false, want true")
+	}
+
+	if auth.Username != "user" || auth.Password != "pass" {
+		t.Fatalf("ociBasicAuth() = (%q,%q), want (user,pass)", auth.Username, auth.Password)
+	}
+}
+
+func TestOCIBasicAuthRequiresBothParts(t *testing.T) {
+	t.Parallel()
+
+	if _, ok := ociBasicAuth("user", ""); ok {
+		t.Fatal("ociBasicAuth() with partial creds ok = true, want false")
+	}
+
+	if _, ok := ociBasicAuth("", "pass"); ok {
+		t.Fatal("ociBasicAuth() with partial creds ok = true, want false")
+	}
+}

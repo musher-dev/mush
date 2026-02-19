@@ -68,7 +68,14 @@ func Pull(ctx context.Context, c *client.Client, workspace, slug, version string
 		spin = out.Spinner("Pulling from OCI registry")
 		spin.Start()
 
-		ociManifest, ociErr := PullOCI(ctx, resolved.OCIRef, resolved.OCIDigest, assetsDir)
+		ociManifest, ociErr := PullOCI(
+			ctx,
+			resolved.OCIRef,
+			resolved.OCIDigest,
+			assetsDir,
+			resolved.RegistryUsername,
+			resolved.RegistryPassword,
+		)
 		if ociErr == nil {
 			if len(resolved.Manifest.Layers) == 0 && ociManifest != nil {
 				resolved.Manifest = *ociManifest
@@ -88,7 +95,9 @@ func Pull(ctx context.Context, c *client.Client, workspace, slug, version string
 	}
 
 	if len(resolved.Manifest.Layers) == 0 {
-		return nil, "", fmt.Errorf("bundle manifest is empty; cannot download assets without OCI metadata")
+		return nil, "", fmt.Errorf(
+			"bundle resolution did not include OCI reference or asset manifest metadata; unable to download bundle contents",
+		)
 	}
 
 	// Per-asset API download.

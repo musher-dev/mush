@@ -86,10 +86,7 @@ if ! command -v codex >/dev/null 2>&1; then
 fi
 
 echo "==> Installing Go tools..."
-
-go install mvdan.cc/gofumpt@v0.9.2
-go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
-go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.9.0
+task setup:tools
 
 echo "==> Installing GoReleaser..."
 if ! command -v goreleaser >/dev/null 2>&1; then
@@ -137,5 +134,9 @@ fi
 
 echo "==> Downloading Go modules..."
 go mod download
+
+echo "==> Installing and validating git hooks..."
+task hooks:install
+task hooks:doctor
 
 echo "==> Post-create setup complete."
