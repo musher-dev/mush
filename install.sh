@@ -77,7 +77,7 @@ Examples:
   curl -fsSL https://get.musher.dev | sh
 
   # Install specific version
-  curl -fsSL https://get.musher.dev | sh -s -- --version 2.0.0
+  curl -fsSL https://get.musher.dev | sh -s -- --version <version>
 
   # Install to custom location
   curl -fsSL https://get.musher.dev | sh -s -- --prefix /usr/local
