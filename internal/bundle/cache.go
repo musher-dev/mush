@@ -73,8 +73,6 @@ func Pull(ctx context.Context, c *client.Client, workspace, slug, version string
 			resolved.OCIRef,
 			resolved.OCIDigest,
 			assetsDir,
-			resolved.RegistryUsername,
-			resolved.RegistryPassword,
 		)
 		if ociErr == nil {
 			if len(resolved.Manifest.Layers) == 0 && ociManifest != nil {

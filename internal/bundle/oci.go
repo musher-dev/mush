@@ -27,9 +27,7 @@ func PullOCI(
 	ctx context.Context,
 	ociRef,
 	ociDigest,
-	destDir,
-	registryUsername,
-	registryPassword string,
+	destDir string,
 ) (*client.BundleManifest, error) {
 	ref, err := name.ParseReference(ociRef)
 	if err != nil {
@@ -38,12 +36,7 @@ func PullOCI(
 
 	imageOptions := []remote.Option{
 		remote.WithContext(ctx),
-	}
-
-	if basicAuth, ok := ociBasicAuth(registryUsername, registryPassword); ok {
-		imageOptions = append(imageOptions, remote.WithAuth(basicAuth))
-	} else {
-		imageOptions = append(imageOptions, remote.WithAuthFromKeychain(authn.DefaultKeychain))
+		remote.WithAuthFromKeychain(authn.DefaultKeychain),
 	}
 
 	img, err := remote.Image(ref, imageOptions...)
@@ -99,17 +92,6 @@ func PullOCI(
 	}
 
 	return manifest, nil
-}
-
-func ociBasicAuth(username, password string) (*authn.Basic, bool) {
-	if username == "" || password == "" {
-		return nil, false
-	}
-
-	return &authn.Basic{
-		Username: username,
-		Password: password,
-	}, true
 }
 
 func collectLayerFiles(layer v1.Layer, index int, bySHA map[string][]byte) (err error) {
