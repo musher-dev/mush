@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.1.1](https://github.com/musher-dev/mush/compare/v2.1.0...v2.1.1) (2026-02-19)
+
+
+### Bug Fixes
+
+* **install:** replace hardcoded version with generic placeholder in help text ([#35](https://github.com/musher-dev/mush/issues/35)) ([1e19a7a](https://github.com/musher-dev/mush/commit/1e19a7a4549c6985d8f71e7e6ff6f12d58c7643b))
+
 ## [2.1.0](https://github.com/musher-dev/mush/compare/v2.0.0...v2.1.0) (2026-02-19)
 
 
