@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.3.0](https://github.com/musher-dev/mush/compare/v2.2.0...v2.3.0) (2026-02-19)
+
+
+### Features
+
+* **bundle:** adapt to workspace-scoped bundle API and runner asset endpoint ([#40](https://github.com/musher-dev/mush/issues/40)) ([5d69ae1](https://github.com/musher-dev/mush/commit/5d69ae118df2f270363fff44c05b915c8955fde1)), closes [#39](https://github.com/musher-dev/mush/issues/39)
+
 ## [2.2.0](https://github.com/musher-dev/mush/compare/v2.1.1...v2.2.0) (2026-02-19)
 
 
