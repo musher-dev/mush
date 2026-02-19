@@ -66,27 +66,6 @@ func TestResolveBundleUsesBundlesResolveEndpoint(t *testing.T) {
 	}
 }
 
-func TestResolveBundleParsesRegistryCredentials(t *testing.T) {
-	t.Parallel()
-
-	clientHTTP := &http.Client{
-		Transport: bundleRoundTripFunc(func(_ *http.Request) (*http.Response, error) {
-			return bundleJSONResponse(http.StatusOK, `{"bundleId":"b1","versionId":"v1","version":"1.2.3","state":"published","ociRef":"registry.example/ws/my-bundle:1.2.3","ociDigest":"sha256:abc","registryUsername":"ro-user","registryPassword":"ro-pass"}`), nil
-		}),
-	}
-
-	c := NewWithHTTPClient("https://example.test", "test-key", clientHTTP)
-
-	resolved, err := c.ResolveBundle(t.Context(), "my-bundle", "1.2.3")
-	if err != nil {
-		t.Fatalf("ResolveBundle() error = %v", err)
-	}
-
-	if resolved.RegistryUsername != "ro-user" || resolved.RegistryPassword != "ro-pass" {
-		t.Fatalf("ResolveBundle() registry credentials = (%q,%q), want (ro-user,ro-pass)", resolved.RegistryUsername, resolved.RegistryPassword)
-	}
-}
-
 func TestResolveBundleWithoutVersionUsesLatest(t *testing.T) {
 	t.Parallel()
 
@@ -146,8 +125,8 @@ func TestFetchBundleAssetParsesJSONContentText(t *testing.T) {
 
 	clientHTTP := &http.Client{
 		Transport: bundleRoundTripFunc(func(r *http.Request) (*http.Response, error) {
-			if r.URL.Path != "/api/v1/assets/asset-1" {
-				t.Fatalf("path = %q, want /api/v1/assets/asset-1", r.URL.Path)
+			if r.URL.Path != "/api/v1/runner/assets/asset-1" {
+				t.Fatalf("path = %q, want /api/v1/runner/assets/asset-1", r.URL.Path)
 			}
 
 			return bundleJSONResponse(http.StatusOK, `{"id":"asset-1","contentText":"hello world"}`), nil
@@ -171,8 +150,8 @@ func TestFetchBundleAssetSupportsRawAssetPayload(t *testing.T) {
 
 	clientHTTP := &http.Client{
 		Transport: bundleRoundTripFunc(func(r *http.Request) (*http.Response, error) {
-			if r.URL.Path != "/api/v1/assets/asset-2" {
-				t.Fatalf("path = %q, want /api/v1/assets/asset-2", r.URL.Path)
+			if r.URL.Path != "/api/v1/runner/assets/asset-2" {
+				t.Fatalf("path = %q, want /api/v1/runner/assets/asset-2", r.URL.Path)
 			}
 
 			return bundleRawResponse(http.StatusOK, "raw content"), nil

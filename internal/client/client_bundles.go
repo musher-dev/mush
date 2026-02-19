@@ -11,15 +11,13 @@ import (
 
 // BundleResolveResponse is the response from resolving a bundle version.
 type BundleResolveResponse struct {
-	BundleID         string         `json:"bundleId"`
-	VersionID        string         `json:"versionId"`
-	Version          string         `json:"version"`
-	State            string         `json:"state"`
-	OCIRef           string         `json:"ociRef"`
-	OCIDigest        string         `json:"ociDigest"`
-	RegistryUsername string         `json:"registryUsername"`
-	RegistryPassword string         `json:"registryPassword"`
-	Manifest         BundleManifest `json:"manifest"`
+	BundleID  string         `json:"bundleId"`
+	VersionID string         `json:"versionId"`
+	Version   string         `json:"version"`
+	State     string         `json:"state"`
+	OCIRef    string         `json:"ociRef"`
+	OCIDigest string         `json:"ociDigest"`
+	Manifest  BundleManifest `json:"manifest"`
 }
 
 // BundleManifest describes the layers (assets) in a bundle version.
@@ -95,7 +93,7 @@ func (c *Client) resolveBundleAttempt(
 
 // FetchBundleAsset downloads a single asset by ID and returns its raw content.
 func (c *Client) FetchBundleAsset(ctx context.Context, assetID string) ([]byte, error) {
-	path := fmt.Sprintf("/api/v1/assets/%s", neturl.PathEscape(assetID))
+	path := fmt.Sprintf("/api/v1/runner/assets/%s", neturl.PathEscape(assetID))
 	return c.fetchBundleAssetAttempt(ctx, path)
 }
 
