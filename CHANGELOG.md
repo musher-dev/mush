@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.1.0](https://github.com/musher-dev/mush/compare/v2.0.0...v2.1.0) (2026-02-19)
+
+
+### Features
+
+* overhaul README with vanity install URL, badges, and full command reference ([#33](https://github.com/musher-dev/mush/issues/33)) ([a8965a8](https://github.com/musher-dev/mush/commit/a8965a8aad98473322954e96ad684a6ea7d62a74))
+
 ## [2.0.0](https://github.com/musher-dev/mush/compare/v1.5.0...v2.0.0) (2026-02-19)
 
 
