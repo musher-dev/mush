@@ -194,7 +194,7 @@ func materializeFromMetadata(
 		destPathClean := filepath.Clean(destPath)
 		destDirClean := filepath.Clean(destDir)
 
-		if !strings.HasPrefix(destPathClean, destDirClean+string(filepath.Separator)) {
+		if destPathClean != destDirClean && !strings.HasPrefix(destPathClean, destDirClean+string(filepath.Separator)) {
 			return nil, fmt.Errorf("materialized path escapes destination: %s", asset.LogicalPath)
 		}
 

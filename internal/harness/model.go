@@ -9,6 +9,8 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"sort"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -101,6 +103,8 @@ type RootModel struct {
 	height int
 
 	// Executor registry: harness type → executor instance.
+	// Populated once during Run() setup and never modified after.
+	// Safe for concurrent read access without a mutex.
 	executors map[string]Executor
 
 	// setPTYSize is injectable for tests; defaults to pty.Setsize.
@@ -1196,21 +1200,7 @@ func summarizeMCPServers(names []string) string {
 		return "none"
 	}
 
-	return joinStrings(names, ", ")
-}
-
-func joinStrings(s []string, sep string) string {
-	result := ""
-
-	for i, v := range s {
-		if i > 0 {
-			result += sep
-		}
-
-		result += v
-	}
-
-	return result
+	return strings.Join(names, ", ")
 }
 
 func sameStringSlice(expected, compared []string) bool {
@@ -1224,8 +1214,8 @@ func sameStringSlice(expected, compared []string) bool {
 	bCopy := make([]string, len(compared))
 	copy(bCopy, compared)
 
-	sortStrings(aCopy)
-	sortStrings(bCopy)
+	sort.Strings(aCopy)
+	sort.Strings(bCopy)
 
 	for i := range aCopy {
 		if aCopy[i] != bCopy[i] {
@@ -1234,14 +1224,6 @@ func sameStringSlice(expected, compared []string) bool {
 	}
 
 	return true
-}
-
-func sortStrings(s []string) {
-	for i := 1; i < len(s); i++ {
-		for j := i; j > 0 && s[j] < s[j-1]; j-- {
-			s[j], s[j-1] = s[j-1], s[j]
-		}
-	}
 }
 
 // restore restores the terminal to its original state.

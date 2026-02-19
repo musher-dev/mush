@@ -3,7 +3,6 @@ package client
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -79,49 +78,15 @@ func (l *BundleLayer) UnmarshalJSON(data []byte) error {
 
 // ResolveBundle resolves a bundle slug (and optional version) to a concrete version with manifest.
 func (c *Client) ResolveBundle(ctx context.Context, slug, version string) (*BundleResolveResponse, error) {
-	type attempt struct {
-		path  string
-		query map[string]string
-	}
-
-	attempts := []attempt{
-		{
-			path: "/api/v1/bundles:resolve",
-			query: map[string]string{
-				"bundle_slug": slug,
-			},
-		},
-		{
-			path: "/api/v1/runner/bundles:resolve",
-			query: map[string]string{
-				"bundle_slug": slug,
-				"slug":        slug,
-			},
-		},
+	params := map[string]string{
+		"bundle_slug": slug,
 	}
 
 	if version != "" {
-		for i := range attempts {
-			attempts[i].query["version"] = version
-		}
+		params["version"] = version
 	}
 
-	var errs []error
-
-	for _, try := range attempts {
-		resolved, err := c.resolveBundleAttempt(ctx, try.path, try.query)
-		if err == nil {
-			return resolved, nil
-		}
-
-		errs = append(errs, err)
-	}
-
-	if version == "" {
-		return nil, fmt.Errorf("bundle resolve requires an explicit version (use <slug>:<version>)")
-	}
-
-	return nil, errors.Join(errs...)
+	return c.resolveBundleAttempt(ctx, "/api/v1/bundles:resolve", params)
 }
 
 func (c *Client) resolveBundleAttempt(
@@ -181,23 +146,8 @@ func (c *Client) resolveBundleAttempt(
 
 // FetchBundleAsset downloads a single asset by ID and returns its raw content.
 func (c *Client) FetchBundleAsset(ctx context.Context, assetID string) ([]byte, error) {
-	paths := []string{
-		fmt.Sprintf("/api/v1/runner/assets/%s", neturl.PathEscape(assetID)),
-		fmt.Sprintf("/api/v1/assets/%s", neturl.PathEscape(assetID)),
-	}
-
-	var errs []error
-
-	for _, path := range paths {
-		data, err := c.fetchBundleAssetAttempt(ctx, path)
-		if err == nil {
-			return data, nil
-		}
-
-		errs = append(errs, err)
-	}
-
-	return nil, errors.Join(errs...)
+	path := fmt.Sprintf("/api/v1/assets/%s", neturl.PathEscape(assetID))
+	return c.fetchBundleAssetAttempt(ctx, path)
 }
 
 func (c *Client) fetchBundleAssetAttempt(ctx context.Context, path string) ([]byte, error) {
