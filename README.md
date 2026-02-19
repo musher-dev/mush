@@ -12,7 +12,7 @@ Local worker runtime for the [Musher](https://musher.dev) platform.
 - Connects dev machines to the Musher job queue via long-polling
 - Executes jobs locally using Claude Code (PTY) or Bash harnesses
 - Interactive watch UI with live output, copy mode, and graceful interrupt handling
-- Manages versioned agent bundles (pull, install, run)
+- Manages versioned agent bundles (pull, install, load)
 - Built-in diagnostics, self-update, and shell completions
 
 ## Installation
@@ -97,7 +97,7 @@ mush history prune             Delete sessions older than a duration
 ### Bundles
 
 ```
-mush bundle run <slug>         Run a bundle in an ephemeral session
+mush bundle load <slug>        Load a bundle into an ephemeral session
 mush bundle install <slug>     Install bundle assets into the current project
 mush bundle list               List local bundle cache and installed bundles
 mush bundle info <slug>        Show local details for a bundle

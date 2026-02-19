@@ -10,8 +10,8 @@ import (
 
 // drawStatusBar renders the status bar at the top of the screen.
 func (m *RootModel) drawStatusBar() {
-	if m.bundleMode {
-		m.drawBundleStatusBar()
+	if m.bundleLoadMode {
+		m.drawBundleLoadStatusBar()
 
 		return
 	}
@@ -120,8 +120,8 @@ func (m *RootModel) drawLinkStatusBar() {
 	m.termWriteString(builder.String())
 }
 
-// drawBundleStatusBar renders the bundle mode status bar.
-func (m *RootModel) drawBundleStatusBar() {
+// drawBundleLoadStatusBar renders the load mode status bar.
+func (m *RootModel) drawBundleLoadStatusBar() {
 	m.statusMu.Lock()
 	status := m.status
 	lastError := m.lastError
@@ -135,7 +135,7 @@ func (m *RootModel) drawBundleStatusBar() {
 	builder.WriteString(escSaveCursor)
 	fmt.Fprintf(&builder, escMoveTo, 1, 1)
 
-	// Line 1: MUSH BUNDLE | Bundle info | Status | Mode
+	// Line 1: MUSH LOAD | Bundle info | Status | Mode
 	bundleLabel := m.bundleName
 	if m.bundleVer != "" {
 		bundleLabel += " v" + m.bundleVer
@@ -147,7 +147,7 @@ func (m *RootModel) drawBundleStatusBar() {
 	}
 
 	line1Parts := []string{
-		"\x1b[1mMUSH BUNDLE\x1b[0m",
+		"\x1b[1mMUSH LOAD\x1b[0m",
 		fmt.Sprintf("Bundle: \x1b[1m%s\x1b[0m", bundleLabel),
 		fmt.Sprintf("Harness: \x1b[1m%s\x1b[0m", harnessLabel),
 		fmt.Sprintf("Status: %s", renderedStatus),
