@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.5.0](https://github.com/musher-dev/mush/compare/v2.4.0...v2.5.0) (2026-02-20)
+
+
+### Features
+
+* **bundle:** support public bundle access without authentication ([#44](https://github.com/musher-dev/mush/issues/44)) ([31a7a00](https://github.com/musher-dev/mush/commit/31a7a00b27385394ca557b7ac6a039dd27151bc4))
+
 ## [2.4.0](https://github.com/musher-dev/mush/compare/v2.3.0...v2.4.0) (2026-02-20)
 
 
