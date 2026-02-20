@@ -115,6 +115,42 @@ func TestBundleInstallAnonymousFallbackShowsAuthHint(t *testing.T) {
 	}
 }
 
+func TestBundleInstallAnonymousNon403ErrorNoAuthHint(t *testing.T) {
+	// Mock tryAPIClient to return an anonymous client whose transport returns 500.
+	// Non-403 errors should NOT produce an auth hint.
+	hc := &http.Client{
+		Transport: linkRoundTripFunc(func(r *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusInternalServerError,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body:       io.NopCloser(strings.NewReader(`{"detail":"internal error"}`)),
+			}, nil
+		}),
+	}
+
+	anonClient := client.NewWithHTTPClient("https://api.test", "", hc)
+	withMockTryAPIClient(t, auth.SourceNone, anonClient, "public")
+
+	term := &terminal.Info{IsTTY: false}
+	out := output.NewWriter(io.Discard, io.Discard, term)
+	out.NoInput = true
+
+	cmd := newBundleInstallCmd()
+	cmd.SetArgs([]string{"some-bundle:1.0.0", "--harness", "claude"})
+	cmd.SetContext(out.WithContext(t.Context()))
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for server error")
+	}
+
+	// Should NOT be a CLIError with ExitAuth — it's a generic pull failure.
+	var cliErr *clierrors.CLIError
+	if clierrors.As(err, &cliErr) && cliErr.Code == clierrors.ExitAuth {
+		t.Fatalf("non-403 error should not produce ExitAuth, got code=%d hint=%q", cliErr.Code, cliErr.Hint)
+	}
+}
+
 func TestBundleCommandHasNoRunSubcommand(t *testing.T) {
 	cmd := newBundleCmd()
 
