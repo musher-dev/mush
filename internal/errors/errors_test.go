@@ -1,8 +1,11 @@
 package errors
 
 import (
+	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/musher-dev/mush/internal/testutil"
 )
 
 func TestExecutionTimedOut(t *testing.T) {
@@ -261,4 +264,56 @@ func TestWrap(t *testing.T) {
 	if err.Cause != cause { //nolint:errorlint // testing struct field identity
 		t.Errorf("Wrap() cause = %v, want %v", err.Cause, cause)
 	}
+}
+
+// formatCLIError produces a deterministic string representation of a CLIError for golden file comparison.
+func formatCLIError(err *CLIError) string {
+	return fmt.Sprintf("Message: %s\nHint: %s\nCode: %d\n", err.Message, err.Hint, err.Code)
+}
+
+func TestErrorMessages_Golden(t *testing.T) {
+	tests := []struct {
+		name string
+		err  *CLIError
+	}{
+		{"NotAuthenticated", NotAuthenticated()},
+		{"AuthFailed", AuthFailed(nil)},
+		{"CredentialsInvalid", CredentialsInvalid(nil)},
+		{"CannotPrompt", CannotPrompt("MUSHER_API_KEY")},
+		{"HabitatNotFound", HabitatNotFound("prod-habitat")},
+		{"NoHabitats", NoHabitats()},
+		{"QueueNotFound", QueueNotFound("queue-123")},
+		{"NoQueuesForHabitat", NoQueuesForHabitat()},
+		{"NoInstructionsForQueue", NoInstructionsForQueue("My Queue", "my-queue")},
+		{"HabitatRequired", HabitatRequired()},
+		{"QueueRequired", QueueRequired()},
+		{"APIKeyEmpty", APIKeyEmpty()},
+		{"ConfigFailed", ConfigFailed("store credentials", nil)},
+		{"JobNotFound", JobNotFound("job-abc-123")},
+		{"LinkRegistrationFailed", LinkRegistrationFailed(nil)},
+		{"ExecutionTimedOut_NoTools", ExecutionTimedOut("5m0s", nil)},
+		{"ExecutionTimedOut_WithTools", ExecutionTimedOut("5m0s", []string{"Read", "Bash", "Edit"})},
+		{"ClaudeExecutionFailed_RateLimit", ClaudeExecutionFailed(1, "rate limit exceeded")},
+		{"ClaudeExecutionFailed_Auth", ClaudeExecutionFailed(1, "unauthorized access")},
+		{"ClaudeExecutionFailed_Generic", ClaudeExecutionFailed(1, "something broke")},
+		{"ClaudeSignalKilled", ClaudeSignalKilled()},
+		{"ClaudeNotFound", ClaudeNotFound()},
+		{"CodexNotFound", CodexNotFound()},
+		{"InvalidHarnessType", InvalidHarnessType("unknown", []string{"claude", "bash"})},
+		{"HarnessNotAvailable", HarnessNotAvailable("claude")},
+		{"BundleNotFound", BundleNotFound("my-bundle")},
+		{"BundleVersionNotFound", BundleVersionNotFound("my-bundle", "1.0.0")},
+		{"BundleIntegrityFailed", BundleIntegrityFailed("/tmp/asset.tar.gz")},
+		{"PathTraversalBlocked", PathTraversalBlocked("../../etc/passwd")},
+		{"InstallConflict", InstallConflict(".claude/skills/run.md")},
+	}
+
+	var sb strings.Builder
+	for _, tt := range tests {
+		fmt.Fprintf(&sb, "--- %s ---\n", tt.name)
+		sb.WriteString(formatCLIError(tt.err))
+		sb.WriteString("\n")
+	}
+
+	testutil.AssertGolden(t, sb.String(), "error_messages.golden")
 }

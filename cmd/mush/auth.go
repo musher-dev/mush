@@ -41,6 +41,7 @@ Your API key will be stored securely in your system's keyring
 (macOS Keychain, Windows Credential Manager, or Linux Secret Service).
 
 You can also set the MUSHER_API_KEY environment variable.`,
+		Args: noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := output.FromContext(cmd.Context())
 			prompter := prompt.New(out)
@@ -115,6 +116,7 @@ func newAuthStatusCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "status",
 		Short: "Show authentication status",
+		Args:  noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := output.FromContext(cmd.Context())
 
@@ -160,6 +162,7 @@ func newAuthLogoutCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "logout",
 		Short: "Clear stored credentials",
+		Args:  noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := output.FromContext(cmd.Context())
 

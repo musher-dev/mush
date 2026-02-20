@@ -9,8 +9,14 @@ import (
 )
 
 // update is a flag to update golden files instead of comparing.
-// Usage: go test ./... -update.
+// Usage: go test ./path/to/pkg -args -update
+// Or:    UPDATE_GOLDEN=1 go test ./...
 var update = flag.Bool("update", false, "update golden files")
+
+// shouldUpdate returns true if golden files should be updated.
+func shouldUpdate() bool {
+	return *update || os.Getenv("UPDATE_GOLDEN") != ""
+}
 
 // AssertGolden compares got against a golden file.
 // If the -update flag is set, it writes got to the golden file instead.
@@ -20,7 +26,7 @@ func AssertGolden(t *testing.T, got, goldenFile string) {
 
 	goldenPath := filepath.Join("testdata", goldenFile)
 
-	if *update {
+	if shouldUpdate() {
 		// Ensure testdata directory exists
 		if err := os.MkdirAll(filepath.Dir(goldenPath), 0o755); err != nil { //nolint:gosec // G301: testdata dir
 			t.Fatalf("failed to create testdata directory: %v", err)
@@ -38,14 +44,14 @@ func AssertGolden(t *testing.T, got, goldenFile string) {
 	want, err := os.ReadFile(goldenPath) //nolint:gosec // G304: path from test fixture
 	if err != nil {
 		if os.IsNotExist(err) {
-			t.Fatalf("golden file %s does not exist; run with -update to create it", goldenPath)
+			t.Fatalf("golden file %s does not exist; run with UPDATE_GOLDEN=1 to create it", goldenPath)
 		}
 
 		t.Fatalf("failed to read golden file %s: %v", goldenPath, err)
 	}
 
 	if got != string(want) {
-		t.Errorf("output mismatch for %s\n\ngot:\n%s\n\nwant:\n%s\n\nrun with -update to refresh golden files", goldenPath, got, string(want))
+		t.Errorf("output mismatch for %s\n\ngot:\n%s\n\nwant:\n%s\n\nrun with UPDATE_GOLDEN=1 to refresh golden files", goldenPath, got, string(want))
 	}
 }
 

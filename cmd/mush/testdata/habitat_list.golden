@@ -1,0 +1,8 @@
+Fetching habitats... done
+✓ Found habitats
+
+SLUG                 NAME                           STATUS     TYPE      
+----                 ----                           ------     ----      
+prod-habitat       Production                     active     cloud     
+staging            Staging Environment            active     cloud     
+dev-local          Local Development              inactive   local     

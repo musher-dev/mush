@@ -1,0 +1,150 @@
+--- NotAuthenticated ---
+Message: Not authenticated
+Hint: Run 'mush auth login' to authenticate
+Code: 2
+
+--- AuthFailed ---
+Message: Authentication failed
+Hint: Check your API key or run 'mush auth login'
+Code: 2
+
+--- CredentialsInvalid ---
+Message: Credentials invalid
+Hint: Run 'mush auth login' to re-authenticate
+Code: 2
+
+--- CannotPrompt ---
+Message: Cannot prompt in non-interactive mode
+Hint: Set MUSHER_API_KEY environment variable instead
+Code: 64
+
+--- HabitatNotFound ---
+Message: Habitat not found: prod-habitat
+Hint: Run 'mush habitat list' to see available habitats
+Code: 4
+
+--- NoHabitats ---
+Message: No habitats found in workspace
+Hint: Create a habitat in the console first
+Code: 4
+
+--- QueueNotFound ---
+Message: Queue not found: queue-123
+Hint: Run 'mush link' and select a queue, or pass a valid --queue-id
+Code: 4
+
+--- NoQueuesForHabitat ---
+Message: No active queues found for the selected habitat
+Hint: Create or bind an active queue to this habitat, then retry
+Code: 4
+
+--- NoInstructionsForQueue ---
+Message: No active instructions found for queue: My Queue (my-queue)
+Hint: Create and activate an instruction for this queue in the console, then rerun 'mush link'
+Code: 4
+
+--- HabitatRequired ---
+Message: Habitat required
+Hint: Run 'mush habitat list' to see available habitats
+Code: 4
+
+--- QueueRequired ---
+Message: Queue required
+Hint: Use --queue-id to specify a queue, or run without --no-input to select interactively
+Code: 64
+
+--- APIKeyEmpty ---
+Message: API key cannot be empty
+Hint: Enter a valid API key or set MUSHER_API_KEY environment variable
+Code: 2
+
+--- ConfigFailed ---
+Message: Failed to store credentials
+Hint: Check file permissions for ~/.config/mush/ or run 'mush doctor'
+Code: 4
+
+--- JobNotFound ---
+Message: Job not found: job-abc-123
+Hint: The job may have been completed, canceled, or the ID is incorrect
+Code: 1
+
+--- LinkRegistrationFailed ---
+Message: Failed to register link
+Hint: Check your network connection and API credentials
+Code: 3
+
+--- ExecutionTimedOut_NoTools ---
+Message: Execution timed out after 5m0s
+Hint: Increase timeout or simplify the job
+Code: 5
+
+--- ExecutionTimedOut_WithTools ---
+Message: Execution timed out after 5m0s
+Hint: Increase timeout or simplify the job. Last activity: Edit
+Code: 5
+
+--- ClaudeExecutionFailed_RateLimit ---
+Message: Claude API rate limit exceeded
+Hint: Wait a moment and try again, or check your API usage limits
+Code: 6
+
+--- ClaudeExecutionFailed_Auth ---
+Message: Claude API authentication failed
+Hint: Check your ANTHROPIC_API_KEY environment variable
+Code: 6
+
+--- ClaudeExecutionFailed_Generic ---
+Message: Claude execution failed
+Hint: something broke
+Code: 6
+
+--- ClaudeSignalKilled ---
+Message: Claude execution was interrupted
+Hint: The process was terminated by a signal
+Code: 6
+
+--- ClaudeNotFound ---
+Message: Claude CLI not found
+Hint: Install Claude Code CLI: https://docs.anthropic.com/en/docs/claude-code
+Code: 4
+
+--- CodexNotFound ---
+Message: Codex CLI not found
+Hint: Install OpenAI Codex CLI: https://github.com/openai/codex
+Code: 4
+
+--- InvalidHarnessType ---
+Message: Invalid harness type: unknown
+Hint: Supported harness types: claude, bash
+Code: 64
+
+--- HarnessNotAvailable ---
+Message: claude CLI not found
+Hint: Install the claude CLI to use this harness type
+Code: 4
+
+--- BundleNotFound ---
+Message: Bundle not found: my-bundle
+Hint: Check the bundle slug or verify it exists in your workspace
+Code: 1
+
+--- BundleVersionNotFound ---
+Message: Bundle version not found: my-bundle:1.0.0
+Hint: Check the version number or omit it to use the latest version
+Code: 1
+
+--- BundleIntegrityFailed ---
+Message: Bundle integrity check failed for: /tmp/asset.tar.gz
+Hint: The downloaded asset does not match its expected checksum. Try again or contact support
+Code: 1
+
+--- PathTraversalBlocked ---
+Message: Path traversal blocked: ../../etc/passwd
+Hint: Bundle assets must not reference paths outside the target directory
+Code: 1
+
+--- InstallConflict ---
+Message: Install conflict: file already exists at .claude/skills/run.md
+Hint: Use --force to overwrite existing files
+Code: 1
+

@@ -34,6 +34,7 @@ func newHistoryListCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "list",
 		Short: "List stored transcript sessions",
+		Args:  noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := output.FromContext(cmd.Context())
 			dir := config.Load().HistoryDir()
@@ -185,6 +186,7 @@ func newHistoryPruneCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "prune",
 		Short: "Delete transcript sessions older than a duration",
+		Args:  noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := output.FromContext(cmd.Context())
 			cfg := config.Load()

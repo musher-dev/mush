@@ -15,6 +15,7 @@ func newLinkCmd() *cobra.Command {
 		Long: `Link starts Mush in watch mode (interactive terminal UI).
 
 Watch mode is currently supported only on Unix-like systems.`,
+		Args: noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return &clierrors.CLIError{
 				Message: "Watch mode is not supported on this operating system",

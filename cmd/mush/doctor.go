@@ -17,6 +17,7 @@ Checks performed:
   - API connectivity and response time
   - Authentication status and credential source
   - Claude CLI availability and version`,
+		Args: noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := output.FromContext(cmd.Context())
 
@@ -29,32 +30,7 @@ Checks performed:
 			results := runner.Run(cmd.Context())
 
 			// Display results
-			maxNameLen := 0
-			for _, r := range results {
-				if len(r.Name) > maxNameLen {
-					maxNameLen = len(r.Name)
-				}
-			}
-
-			for _, r := range results {
-				symbol := r.Status.Symbol()
-				padding := maxNameLen - len(r.Name) + 4
-
-				switch r.Status {
-				case doctor.StatusPass:
-					out.Success("%-*s%s", len(r.Name)+padding, r.Name, r.Message)
-				case doctor.StatusWarn:
-					out.Warning("%-*s%s", len(r.Name)+padding, r.Name, r.Message)
-				case doctor.StatusFail:
-					out.Failure("%-*s%s", len(r.Name)+padding, r.Name, r.Message)
-				default:
-					out.Print("%s %-*s%s\n", symbol, len(r.Name)+padding, r.Name, r.Message)
-				}
-
-				if r.Detail != "" {
-					out.Muted("    %s", r.Detail)
-				}
-			}
+			doctor.RenderResults(results, out.Print, out.Success, out.Warning, out.Failure, out.Muted)
 
 			// Summary
 			passed, failed, warnings := doctor.Summary(results)

@@ -13,6 +13,7 @@ func newBundleCmd() *cobra.Command {
 		Use:   "bundle",
 		Short: "Manage agent bundles",
 		Long:  `Bundle commands are currently supported only on Unix-like systems.`,
+		Args:  noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return &clierrors.CLIError{
 				Message: "Bundle commands are not supported on this operating system",

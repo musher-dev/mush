@@ -1,0 +1,11 @@
+Mush Doctor
+============
+
+✓ API Connectivity    https://api.musher.dev (42ms)
+✗ Authentication      Not authenticated
+    Run 'mush auth login' to authenticate
+⚠ Claude CLI          Found but version unknown
+⚠ CLI Version         v2.2.0 (v2.3.0 available)
+    Run 'mush update' to update
+
+1 passed, 1 failed, 2 warning(s)

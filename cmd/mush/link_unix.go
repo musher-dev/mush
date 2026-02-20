@@ -58,6 +58,7 @@ Examples:
   mush link --harness bash     # Watch mode, Bash only
   mush link --habitat local    # Link to specific habitat by slug
   mush link --dry-run          # Verify connection without claiming jobs`,
+		Args: noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := output.FromContext(cmd.Context())
 

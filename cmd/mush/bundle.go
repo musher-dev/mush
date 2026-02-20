@@ -290,6 +290,7 @@ func newBundleListCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "list",
 		Short: "List local bundle cache and installed bundles",
+		Args:  noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := output.FromContext(cmd.Context())
 

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"sort"
+
 	"github.com/spf13/cobra"
 
 	"github.com/musher-dev/mush/internal/config"
@@ -26,6 +28,7 @@ func newConfigListCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "list",
 		Short: "List all configuration settings",
+		Args:  noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := output.FromContext(cmd.Context())
 			cfg := config.Load()
@@ -49,7 +52,15 @@ func newConfigListCmd() *cobra.Command {
 				return nil
 			}
 
-			for key, value := range settings {
+			keys := make([]string, 0, len(settings))
+			for key := range settings {
+				keys = append(keys, key)
+			}
+
+			sort.Strings(keys)
+
+			for _, key := range keys {
+				value := settings[key]
 				out.Print("%s = %v\n", key, value)
 			}
 

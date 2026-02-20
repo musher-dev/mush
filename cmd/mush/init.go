@@ -22,6 +22,7 @@ The wizard will:
   4. Show next steps
 
 If credentials already exist, use --force to overwrite them.`,
+		Args: noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := output.FromContext(cmd.Context())
 

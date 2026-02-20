@@ -57,6 +57,10 @@ type SetupOptions struct {
 	// BundleDir is the temp directory with harness-native bundle assets.
 	BundleDir string
 
+	// BundleLoadMode indicates this is an interactive bundle session.
+	// When true, --dangerously-skip-permissions is omitted from Claude.
+	BundleLoadMode bool
+
 	// OnReady is called when the executor is ready to accept jobs.
 	OnReady func()
 

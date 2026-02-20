@@ -29,11 +29,12 @@ func newHabitatListCmd() *cobra.Command {
 		Use:   "list",
 		Short: "List available habitats",
 		Long:  `List all habitats available in your workspace.`,
+		Args:  noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := output.FromContext(cmd.Context())
 
 			// Get credentials and create client
-			_, apiClient, err := newAPIClient()
+			_, apiClient, err := apiClientFactory()
 			if err != nil {
 				return err
 			}

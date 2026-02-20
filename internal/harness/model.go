@@ -336,12 +336,13 @@ func (m *RootModel) Run() error {
 		executor := info.New()
 
 		setupOpts := SetupOptions{
-			TermWriter:   termWriter,
-			TermWidth:    m.width,
-			TermHeight:   ptyRows,
-			SignalDir:    m.signalDir,
-			RunnerConfig: m.runnerConfig,
-			BundleDir:    m.bundleDir,
+			TermWriter:     termWriter,
+			TermWidth:      m.width,
+			TermHeight:     ptyRows,
+			SignalDir:      m.signalDir,
+			RunnerConfig:   m.runnerConfig,
+			BundleDir:      m.bundleDir,
+			BundleLoadMode: m.bundleLoadMode,
 			OnOutput: func(p []byte) {
 				m.appendTranscript("pty", p)
 			},
