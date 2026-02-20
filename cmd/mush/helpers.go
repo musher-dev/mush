@@ -28,3 +28,20 @@ func newAPIClient() (auth.CredentialSource, *client.Client, error) {
 
 	return source, c, nil
 }
+
+var tryAPIClient = newTryAPIClient
+
+// newTryAPIClient returns an API client, falling back to an anonymous (no-auth)
+// client when no credentials are found. The returned workspaceKeyOverride is
+// "public" for anonymous clients, or empty when authenticated.
+func newTryAPIClient() (auth.CredentialSource, *client.Client, string, error) {
+	source, apiKey := auth.GetCredentials()
+	cfg := config.Load()
+	c := client.New(cfg.APIURL(), apiKey)
+
+	if apiKey == "" {
+		return auth.SourceNone, c, "public", nil
+	}
+
+	return source, c, "", nil
+}

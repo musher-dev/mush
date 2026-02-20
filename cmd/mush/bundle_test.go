@@ -4,9 +4,12 @@ package main
 
 import (
 	"io"
+	"net/http"
 	"strings"
 	"testing"
 
+	"github.com/musher-dev/mush/internal/auth"
+	"github.com/musher-dev/mush/internal/client"
 	clierrors "github.com/musher-dev/mush/internal/errors"
 	"github.com/musher-dev/mush/internal/output"
 	"github.com/musher-dev/mush/internal/terminal"
@@ -56,6 +59,95 @@ func TestBundleLoadRequiresTTY(t *testing.T) {
 
 	if !strings.Contains(cliErr.Message, "TTY") {
 		t.Fatalf("error message = %q, want to contain TTY", cliErr.Message)
+	}
+}
+
+func withMockTryAPIClient(t *testing.T, source auth.CredentialSource, c *client.Client, wsOverride string) {
+	t.Helper()
+
+	prev := tryAPIClient
+	tryAPIClient = func() (auth.CredentialSource, *client.Client, string, error) {
+		return source, c, wsOverride, nil
+	}
+
+	t.Cleanup(func() { tryAPIClient = prev })
+}
+
+func TestBundleInstallAnonymousFallbackShowsAuthHint(t *testing.T) {
+	// Mock tryAPIClient to return an anonymous client whose transport returns 403.
+	hc := &http.Client{
+		Transport: linkRoundTripFunc(func(r *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusForbidden,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body:       io.NopCloser(strings.NewReader(`{"detail":"forbidden"}`)),
+			}, nil
+		}),
+	}
+
+	anonClient := client.NewWithHTTPClient("https://api.test", "", hc)
+	withMockTryAPIClient(t, auth.SourceNone, anonClient, "public")
+
+	term := &terminal.Info{IsTTY: false}
+	out := output.NewWriter(io.Discard, io.Discard, term)
+	out.NoInput = true
+
+	cmd := newBundleInstallCmd()
+	cmd.SetArgs([]string{"private-bundle:1.0.0", "--harness", "claude"})
+	cmd.SetContext(out.WithContext(t.Context()))
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for private bundle with anonymous client")
+	}
+
+	var cliErr *clierrors.CLIError
+	if !clierrors.As(err, &cliErr) {
+		t.Fatalf("expected CLIError, got %T: %v", err, err)
+	}
+
+	if cliErr.Code != clierrors.ExitAuth {
+		t.Fatalf("error code = %d, want %d (ExitAuth)", cliErr.Code, clierrors.ExitAuth)
+	}
+
+	if !strings.Contains(cliErr.Hint, "mush auth login") {
+		t.Fatalf("hint = %q, want to contain 'mush auth login'", cliErr.Hint)
+	}
+}
+
+func TestBundleInstallAnonymousNon403ErrorNoAuthHint(t *testing.T) {
+	// Mock tryAPIClient to return an anonymous client whose transport returns 500.
+	// Non-403 errors should NOT produce an auth hint.
+	hc := &http.Client{
+		Transport: linkRoundTripFunc(func(r *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusInternalServerError,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body:       io.NopCloser(strings.NewReader(`{"detail":"internal error"}`)),
+			}, nil
+		}),
+	}
+
+	anonClient := client.NewWithHTTPClient("https://api.test", "", hc)
+	withMockTryAPIClient(t, auth.SourceNone, anonClient, "public")
+
+	term := &terminal.Info{IsTTY: false}
+	out := output.NewWriter(io.Discard, io.Discard, term)
+	out.NoInput = true
+
+	cmd := newBundleInstallCmd()
+	cmd.SetArgs([]string{"some-bundle:1.0.0", "--harness", "claude"})
+	cmd.SetContext(out.WithContext(t.Context()))
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for server error")
+	}
+
+	// Should NOT be a CLIError with ExitAuth — it's a generic pull failure.
+	var cliErr *clierrors.CLIError
+	if clierrors.As(err, &cliErr) && cliErr.Code == clierrors.ExitAuth {
+		t.Fatalf("non-403 error should not produce ExitAuth, got code=%d hint=%q", cliErr.Code, cliErr.Hint)
 	}
 }
 

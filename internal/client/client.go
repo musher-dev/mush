@@ -423,8 +423,16 @@ func (c *Client) GetRunnerConfig(ctx context.Context) (*RunnerConfigResponse, er
 	return &cfg, nil
 }
 
+// IsAuthenticated returns true if the client has an API key configured.
+func (c *Client) IsAuthenticated() bool {
+	return c.apiKey != ""
+}
+
 func (c *Client) setRequestHeaders(req *http.Request) {
-	req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	if c.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	}
+
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "mush/"+buildinfo.Version)
 }
