@@ -95,22 +95,38 @@ Examples:
 				}
 			}
 
-			// Authenticate.
-			source, c, err := apiClientFactory()
+			// Authenticate (anonymous fallback for public bundles).
+			source, c, wsKeyOverride, err := tryAPIClient()
 			if err != nil {
 				return err
 			}
 
-			out.Print("Using credentials from: %s\n", source)
+			var workspaceKey string
+			if wsKeyOverride != "" {
+				workspaceKey = wsKeyOverride
 
-			workspaceKey, err := resolveWorkspaceKey(cmd.Context(), c, out)
-			if err != nil {
-				return err
+				out.Info("No credentials found; attempting public bundle access")
+			} else {
+				out.Print("Using credentials from: %s\n", source)
+
+				workspaceKey, err = resolveWorkspaceKey(cmd.Context(), c, out)
+				if err != nil {
+					return err
+				}
 			}
 
 			// Pull the bundle.
 			resolved, cachePath, err := bundle.Pull(cmd.Context(), c, workspaceKey, ref.Slug, ref.Version, out)
 			if err != nil {
+				if !c.IsAuthenticated() {
+					return &clierrors.CLIError{
+						Message: fmt.Sprintf("Failed to pull bundle: %s", ref.Slug),
+						Hint:    "This bundle may be private. Run 'mush auth login' to authenticate",
+						Cause:   err,
+						Code:    clierrors.ExitAuth,
+					}
+				}
+
 				return fmt.Errorf("pull bundle: %w", err)
 			}
 
@@ -211,22 +227,38 @@ Examples:
 				return err
 			}
 
-			// Authenticate.
-			source, c, err := apiClientFactory()
+			// Authenticate (anonymous fallback for public bundles).
+			source, c, wsKeyOverride, err := tryAPIClient()
 			if err != nil {
 				return err
 			}
 
-			out.Print("Using credentials from: %s\n", source)
+			var workspaceKey string
+			if wsKeyOverride != "" {
+				workspaceKey = wsKeyOverride
 
-			workspaceKey, err := resolveWorkspaceKey(cmd.Context(), c, out)
-			if err != nil {
-				return err
+				out.Info("No credentials found; attempting public bundle access")
+			} else {
+				out.Print("Using credentials from: %s\n", source)
+
+				workspaceKey, err = resolveWorkspaceKey(cmd.Context(), c, out)
+				if err != nil {
+					return err
+				}
 			}
 
 			// Pull the bundle.
 			resolved, cachePath, err := bundle.Pull(cmd.Context(), c, workspaceKey, ref.Slug, ref.Version, out)
 			if err != nil {
+				if !c.IsAuthenticated() {
+					return &clierrors.CLIError{
+						Message: fmt.Sprintf("Failed to pull bundle: %s", ref.Slug),
+						Hint:    "This bundle may be private. Run 'mush auth login' to authenticate",
+						Cause:   err,
+						Code:    clierrors.ExitAuth,
+					}
+				}
+
 				return fmt.Errorf("pull bundle: %w", err)
 			}
 

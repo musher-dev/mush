@@ -29,6 +29,64 @@ func bundleRawResponse(status int, body string) *http.Response {
 	}
 }
 
+func TestAnonymousClientSkipsAuthHeader(t *testing.T) {
+	t.Parallel()
+
+	clientHTTP := &http.Client{
+		Transport: bundleRoundTripFunc(func(r *http.Request) (*http.Response, error) {
+			if got := r.Header.Get("Authorization"); got != "" {
+				t.Fatalf("Authorization header = %q, want empty for anonymous client", got)
+			}
+
+			return bundleJSONResponse(http.StatusOK, `{"bundleId":"b1","versionId":"v1","version":"1.0.0","state":"published","ociRef":"r/b:1","ociDigest":"sha256:abc"}`), nil
+		}),
+	}
+
+	c := NewWithHTTPClient("https://example.test", "", clientHTTP)
+
+	if c.IsAuthenticated() {
+		t.Fatal("IsAuthenticated() = true, want false for anonymous client")
+	}
+
+	resolved, err := c.ResolveBundle(t.Context(), "public-bundle", "1.0.0")
+	if err != nil {
+		t.Fatalf("ResolveBundle() error = %v", err)
+	}
+
+	if resolved.BundleID != "b1" {
+		t.Fatalf("ResolveBundle() BundleID = %q, want b1", resolved.BundleID)
+	}
+}
+
+func TestAuthenticatedClientSendsAuthHeader(t *testing.T) {
+	t.Parallel()
+
+	clientHTTP := &http.Client{
+		Transport: bundleRoundTripFunc(func(r *http.Request) (*http.Response, error) {
+			if got := r.Header.Get("Authorization"); got != "Bearer my-key" {
+				t.Fatalf("Authorization header = %q, want %q", got, "Bearer my-key")
+			}
+
+			return bundleJSONResponse(http.StatusOK, `{"bundleId":"b2","versionId":"v2","version":"2.0.0","state":"published","ociRef":"r/b:2","ociDigest":"sha256:def"}`), nil
+		}),
+	}
+
+	c := NewWithHTTPClient("https://example.test", "my-key", clientHTTP)
+
+	if !c.IsAuthenticated() {
+		t.Fatal("IsAuthenticated() = false, want true for authenticated client")
+	}
+
+	resolved, err := c.ResolveBundle(t.Context(), "private-bundle", "2.0.0")
+	if err != nil {
+		t.Fatalf("ResolveBundle() error = %v", err)
+	}
+
+	if resolved.BundleID != "b2" {
+		t.Fatalf("ResolveBundle() BundleID = %q, want b2", resolved.BundleID)
+	}
+}
+
 func TestResolveBundleUsesBundlesResolveEndpoint(t *testing.T) {
 	t.Parallel()
 
