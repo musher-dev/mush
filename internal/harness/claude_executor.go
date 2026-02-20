@@ -313,17 +313,9 @@ func (e *ClaudeExecutor) ApplyRefresh(ctx context.Context, cfg *client.RunnerCon
 // --- Internal methods ---
 
 func (e *ClaudeExecutor) startPTY(ctx context.Context) error {
-	args := []string{"--dangerously-skip-permissions"}
+	args := e.commandArgs()
 
-	if e.opts.BundleDir != "" {
-		args = append(args, "--add-dir", e.opts.BundleDir)
-	}
-
-	if e.mcpConfigPath != "" {
-		args = append(args, "--mcp-config", e.mcpConfigPath)
-	}
-
-	cmd := exec.CommandContext(ctx, "claude", args...)
+	cmd := exec.CommandContext(ctx, "claude", args...) //nolint:gosec // args are entirely controlled by our code
 
 	cmd.Env = append(os.Environ(),
 		"TERM=xterm-256color",
@@ -364,6 +356,23 @@ func (e *ClaudeExecutor) startPTY(ctx context.Context) error {
 	e.ptyReady <- ptmx
 
 	return nil
+}
+
+func (e *ClaudeExecutor) commandArgs() []string {
+	var args []string
+	if !e.opts.BundleLoadMode {
+		args = append(args, "--dangerously-skip-permissions")
+	}
+
+	if e.opts.BundleDir != "" {
+		args = append(args, "--add-dir", e.opts.BundleDir)
+	}
+
+	if e.mcpConfigPath != "" {
+		args = append(args, "--mcp-config", e.mcpConfigPath)
+	}
+
+	return args
 }
 
 func (e *ClaudeExecutor) closePTY() {
@@ -480,32 +489,35 @@ func (e *ClaudeExecutor) readPTYOutput(ptmx *os.File) {
 			e.opts.OnOutput(buf[:bytesRead])
 		}
 
-		// Detect bypass dialog and auto-accept.
-		e.captureMu.Lock()
-		if !e.bypassAccepted {
-			dialogBuf.Write(buf[:bytesRead])
+		// Detect bypass dialog and auto-accept (only in link mode where
+		// --dangerously-skip-permissions triggers a trust dialog).
+		if !e.opts.BundleLoadMode {
+			e.captureMu.Lock()
+			if !e.bypassAccepted {
+				dialogBuf.Write(buf[:bytesRead])
 
-			if bytes.Contains(dialogBuf.Bytes(), []byte("Esc to cancel")) {
-				e.bypassAccepted = true
-				e.captureMu.Unlock()
-				dialogBuf.Reset()
+				if bytes.Contains(dialogBuf.Bytes(), []byte("Esc to cancel")) {
+					e.bypassAccepted = true
+					e.captureMu.Unlock()
+					dialogBuf.Reset()
 
-				go func() {
-					time.Sleep(300 * time.Millisecond)
+					go func() {
+						time.Sleep(300 * time.Millisecond)
 
-					if active := e.activePTY(); active != nil {
-						_, _ = active.WriteString("\x1b[B")
+						if active := e.activePTY(); active != nil {
+							_, _ = active.WriteString("\x1b[B")
 
-						time.Sleep(100 * time.Millisecond)
+							time.Sleep(100 * time.Millisecond)
 
-						_, _ = active.WriteString("\r")
-					}
-				}()
+							_, _ = active.WriteString("\r")
+						}
+					}()
+				} else {
+					e.captureMu.Unlock()
+				}
 			} else {
 				e.captureMu.Unlock()
 			}
-		} else {
-			e.captureMu.Unlock()
 		}
 
 		// Capture output if we're processing a job.

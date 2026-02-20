@@ -1,0 +1,9 @@
+Mush Doctor
+============
+
+✓ API Connectivity    https://api.musher.dev (42ms)
+✓ Authentication      sa-test (via keyring)
+✓ Claude CLI          1.0.20 at /usr/local/bin/claude
+✓ CLI Version         v2.3.0 (latest)
+
+4 passed

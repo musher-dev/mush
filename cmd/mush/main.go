@@ -72,21 +72,24 @@ func handleError(out *output.Writer, err error) int {
 	// Handle Cobra's unknown command errors with suggestions
 	// Format: "unknown command \"xyz\" for \"mush\"\n\nDid you mean this?\n\t..."
 	if strings.HasPrefix(errStr, "unknown command") {
-		// Print the full error message which includes suggestions from Cobra
-		fmt.Fprintf(os.Stderr, "Error: %s\n", errStr)
-		// Add usage hint if not already present in the error
+		out.Failure("%s", errStr)
+
 		if !strings.Contains(errStr, "--help") {
-			fmt.Fprintf(os.Stderr, "\nRun 'mush --help' for usage.\n")
+			out.Info("Run 'mush --help' for usage")
 		}
 
 		return clierrors.ExitUsage
 	}
 
-	// Handle other Cobra errors
+	// Handle other Cobra errors (safety net — flag errors are normally
+	// wrapped as CLIError by SetFlagErrorFunc, but standalone commands
+	// without a parent may still reach here).
 	if strings.HasPrefix(errStr, "unknown flag") ||
 		strings.HasPrefix(errStr, "unknown shorthand flag") ||
 		strings.Contains(errStr, "required flag") {
-		fmt.Fprintf(os.Stderr, "Error: %s\n", errStr)
+		out.Failure("%s", errStr)
+		out.Info("Run 'mush --help' for usage")
+
 		return clierrors.ExitUsage
 	}
 
@@ -174,6 +177,15 @@ Get started:
 	// Enable typo suggestions for unknown commands
 	rootCmd.SuggestionsMinimumDistance = 2
 
+	// Wrap Cobra's raw flag errors in CLIError so they get styled output
+	rootCmd.SetFlagErrorFunc(func(cmd *cobra.Command, err error) error {
+		return &clierrors.CLIError{
+			Message: err.Error(),
+			Hint:    fmt.Sprintf("Run '%s --help' for available flags", cmd.CommandPath()),
+			Code:    clierrors.ExitUsage,
+		}
+	})
+
 	// Primary commands
 	rootCmd.AddCommand(newLinkCmd())
 	rootCmd.AddCommand(newUnlinkCmd())
@@ -202,10 +214,25 @@ type VersionInfo struct {
 	Date    string `json:"date"`
 }
 
+// noArgs returns a Cobra positional-arg validator that rejects any arguments
+// with a clear, user-friendly message (unlike cobra.NoArgs which says "unknown command").
+func noArgs(cmd *cobra.Command, args []string) error {
+	if len(args) > 0 {
+		return &clierrors.CLIError{
+			Message: fmt.Sprintf("'%s' accepts no arguments", cmd.CommandPath()),
+			Hint:    fmt.Sprintf("Run '%s --help' for usage", cmd.CommandPath()),
+			Code:    clierrors.ExitUsage,
+		}
+	}
+
+	return nil
+}
+
 func newVersionCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "version",
 		Short: "Show version information",
+		Args:  noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := output.FromContext(cmd.Context())
 

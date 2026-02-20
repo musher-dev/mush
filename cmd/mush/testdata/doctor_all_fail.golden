@@ -1,0 +1,12 @@
+Mush Doctor
+============
+
+✗ API Connectivity    https://api.musher.dev
+    connection refused
+✗ Authentication      Not authenticated
+    Run 'mush auth login' to authenticate
+✗ Claude CLI          Not found in PATH
+    Install from https://claude.ai/download
+⚠ CLI Version         Development build (version check skipped)
+
+0 passed, 3 failed, 1 warning(s)

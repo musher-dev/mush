@@ -29,6 +29,7 @@ Downloads the new binary, verifies its checksum, and replaces the current
 executable. If the binary is not writable, sudo is requested automatically.
 
 Set MUSH_UPDATE_DISABLED=1 to disable update checks.`,
+		Args: noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := output.FromContext(cmd.Context())
 			return runUpdate(cmd, out, targetVersion, force)

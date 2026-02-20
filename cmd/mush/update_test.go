@@ -21,6 +21,7 @@ func TestUpdateCmd_DisabledByEnv(t *testing.T) {
 	ctx := out.WithContext(t.Context())
 
 	cmd := newUpdateCmd()
+	cmd.SetArgs([]string{})
 	cmd.SetContext(ctx)
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
@@ -49,6 +50,7 @@ func TestUpdateCmd_DevBuild(t *testing.T) {
 	ctx := out.WithContext(t.Context())
 
 	cmd := newUpdateCmd()
+	cmd.SetArgs([]string{})
 	cmd.SetContext(ctx)
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)

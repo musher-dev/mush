@@ -263,6 +263,36 @@ func checkCLIVersion(ctx context.Context) Result {
 	}
 }
 
+// RenderResults formats diagnostic results to the given output writer.
+func RenderResults(results []Result, printFn, successFn, warningFn, failureFn, mutedFn func(format string, args ...any)) {
+	maxNameLen := 0
+	for _, r := range results {
+		if len(r.Name) > maxNameLen {
+			maxNameLen = len(r.Name)
+		}
+	}
+
+	for _, r := range results {
+		symbol := r.Status.Symbol()
+		padding := maxNameLen - len(r.Name) + 4
+
+		switch r.Status {
+		case StatusPass:
+			successFn("%-*s%s", len(r.Name)+padding, r.Name, r.Message)
+		case StatusWarn:
+			warningFn("%-*s%s", len(r.Name)+padding, r.Name, r.Message)
+		case StatusFail:
+			failureFn("%-*s%s", len(r.Name)+padding, r.Name, r.Message)
+		default:
+			printFn("%s %-*s%s\n", symbol, len(r.Name)+padding, r.Name, r.Message)
+		}
+
+		if r.Detail != "" {
+			mutedFn("    %s", r.Detail)
+		}
+	}
+}
+
 // Symbol returns the status symbol for display.
 func (s Status) Symbol() string {
 	switch s {

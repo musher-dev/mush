@@ -130,6 +130,7 @@ func newLinkStatusCmd() *cobra.Command {
 		Use:   "status",
 		Short: "Show link status",
 		Long:  `Show the current link status, authenticated identity, and habitat information.`,
+		Args:  noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := output.FromContext(cmd.Context())
 
@@ -187,6 +188,7 @@ func newUnlinkCmd() *cobra.Command {
 
 Note: This is typically handled automatically via Ctrl+C when running 'mush link'.
 This command is provided for programmatic disconnection.`,
+		Args: noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := output.FromContext(cmd.Context())
 			out.Info("Links are disconnected via Ctrl+C when running 'mush link'")
