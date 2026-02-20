@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.4.0](https://github.com/musher-dev/mush/compare/v2.3.0...v2.4.0) (2026-02-20)
+
+
+### Features
+
+* **cli:** add argument validation, error handling, and golden tests ([#42](https://github.com/musher-dev/mush/issues/42)) ([18f1797](https://github.com/musher-dev/mush/commit/18f179745670205b45012d7edc2ee177a281e1a8))
+
 ## [2.3.0](https://github.com/musher-dev/mush/compare/v2.2.0...v2.3.0) (2026-02-19)
 
 
