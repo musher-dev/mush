@@ -77,7 +77,27 @@ done
 
 if [[ ${#go_files[@]} -gt 0 ]]; then
   task check:fmt:files -- "${go_files[@]}"
-  task check:lint:files -- "${go_files[@]}"
+
+  # golangci-lint needs package paths, not individual files, to resolve
+  # cross-file symbols within a package.
+  declare -A lint_pkg_set=()
+  for file in "${go_files[@]}"; do
+    dir="$(dirname "$file")"
+    if [[ "$dir" == "." ]]; then
+      lint_pkg_set["./"]=1
+    else
+      lint_pkg_set["./$dir/..."]=1
+    fi
+  done
+
+  lint_packages=()
+  for pkg in "${!lint_pkg_set[@]}"; do
+    lint_packages+=("$pkg")
+  done
+
+  if [[ ${#lint_packages[@]} -gt 0 ]]; then
+    task check:lint:files -- "${lint_packages[@]}"
+  fi
 fi
 
 if [[ $has_mod_changes -eq 1 ]]; then
