@@ -34,10 +34,6 @@ func (m *providerMapper) MapAsset(workDir string, layer client.BundleLayer) (str
 	case "skill":
 		return filepath.Join(workDir, assets.SkillDir, layer.LogicalPath), nil
 	case "agent_definition":
-		if assets.AgentFile != "" {
-			return filepath.Join(workDir, assets.AgentFile), nil
-		}
-
 		return filepath.Join(workDir, assets.AgentDir, layer.LogicalPath), nil
 	case "tool_config":
 		return filepath.Join(workDir, assets.ToolConfigFile), nil
@@ -49,9 +45,4 @@ func (m *providerMapper) MapAsset(workDir string, layer client.BundleLayer) (str
 // PrepareLoad creates a temp directory with assets in the provider's native structure.
 func (m *providerMapper) PrepareLoad(_ context.Context, cachePath string, manifest *client.BundleManifest) (tmpDir string, cleanup func(), err error) {
 	return prepareLoadCommon(m, cachePath, manifest)
-}
-
-// MergesAgents returns true if agent definitions are composed into a single file.
-func (m *providerMapper) MergesAgents() bool {
-	return m.spec.Assets != nil && m.spec.Assets.AgentFile != ""
 }

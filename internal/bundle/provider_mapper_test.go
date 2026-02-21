@@ -3,7 +3,6 @@ package bundle
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/musher-dev/mush/internal/client"
@@ -127,20 +126,17 @@ func TestProviderMapper_PrepareLoad_Codex(t *testing.T) {
 
 	defer cleanup()
 
-	// Codex agents are merged into AGENTS.md.
-	agentsPath := filepath.Join(tmpDir, "AGENTS.md")
+	// Codex agents are individual files (not merged).
+	for _, name := range []string{"researcher.md", "reviewer.md"} {
+		agentPath := filepath.Join(tmpDir, ".codex", "agents", name)
 
-	data, err := os.ReadFile(agentsPath)
-	if err != nil {
-		t.Fatalf("ReadFile(AGENTS.md) error = %v", err)
-	}
+		data, readErr := os.ReadFile(agentPath)
+		if readErr != nil {
+			t.Fatalf("ReadFile(%s) error = %v", name, readErr)
+		}
 
-	content := string(data)
-	if !strings.Contains(content, "Bundle Agent: researcher.md") {
-		t.Fatalf("AGENTS.md missing researcher agent: %s", content)
-	}
-
-	if !strings.Contains(content, "Bundle Agent: reviewer.md") {
-		t.Fatalf("AGENTS.md missing reviewer agent: %s", content)
+		if len(data) == 0 {
+			t.Fatalf("agent file %s is empty", name)
+		}
 	}
 }

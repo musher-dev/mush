@@ -53,10 +53,6 @@ func TestGetProvider_Claude(t *testing.T) {
 		t.Fatalf("AgentDir = %q, want .claude/agents", spec.Assets.AgentDir)
 	}
 
-	if spec.Assets.AgentFile != "" {
-		t.Fatalf("AgentFile = %q, want empty (uses agentDir)", spec.Assets.AgentFile)
-	}
-
 	if spec.Assets.ToolConfigFile != ".mcp.json" {
 		t.Fatalf("ToolConfigFile = %q, want .mcp.json", spec.Assets.ToolConfigFile)
 	}
@@ -88,12 +84,8 @@ func TestGetProvider_Codex(t *testing.T) {
 		t.Fatal("expected Assets to be non-nil")
 	}
 
-	if spec.Assets.AgentFile != "AGENTS.md" {
-		t.Fatalf("AgentFile = %q, want AGENTS.md", spec.Assets.AgentFile)
-	}
-
-	if spec.Assets.AgentDir != "" {
-		t.Fatalf("AgentDir = %q, want empty (uses agentFile)", spec.Assets.AgentDir)
+	if spec.Assets.AgentDir != ".codex/agents" {
+		t.Fatalf("AgentDir = %q, want .codex/agents", spec.Assets.AgentDir)
 	}
 
 	if spec.MCP == nil || spec.MCP.Format != "toml" {

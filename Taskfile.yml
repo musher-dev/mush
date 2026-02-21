@@ -109,6 +109,16 @@ tasks:
       - task: check:shell
       - task: check:workflow
       - task: check:test-cover
+      - task: check:compile
+
+  check:compile:
+    desc: Verify cross-platform compilation for all release targets
+    cmds:
+      - GOOS=darwin  GOARCH=amd64 go build ./cmd/mush
+      - GOOS=darwin  GOARCH=arm64 go build ./cmd/mush
+      - GOOS=linux   GOARCH=amd64 go build ./cmd/mush
+      - GOOS=linux   GOARCH=arm64 go build ./cmd/mush
+      - GOOS=windows GOARCH=amd64 go build ./cmd/mush
 
   # Quick aliases for common operations
   test:

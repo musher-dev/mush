@@ -95,7 +95,7 @@ func TestProviderMapper_Codex_MapAsset(t *testing.T) {
 		{
 			name:  "agent_definition",
 			layer: client.BundleLayer{AssetType: "agent_definition", LogicalPath: "researcher.md"},
-			want:  filepath.Join(workDir, "AGENTS.md"),
+			want:  filepath.Join(workDir, ".codex", "agents", "researcher.md"),
 		},
 		{
 			name:  "tool_config",
@@ -128,21 +128,5 @@ func TestProviderMapper_Codex_MapAsset(t *testing.T) {
 				t.Fatalf("MapAsset() = %q, want %q", got, tc.want)
 			}
 		})
-	}
-}
-
-func TestProviderMapper_MergesAgents(t *testing.T) {
-	claudeSpec, _ := harness.GetProvider("claude")
-	codexSpec, _ := harness.GetProvider("codex")
-
-	claudeMapper := NewProviderMapper(claudeSpec)
-	codexMapper := NewProviderMapper(codexSpec)
-
-	if claudeMapper.MergesAgents() {
-		t.Fatal("Claude mapper should not merge agents (uses agentDir)")
-	}
-
-	if !codexMapper.MergesAgents() {
-		t.Fatal("Codex mapper should merge agents (uses agentFile)")
 	}
 }

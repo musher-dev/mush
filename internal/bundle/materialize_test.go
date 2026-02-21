@@ -11,7 +11,7 @@ import (
 	"github.com/musher-dev/mush/internal/harness"
 )
 
-func TestInstallFromCache_CodexMergesAgentsAndToolConfig(t *testing.T) {
+func TestInstallFromCache_CodexIndividualAgentsAndToolConfig(t *testing.T) {
 	workDir := t.TempDir()
 	cacheDir := t.TempDir()
 
@@ -57,18 +57,17 @@ func TestInstallFromCache_CodexMergesAgentsAndToolConfig(t *testing.T) {
 		t.Fatalf("InstallFromCache() error = %v", err)
 	}
 
-	if len(installed) != 3 {
-		t.Fatalf("InstallFromCache() installed %d paths, want 3", len(installed))
+	if len(installed) != 4 {
+		t.Fatalf("InstallFromCache() installed %d paths, want 4", len(installed))
 	}
 
-	agentsData, err := os.ReadFile(filepath.Join(workDir, "AGENTS.md"))
-	if err != nil {
-		t.Fatalf("ReadFile(AGENTS.md) error = %v", err)
-	}
+	// Verify individual agent files.
+	for _, name := range []string{"agents/researcher.md", "agents/reviewer.md"} {
+		agentPath := filepath.Join(workDir, ".codex", "agents", name)
 
-	agents := string(agentsData)
-	if !strings.Contains(agents, "Bundle Agent: agents/researcher.md") || !strings.Contains(agents, "Bundle Agent: agents/reviewer.md") {
-		t.Fatalf("AGENTS.md missing merged agent markers: %s", agents)
+		if _, statErr := os.Stat(agentPath); statErr != nil {
+			t.Fatalf("agent file %s not found: %v", name, statErr)
+		}
 	}
 
 	configData, err := os.ReadFile(filepath.Join(workDir, ".codex", "config.toml"))
