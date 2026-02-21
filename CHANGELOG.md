@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.7.0](https://github.com/musher-dev/mush/compare/v2.6.1...v2.7.0) (2026-02-21)
+
+
+### Features
+
+* centralize path resolution, add agent injection and log rotation ([#51](https://github.com/musher-dev/mush/issues/51)) ([55c13f1](https://github.com/musher-dev/mush/commit/55c13f1e286818c26396a69c4e8eb9d7d9ddcca5))
+
 ## [2.6.1](https://github.com/musher-dev/mush/compare/v2.6.0...v2.6.1) (2026-02-21)
 
 
