@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Masterminds/semver/v3"
+	"github.com/musher-dev/mush/internal/paths"
 )
 
 const (
@@ -25,12 +26,12 @@ type State struct {
 
 // statePath returns the path to the state file.
 func statePath() (string, error) {
-	home, err := os.UserHomeDir()
+	path, err := paths.UpdateStateFile()
 	if err != nil {
-		return "", fmt.Errorf("resolve user home directory: %w", err)
+		return "", fmt.Errorf("resolve update state path: %w", err)
 	}
 
-	return filepath.Join(home, ".config", "mush", stateFileName), nil
+	return filepath.Clean(path), nil
 }
 
 // LoadState reads the state file. Returns zero-value State if the file doesn't exist.

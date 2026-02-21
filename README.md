@@ -128,7 +128,7 @@ Mush looks for configuration in this order (highest priority first):
 
 2. **OS Keyring** (credentials only)
 
-3. **Config file** (`~/.config/mush/config.yaml`)
+3. **Config file** (`<user config dir>/mush/config.yaml`)
 
    ```yaml
    api:
@@ -150,7 +150,7 @@ Mush looks for configuration in this order (highest priority first):
 | `--no-input` | Disable interactive prompts |
 | `--log-level` | Structured log level (`error`, `warn`, `info`, `debug`) |
 | `--log-format` | Structured log format (`json`, `text`) |
-| `--log-file` | Optional log file path (JSONL/text append) |
+| `--log-file` | Optional log file path (JSONL/text append). If no sink is configured, Mush defaults to `<user config dir>/mush/logs/mush.log` |
 | `--log-stderr` | Structured stderr mode (`auto`, `on`, `off`) |
 
 ## How It Works

@@ -208,7 +208,7 @@ func APIKeyEmpty() *CLIError {
 func ConfigFailed(operation string, cause error) *CLIError {
 	return &CLIError{
 		Message: fmt.Sprintf("Failed to %s", operation),
-		Hint:    "Check file permissions for ~/.config/mush/ or run 'mush doctor'",
+		Hint:    "Check file permissions for your Mush config directory or run 'mush doctor'",
 		Cause:   cause,
 		Code:    ExitConfig,
 	}

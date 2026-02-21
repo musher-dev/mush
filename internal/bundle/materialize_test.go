@@ -124,3 +124,255 @@ func TestInstallFromCache_Conflict(t *testing.T) {
 		t.Fatalf("InstallFromCache() error type = %T, want *InstallConflictError", err)
 	}
 }
+
+func TestInjectAgentsForLoad_HappyPath(t *testing.T) {
+	projectDir := t.TempDir()
+	cacheDir := t.TempDir()
+
+	assetsDir := filepath.Join(cacheDir, "assets")
+
+	write := func(rel, data string) {
+		path := filepath.Join(assetsDir, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("MkdirAll(%s) error = %v", rel, err)
+		}
+
+		if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+			t.Fatalf("WriteFile(%s) error = %v", rel, err)
+		}
+	}
+
+	write("architect.md", "Agent content")
+	write("skills/web/SKILL.md", "Skill content")
+
+	manifest := &client.BundleManifest{
+		Layers: []client.BundleLayer{
+			{LogicalPath: "architect.md", AssetType: "agent_definition"},
+			{LogicalPath: "skills/web/SKILL.md", AssetType: "skill"},
+		},
+	}
+
+	claudeSpec, ok := harness.GetProvider("claude")
+	if !ok {
+		t.Fatal("claude provider not found")
+	}
+
+	mapper := NewProviderMapper(claudeSpec)
+
+	injected, cleanup, err := InjectAgentsForLoad(projectDir, cacheDir, manifest, mapper)
+	if err != nil {
+		t.Fatalf("InjectAgentsForLoad() error = %v", err)
+	}
+
+	defer cleanup()
+
+	// Only agent_definition should be injected, not skills.
+	if len(injected) != 1 {
+		t.Fatalf("InjectAgentsForLoad() injected %d paths, want 1; got %v", len(injected), injected)
+	}
+
+	agentPath := filepath.Join(projectDir, ".claude", "agents", "architect.md")
+
+	data, err := os.ReadFile(agentPath)
+	if err != nil {
+		t.Fatalf("agent file not found: %v", err)
+	}
+
+	if string(data) != "Agent content" {
+		t.Fatalf("agent content = %q, want %q", string(data), "Agent content")
+	}
+}
+
+func TestInjectAgentsForLoad_SkipsExisting(t *testing.T) {
+	projectDir := t.TempDir()
+	cacheDir := t.TempDir()
+
+	assetsDir := filepath.Join(cacheDir, "assets")
+
+	write := func(rel, data string) {
+		path := filepath.Join(assetsDir, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("MkdirAll(%s) error = %v", rel, err)
+		}
+
+		if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+			t.Fatalf("WriteFile(%s) error = %v", rel, err)
+		}
+	}
+
+	write("architect.md", "New agent")
+
+	// Pre-create the agent file in the project directory.
+	existingPath := filepath.Join(projectDir, ".claude", "agents", "architect.md")
+	if err := os.MkdirAll(filepath.Dir(existingPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+
+	if err := os.WriteFile(existingPath, []byte("User agent"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	manifest := &client.BundleManifest{
+		Layers: []client.BundleLayer{
+			{LogicalPath: "architect.md", AssetType: "agent_definition"},
+		},
+	}
+
+	claudeSpec, ok := harness.GetProvider("claude")
+	if !ok {
+		t.Fatal("claude provider not found")
+	}
+
+	mapper := NewProviderMapper(claudeSpec)
+
+	injected, cleanup, err := InjectAgentsForLoad(projectDir, cacheDir, manifest, mapper)
+	if err != nil {
+		t.Fatalf("InjectAgentsForLoad() error = %v", err)
+	}
+
+	defer cleanup()
+
+	// Should be skipped since the file already exists.
+	if len(injected) != 0 {
+		t.Fatalf("InjectAgentsForLoad() injected %d paths, want 0", len(injected))
+	}
+
+	// Original content should be preserved.
+	data, err := os.ReadFile(existingPath)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+
+	if string(data) != "User agent" {
+		t.Fatalf("existing agent content = %q, want %q", string(data), "User agent")
+	}
+
+	// Cleanup should NOT remove the pre-existing file.
+	cleanup()
+
+	if _, statErr := os.Stat(existingPath); statErr != nil {
+		t.Fatal("cleanup removed pre-existing agent file")
+	}
+}
+
+func TestInjectAgentsForLoad_Cleanup(t *testing.T) {
+	projectDir := t.TempDir()
+	cacheDir := t.TempDir()
+
+	assetsDir := filepath.Join(cacheDir, "assets")
+
+	write := func(rel, data string) {
+		path := filepath.Join(assetsDir, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("MkdirAll(%s) error = %v", rel, err)
+		}
+
+		if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+			t.Fatalf("WriteFile(%s) error = %v", rel, err)
+		}
+	}
+
+	write("architect.md", "Agent A")
+	write("reviewer.md", "Agent B")
+
+	manifest := &client.BundleManifest{
+		Layers: []client.BundleLayer{
+			{LogicalPath: "architect.md", AssetType: "agent_definition"},
+			{LogicalPath: "reviewer.md", AssetType: "agent_definition"},
+		},
+	}
+
+	claudeSpec, ok := harness.GetProvider("claude")
+	if !ok {
+		t.Fatal("claude provider not found")
+	}
+
+	mapper := NewProviderMapper(claudeSpec)
+
+	injected, cleanup, err := InjectAgentsForLoad(projectDir, cacheDir, manifest, mapper)
+	if err != nil {
+		t.Fatalf("InjectAgentsForLoad() error = %v", err)
+	}
+
+	if len(injected) != 2 {
+		t.Fatalf("InjectAgentsForLoad() injected %d, want 2", len(injected))
+	}
+
+	// Verify files exist before cleanup.
+	for _, rel := range injected {
+		path := filepath.Join(projectDir, rel)
+		if _, statErr := os.Stat(path); statErr != nil {
+			t.Fatalf("injected file %s not found before cleanup", rel)
+		}
+	}
+
+	// Run cleanup.
+	cleanup()
+
+	// Verify files removed after cleanup.
+	for _, rel := range injected {
+		path := filepath.Join(projectDir, rel)
+		if _, statErr := os.Stat(path); statErr == nil {
+			t.Fatalf("injected file %s still exists after cleanup", rel)
+		}
+	}
+
+	// .claude/agents/ directory should also be cleaned up since we created it.
+	agentsDir := filepath.Join(projectDir, ".claude", "agents")
+	if _, statErr := os.Stat(agentsDir); statErr == nil {
+		t.Fatal(".claude/agents/ directory still exists after cleanup")
+	}
+}
+
+func TestInjectAgentsForLoad_NestedLogicalPath(t *testing.T) {
+	projectDir := t.TempDir()
+	cacheDir := t.TempDir()
+
+	assetsDir := filepath.Join(cacheDir, "assets")
+
+	// Create a nested path like "agents/shaping-architect.md".
+	nestedPath := filepath.Join(assetsDir, "agents", "shaping-architect.md")
+	if err := os.MkdirAll(filepath.Dir(nestedPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+
+	if err := os.WriteFile(nestedPath, []byte("Nested agent"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	manifest := &client.BundleManifest{
+		Layers: []client.BundleLayer{
+			{LogicalPath: "agents/shaping-architect.md", AssetType: "agent_definition"},
+		},
+	}
+
+	claudeSpec, ok := harness.GetProvider("claude")
+	if !ok {
+		t.Fatal("claude provider not found")
+	}
+
+	mapper := NewProviderMapper(claudeSpec)
+
+	injected, cleanup, err := InjectAgentsForLoad(projectDir, cacheDir, manifest, mapper)
+	if err != nil {
+		t.Fatalf("InjectAgentsForLoad() error = %v", err)
+	}
+
+	defer cleanup()
+
+	if len(injected) != 1 {
+		t.Fatalf("InjectAgentsForLoad() injected %d, want 1", len(injected))
+	}
+
+	// Should be at .claude/agents/agents/shaping-architect.md (mapper joins AgentDir + LogicalPath).
+	targetPath := filepath.Join(projectDir, ".claude", "agents", "agents", "shaping-architect.md")
+
+	data, err := os.ReadFile(targetPath)
+	if err != nil {
+		t.Fatalf("nested agent file not found: %v", err)
+	}
+
+	if string(data) != "Nested agent" {
+		t.Fatalf("nested agent content = %q, want %q", string(data), "Nested agent")
+	}
+}

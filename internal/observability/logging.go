@@ -8,9 +8,16 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/musher-dev/mush/internal/paths"
 )
 
 const redactedValue = "[REDACTED]"
+
+const (
+	defaultLogMaxBytes int64 = 10 * 1024 * 1024
+	defaultLogBackups        = 5
+)
 
 type contextKey struct{}
 
@@ -53,8 +60,17 @@ func NewLogger(cfg *Config) (*slog.Logger, func() error, error) {
 		return nil, nil, err
 	}
 
-	if !stderrEnabled && strings.TrimSpace(cfg.LogFile) == "" {
-		return nil, nil, fmt.Errorf("no log sinks configured: set --log-file or enable --log-stderr")
+	logFilePath := strings.TrimSpace(cfg.LogFile)
+	usingDefaultLogFile := false
+
+	if !stderrEnabled && logFilePath == "" {
+		defaultLogFile, pathErr := paths.DefaultLogFile()
+		if pathErr != nil {
+			return nil, nil, fmt.Errorf("resolve default log file: %w", pathErr)
+		}
+
+		logFilePath = defaultLogFile
+		usingDefaultLogFile = true
 	}
 
 	writers := make([]io.Writer, 0, 2)
@@ -64,8 +80,14 @@ func NewLogger(cfg *Config) (*slog.Logger, func() error, error) {
 		writers = append(writers, os.Stderr)
 	}
 
-	if strings.TrimSpace(cfg.LogFile) != "" {
-		logFile, openErr := openLogFile(cfg.LogFile)
+	if logFilePath != "" {
+		if usingDefaultLogFile {
+			if rotateErr := rotateLogFile(logFilePath, defaultLogMaxBytes, defaultLogBackups); rotateErr != nil {
+				return nil, nil, fmt.Errorf("rotate default log file: %w", rotateErr)
+			}
+		}
+
+		logFile, openErr := openLogFile(logFilePath)
 		if openErr != nil {
 			return nil, nil, openErr
 		}
@@ -133,6 +155,54 @@ func openLogFile(path string) (*os.File, error) {
 	}
 
 	return file, nil
+}
+
+func rotateLogFile(path string, maxBytes int64, maxBackups int) error {
+	if maxBytes <= 0 || maxBackups <= 0 {
+		return nil
+	}
+
+	info, err := os.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+
+		return fmt.Errorf("stat log file: %w", err)
+	}
+
+	if info.Size() < maxBytes {
+		return nil
+	}
+
+	lastBackup := fmt.Sprintf("%s.%d", path, maxBackups)
+	if removeErr := os.Remove(lastBackup); removeErr != nil && !os.IsNotExist(removeErr) {
+		return fmt.Errorf("remove oldest rotated log: %w", removeErr)
+	}
+
+	for i := maxBackups - 1; i >= 1; i-- {
+		src := fmt.Sprintf("%s.%d", path, i)
+		dst := fmt.Sprintf("%s.%d", path, i+1)
+
+		if _, statErr := os.Stat(src); statErr != nil {
+			if os.IsNotExist(statErr) {
+				continue
+			}
+
+			return fmt.Errorf("stat rotated log %s: %w", src, statErr)
+		}
+
+		if err := os.Rename(src, dst); err != nil {
+			return fmt.Errorf("rotate log %s -> %s: %w", src, dst, err)
+		}
+	}
+
+	firstBackup := fmt.Sprintf("%s.1", path)
+	if err := os.Rename(path, firstBackup); err != nil {
+		return fmt.Errorf("rotate current log to backup: %w", err)
+	}
+
+	return nil
 }
 
 func shouldEnableStderr(mode string, interactiveTTY bool) (bool, error) {

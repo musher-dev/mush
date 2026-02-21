@@ -190,16 +190,16 @@ func (e *CodexExecutor) WriteInput(p []byte) (int, error) {
 func (e *CodexExecutor) startInteractive(ctx context.Context, opts *SetupOptions) error {
 	spec, _ := GetProvider("codex")
 
-	args := []string{
-		"--dangerously-bypass-approvals-and-sandbox",
-		"--skip-git-repo-check",
+	var args []string
+	if !opts.BundleLoadMode {
+		args = append(args, "--dangerously-bypass-approvals-and-sandbox")
 	}
 
 	if opts.BundleDir != "" && spec != nil && spec.BundleDir != nil && spec.BundleDir.Flag != "" {
 		args = append(args, spec.BundleDir.Flag, opts.BundleDir)
 	}
 
-	cmd := exec.CommandContext(ctx, "codex", args...)
+	cmd := exec.CommandContext(ctx, "codex", args...) //nolint:gosec // G204: args from controlled input
 	cmd.Env = os.Environ()
 
 	stdin, err := cmd.StdinPipe()

@@ -8,6 +8,8 @@ type ConnectionStatus int
 const (
 	StatusDisconnected ConnectionStatus = iota
 	StatusConnecting
+	StatusStarting
+	StatusReady
 	StatusConnected
 	StatusProcessing
 	StatusError
@@ -20,6 +22,10 @@ func (s ConnectionStatus) String() string {
 		return "Disconnected"
 	case StatusConnecting:
 		return "Connecting..."
+	case StatusStarting:
+		return "Starting..."
+	case StatusReady:
+		return "Ready"
 	case StatusConnected:
 		return "Connected"
 	case StatusProcessing:
