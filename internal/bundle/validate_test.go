@@ -86,6 +86,142 @@ func TestValidateLogicalPath(t *testing.T) {
 	}
 }
 
+func TestRepairSkillFrontmatter(t *testing.T) {
+	tests := []struct {
+		name         string
+		data         string
+		wantRepaired bool
+		wantContains string // substring that must appear in repaired output
+		wantExact    string // if non-empty, exact match on full output
+	}{
+		{
+			name:         "unquoted colon in value",
+			data:         "---\nname: test\ndescription: something: broken\n---\n# Skill\n",
+			wantRepaired: true,
+			wantContains: `description: "something: broken"`,
+		},
+		{
+			name:         "already double quoted",
+			data:         "---\nname: test\ndescription: \"contains: colons\"\n---\n# Skill\n",
+			wantRepaired: false,
+		},
+		{
+			name:         "already single quoted",
+			data:         "---\nname: test\ndescription: 'contains: colons'\n---\n# Skill\n",
+			wantRepaired: false,
+		},
+		{
+			name:         "multiple colons in value",
+			data:         "---\nname: test\ndescription: a: b: c\n---\n# Skill\n",
+			wantRepaired: true,
+			wantContains: `description: "a: b: c"`,
+		},
+		{
+			name:         "URL without space after colon - no repair needed",
+			data:         "---\nname: test\nurl: http://example.com\n---\n# Skill\n",
+			wantRepaired: false,
+		},
+		{
+			name:         "block scalar pipe",
+			data:         "---\nname: test\ndescription: |\n  line one\n  line two\n---\n# Skill\n",
+			wantRepaired: false,
+		},
+		{
+			name:         "block scalar greater-than",
+			data:         "---\nname: test\ndescription: >\n  line one\n  line two\n---\n# Skill\n",
+			wantRepaired: false,
+		},
+		{
+			name:         "indented continuation unchanged",
+			data:         "---\nname: test\ntags:\n  - one\n  - two\n---\n# Skill\n",
+			wantRepaired: false,
+		},
+		{
+			name:         "valid frontmatter no repair",
+			data:         "---\nname: test\ndescription: simple value\n---\n# Skill\n",
+			wantRepaired: false,
+		},
+		{
+			name:         "no frontmatter",
+			data:         "# Just markdown\nNo frontmatter here.\n",
+			wantRepaired: false,
+		},
+		{
+			name:         "internal quotes escaped",
+			data:         "---\nname: test\ndescription: say \"hello\": world\n---\n# Skill\n",
+			wantRepaired: true,
+			wantContains: `description: "say \"hello\": world"`,
+		},
+		{
+			name:         "mixed keys only repair affected",
+			data:         "---\nname: good-name\ndescription: bad: value\ntags: simple\n---\n# Skill\n",
+			wantRepaired: true,
+			wantContains: `description: "bad: value"`,
+		},
+		{
+			name:         "CRLF line endings preserved",
+			data:         "---\r\nname: test\r\ndescription: something: broken\r\n---\r\n# Content\r\n",
+			wantRepaired: true,
+			wantContains: "description: \"something: broken\"\r\n",
+		},
+		{
+			name:         "body content preserved after repair",
+			data:         "---\nname: test\ndescription: a: b\n---\n# My Skill\nBody text here.\n",
+			wantRepaired: true,
+			wantContains: "# My Skill\nBody text here.\n",
+		},
+		{
+			name:         "flow sequence unchanged",
+			data:         "---\nname: test\ntags: [one, two]\n---\n# Skill\n",
+			wantRepaired: false,
+		},
+		{
+			name:         "flow mapping unchanged",
+			data:         "---\nname: test\nmeta: {key: val}\n---\n# Skill\n",
+			wantRepaired: false,
+		},
+		{
+			name:         "unrepairable bad indentation",
+			data:         "---\nname: test\n  bad:\n indent\n---\n# Skill\n",
+			wantRepaired: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result, wasRepaired := RepairSkillFrontmatter([]byte(tc.data))
+			if wasRepaired != tc.wantRepaired {
+				t.Fatalf("RepairSkillFrontmatter() repaired = %v, want %v\nresult: %s",
+					wasRepaired, tc.wantRepaired, string(result))
+			}
+
+			if !wasRepaired {
+				if string(result) != tc.data {
+					t.Fatalf("RepairSkillFrontmatter() modified data when repaired=false")
+				}
+
+				return
+			}
+
+			if tc.wantContains != "" && !strings.Contains(string(result), tc.wantContains) {
+				t.Fatalf("RepairSkillFrontmatter() result missing %q\ngot: %s",
+					tc.wantContains, string(result))
+			}
+
+			if tc.wantExact != "" && string(result) != tc.wantExact {
+				t.Fatalf("RepairSkillFrontmatter() result = %q, want %q",
+					string(result), tc.wantExact)
+			}
+
+			// Repaired output must be valid YAML.
+			if err := ValidateSkillFrontmatter(result); err != nil {
+				t.Fatalf("RepairSkillFrontmatter() result has invalid frontmatter: %v\nresult: %s",
+					err, string(result))
+			}
+		})
+	}
+}
+
 func TestValidateSkillFrontmatter(t *testing.T) {
 	tests := []struct {
 		name    string

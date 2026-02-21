@@ -66,6 +66,128 @@ func ValidateSkillFrontmatter(data []byte) error {
 	return nil
 }
 
+// RepairSkillFrontmatter attempts to fix common YAML frontmatter issues
+// (primarily unquoted values containing colons) by wrapping them in double
+// quotes. Returns the repaired data and true if a repair was made, or the
+// original data and false if no repair was needed or possible.
+func RepairSkillFrontmatter(data []byte) ([]byte, bool) {
+	frontmatter := extractFrontmatter(data)
+	if frontmatter == nil {
+		return data, false
+	}
+
+	// Already valid — nothing to repair.
+	var doc any
+	if yaml.Unmarshal(frontmatter, &doc) == nil {
+		return data, false
+	}
+
+	lines := splitPreservingCR(frontmatter)
+	repaired := false
+
+	for i, line := range lines {
+		raw := line
+		// Strip optional trailing \r for analysis.
+		trimmed := strings.TrimRight(raw, "\r")
+
+		// Skip blank lines, comments, indented lines (continuations / nested),
+		// and list items.
+		if trimmed == "" ||
+			strings.HasPrefix(trimmed, "#") ||
+			strings.HasPrefix(trimmed, " ") ||
+			strings.HasPrefix(trimmed, "\t") ||
+			strings.HasPrefix(trimmed, "- ") {
+			continue
+		}
+
+		// Must be a "key: value" line.
+		colonIdx := strings.Index(trimmed, ": ")
+		if colonIdx < 0 {
+			continue
+		}
+
+		value := trimmed[colonIdx+2:]
+
+		// Skip values that are already quoted, block scalars, or flow collections.
+		if value == "" ||
+			(strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"")) ||
+			(strings.HasPrefix(value, "'") && strings.HasSuffix(value, "'")) ||
+			value == "|" || value == ">" ||
+			strings.HasPrefix(value, "|") || strings.HasPrefix(value, ">") ||
+			strings.HasPrefix(value, "[") ||
+			strings.HasPrefix(value, "{") {
+			continue
+		}
+
+		// Only repair if the value contains an internal ": " (the source of ambiguity).
+		if !strings.Contains(value, ": ") {
+			continue
+		}
+
+		// Escape backslashes and double quotes in value, then wrap.
+		escaped := strings.ReplaceAll(value, `\`, `\\`)
+		escaped = strings.ReplaceAll(escaped, `"`, `\"`)
+		quoted := `"` + escaped + `"`
+
+		// Reconstruct line preserving any trailing \r.
+		suffix := ""
+		if strings.HasSuffix(raw, "\r") {
+			suffix = "\r"
+		}
+
+		lines[i] = trimmed[:colonIdx+2] + quoted + suffix
+		repaired = true
+	}
+
+	if !repaired {
+		return data, false
+	}
+
+	newFrontmatter := []byte(strings.Join(lines, "\n"))
+
+	// Validate the repaired frontmatter.
+	if yaml.Unmarshal(newFrontmatter, &doc) != nil {
+		return data, false
+	}
+
+	result := replaceFrontmatterInData(data, frontmatter, newFrontmatter)
+
+	return result, true
+}
+
+// splitPreservingCR splits on \n but preserves any trailing \r on each line.
+func splitPreservingCR(data []byte) []string {
+	return strings.Split(string(data), "\n")
+}
+
+// replaceFrontmatterInData locates the frontmatter byte range in data (same
+// logic as extractFrontmatter) and splices in the replacement.
+func replaceFrontmatterInData(data, oldFM, newFM []byte) []byte {
+	trimmed := bytes.TrimLeft(data, " \t\r\n")
+	prefixLen := len(data) - len(trimmed)
+
+	firstNL := bytes.IndexByte(trimmed, '\n')
+	if firstNL < 0 {
+		return data
+	}
+
+	contentStart := firstNL + 1
+
+	// Find the old frontmatter start offset within the original data.
+	fmStart := prefixLen + contentStart
+
+	// The old frontmatter length tells us where it ends.
+	fmEnd := fmStart + len(oldFM)
+
+	var buf bytes.Buffer
+	buf.Grow(len(data) - len(oldFM) + len(newFM))
+	buf.Write(data[:fmStart])
+	buf.Write(newFM)
+	buf.Write(data[fmEnd:])
+
+	return buf.Bytes()
+}
+
 // extractFrontmatter returns the YAML frontmatter bytes between --- delimiters,
 // or nil if no frontmatter is found. Handles both \n and \r\n line endings and
 // requires the opening/closing delimiters to be on their own lines.

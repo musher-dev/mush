@@ -176,10 +176,23 @@ func InjectAssetsForLoad(
 			return nil, nil, makeCleanup(), fmt.Errorf("read cached asset %s: %w", layer.LogicalPath, readErr)
 		}
 
-		// Validate YAML frontmatter for skill assets.
+		// Validate and auto-repair YAML frontmatter for skill assets.
 		if layer.AssetType == "skill" {
 			if fmErr := ValidateSkillFrontmatter(data); fmErr != nil {
-				warnings = append(warnings, fmt.Sprintf("%s: %v", layer.LogicalPath, fmErr))
+				repaired, wasRepaired := RepairSkillFrontmatter(data)
+				if wasRepaired {
+					data = repaired
+
+					warnings = append(warnings, fmt.Sprintf(
+						"%s: auto-repaired YAML frontmatter (unquoted values with colons were quoted)",
+						layer.LogicalPath,
+					))
+				} else {
+					warnings = append(warnings, fmt.Sprintf(
+						"%s: %v; strict harnesses (e.g. Codex) will reject this skill",
+						layer.LogicalPath, fmErr,
+					))
+				}
 			}
 		}
 
