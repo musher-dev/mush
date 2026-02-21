@@ -27,6 +27,7 @@ type CodexExecutor struct {
 	mu         sync.Mutex
 	cmd        *exec.Cmd
 	ptmx       *os.File
+	pgid       int
 	waitDoneCh chan struct{}
 }
 
@@ -216,6 +217,14 @@ func (e *CodexExecutor) startInteractive(ctx context.Context, opts *SetupOptions
 	e.mu.Lock()
 	e.cmd = cmd
 	e.ptmx = ptmx
+	e.pgid = 0
+
+	if cmd.Process != nil && cmd.Process.Pid > 0 {
+		if pgid, pgErr := syscall.Getpgid(cmd.Process.Pid); pgErr == nil {
+			e.pgid = pgid
+		}
+	}
+
 	e.waitDoneCh = make(chan struct{})
 	waitDoneCh := e.waitDoneCh
 	e.mu.Unlock()
@@ -260,9 +269,11 @@ func (e *CodexExecutor) Teardown() {
 	e.mu.Lock()
 	cmd := e.cmd
 	ptmx := e.ptmx
+	pgid := e.pgid
 	waitDoneCh := e.waitDoneCh
 	e.cmd = nil
 	e.ptmx = nil
+	e.pgid = 0
 	e.waitDoneCh = nil
 	e.mu.Unlock()
 
@@ -272,14 +283,6 @@ func (e *CodexExecutor) Teardown() {
 
 	if cmd == nil || cmd.Process == nil {
 		return
-	}
-
-	pgid := 0
-
-	if cmd.Process.Pid > 0 {
-		if g, err := syscall.Getpgid(cmd.Process.Pid); err == nil {
-			pgid = g
-		}
 	}
 
 	sendSignal(cmd.Process.Pid, pgid, syscall.SIGTERM)
