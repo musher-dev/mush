@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.8.2](https://github.com/musher-dev/mush/compare/v2.8.1...v2.8.2) (2026-02-21)
+
+
+### Bug Fixes
+
+* **bundle:** set workspace-write sandbox for codex bundle load ([#57](https://github.com/musher-dev/mush/issues/57)) ([fa4467e](https://github.com/musher-dev/mush/commit/fa4467e8a084fa6055f673e7de18681a0f50fb83))
+
 ## [2.8.1](https://github.com/musher-dev/mush/compare/v2.8.0...v2.8.1) (2026-02-21)
 
 
