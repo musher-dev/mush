@@ -47,11 +47,13 @@ func TestProviderMapper_PrepareLoad_Claude(t *testing.T) {
 
 	write("skills/web/SKILL.md", "skill content")
 	write("researcher.md", "agent content")
+	write("mcp.json", `{"mcpServers":{}}`)
 
 	manifest := &client.BundleManifest{
 		Layers: []client.BundleLayer{
 			{LogicalPath: "skills/web/SKILL.md", AssetType: "skill"},
 			{LogicalPath: "researcher.md", AssetType: "agent_definition"},
+			{LogicalPath: "mcp.json", AssetType: "tool_config"},
 		},
 	}
 
@@ -62,28 +64,28 @@ func TestProviderMapper_PrepareLoad_Claude(t *testing.T) {
 
 	defer cleanup()
 
-	// Claude agents are individual files (not merged).
+	// Claude uses add_dir mode: discoverable assets (skills, agents) should be
+	// excluded from tmpDir to avoid duplication with CWD injection.
 	agentPath := filepath.Join(tmpDir, ".claude", "agents", "researcher.md")
-
-	data, err := os.ReadFile(agentPath)
-	if err != nil {
-		t.Fatalf("ReadFile(agent) error = %v", err)
+	if _, statErr := os.Stat(agentPath); statErr == nil {
+		t.Fatal("agent_definition should NOT be in tmpDir for add_dir mode harness")
 	}
 
-	if string(data) != "agent content" {
-		t.Fatalf("agent content = %q, want %q", string(data), "agent content")
-	}
-
-	// Skill: logical path "skills/web/SKILL.md" maps to .claude/skills/skills/web/SKILL.md
 	skillPath := filepath.Join(tmpDir, ".claude", "skills", "skills", "web", "SKILL.md")
-
-	data, err = os.ReadFile(skillPath)
-	if err != nil {
-		t.Fatalf("ReadFile(skill) error = %v", err)
+	if _, statErr := os.Stat(skillPath); statErr == nil {
+		t.Fatal("skill should NOT be in tmpDir for add_dir mode harness")
 	}
 
-	if string(data) != "skill content" {
-		t.Fatalf("skill content = %q, want %q", string(data), "skill content")
+	// tool_config should still be present in tmpDir.
+	toolPath := filepath.Join(tmpDir, ".mcp.json")
+
+	data, err := os.ReadFile(toolPath)
+	if err != nil {
+		t.Fatalf("ReadFile(tool_config) error = %v; tool_config should remain in tmpDir", err)
+	}
+
+	if len(data) == 0 {
+		t.Fatal("tool_config file is empty")
 	}
 }
 
@@ -111,11 +113,13 @@ func TestProviderMapper_PrepareLoad_Codex(t *testing.T) {
 
 	write("researcher.md", "Agent A")
 	write("reviewer.md", "Agent B")
+	write("tools/mcp.toml", "[mcp_servers.test]\ncommand = \"test\"\n")
 
 	manifest := &client.BundleManifest{
 		Layers: []client.BundleLayer{
 			{LogicalPath: "researcher.md", AssetType: "agent_definition"},
 			{LogicalPath: "reviewer.md", AssetType: "agent_definition"},
+			{LogicalPath: "tools/mcp.toml", AssetType: "tool_config"},
 		},
 	}
 
@@ -126,17 +130,24 @@ func TestProviderMapper_PrepareLoad_Codex(t *testing.T) {
 
 	defer cleanup()
 
-	// Codex agents are individual files (not merged).
+	// Codex now uses add_dir mode: discoverable assets (agents) should be
+	// excluded from tmpDir to avoid duplication with CWD injection.
 	for _, name := range []string{"researcher.md", "reviewer.md"} {
 		agentPath := filepath.Join(tmpDir, ".codex", "agents", name)
-
-		data, readErr := os.ReadFile(agentPath)
-		if readErr != nil {
-			t.Fatalf("ReadFile(%s) error = %v", name, readErr)
+		if _, statErr := os.Stat(agentPath); statErr == nil {
+			t.Fatalf("agent_definition %s should NOT be in tmpDir for add_dir mode harness", name)
 		}
+	}
 
-		if len(data) == 0 {
-			t.Fatalf("agent file %s is empty", name)
-		}
+	// tool_config should still be present in tmpDir.
+	toolPath := filepath.Join(tmpDir, ".codex", "config.toml")
+
+	data, err := os.ReadFile(toolPath)
+	if err != nil {
+		t.Fatalf("ReadFile(tool_config) error = %v; tool_config should remain in tmpDir", err)
+	}
+
+	if len(data) == 0 {
+		t.Fatal("tool_config file is empty")
 	}
 }

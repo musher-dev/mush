@@ -43,6 +43,13 @@ func (m *providerMapper) MapAsset(workDir string, layer client.BundleLayer) (str
 }
 
 // PrepareLoad creates a temp directory with assets in the provider's native structure.
+// For add_dir mode harnesses, discoverable assets (skills, agents) are excluded
+// from the temp dir because they are injected into the project directory instead.
 func (m *providerMapper) PrepareLoad(_ context.Context, cachePath string, manifest *client.BundleManifest) (tmpDir string, cleanup func(), err error) {
-	return prepareLoadCommon(m, cachePath, manifest)
+	var skip map[string]bool
+	if m.spec.BundleDir != nil && m.spec.BundleDir.Mode == "add_dir" {
+		skip = discoveredAssetTypes
+	}
+
+	return prepareLoadCommon(m, cachePath, manifest, skip)
 }
