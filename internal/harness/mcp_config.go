@@ -33,15 +33,6 @@ type claudeMCPServer struct {
 	Headers map[string]string `json:"headers,omitempty"`
 }
 
-// MCPProviderSpec describes a single MCP provider for config generation.
-type MCPProviderSpec struct {
-	Name      string `json:"name"`
-	URL       string `json:"url"`
-	TokenType string `json:"tokenType"`
-	Token     string `json:"token"`
-	ExpiresAt string `json:"expiresAt,omitempty"`
-}
-
 func normalizeRefreshInterval(seconds int) time.Duration {
 	if seconds <= 0 {
 		seconds = defaultRunnerConfigRefreshSeconds
