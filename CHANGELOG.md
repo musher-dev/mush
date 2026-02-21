@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.8.3](https://github.com/musher-dev/mush/compare/v2.8.2...v2.8.3) (2026-02-21)
+
+
+### Bug Fixes
+
+* **bundle:** auto-repair SKILL.md YAML frontmatter with unquoted colons ([#59](https://github.com/musher-dev/mush/issues/59)) ([afa962d](https://github.com/musher-dev/mush/commit/afa962d64d51ebaf8a5cb65a8c863d855a422638))
+
 ## [2.8.2](https://github.com/musher-dev/mush/compare/v2.8.1...v2.8.2) (2026-02-21)
 
 
