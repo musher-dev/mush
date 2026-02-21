@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.8.0](https://github.com/musher-dev/mush/compare/v2.7.0...v2.8.0) (2026-02-21)
+
+
+### Features
+
+* **bundle:** extend asset injection to skills and use PTY for codex executor ([#53](https://github.com/musher-dev/mush/issues/53)) ([c638af6](https://github.com/musher-dev/mush/commit/c638af66288893946475f0569bf9e8006595acf6))
+
 ## [2.7.0](https://github.com/musher-dev/mush/compare/v2.6.1...v2.7.0) (2026-02-21)
 
 
