@@ -126,14 +126,15 @@ var discoveredAssetTypes = map[string]bool{
 // into the project directory so the harness discovers them. Tool configs are
 // excluded because they are handled separately via merge logic and --mcp-config.
 // It skips files that already exist (protecting user's own assets). Returns the
-// list of injected paths and a cleanup function that removes only the files and
+// list of injected paths, any validation warnings (e.g. invalid YAML frontmatter
+// in SKILL.md files), and a cleanup function that removes only the files and
 // directories it created.
 // On error the returned cleanup removes any files and directories already created.
 func InjectAssetsForLoad(
 	projectDir, cachePath string,
 	manifest *client.BundleManifest,
 	mapper AssetMapper,
-) (injected []string, cleanup func(), err error) {
+) (injected, warnings []string, cleanup func(), err error) {
 	var createdFiles []string
 
 	var createdDirs []string
@@ -158,21 +159,28 @@ func InjectAssetsForLoad(
 
 		targetPath, mapErr := mapper.MapAsset(projectDir, layer)
 		if mapErr != nil {
-			return nil, makeCleanup(), fmt.Errorf("map asset %s: %w", layer.LogicalPath, mapErr)
+			return nil, nil, makeCleanup(), fmt.Errorf("map asset %s: %w", layer.LogicalPath, mapErr)
 		}
 
 		// Skip if the file already exists (don't overwrite user's assets).
 		if _, statErr := os.Stat(targetPath); statErr == nil {
 			continue
 		} else if !os.IsNotExist(statErr) {
-			return nil, makeCleanup(), fmt.Errorf("stat target asset %s: %w", layer.LogicalPath, statErr)
+			return nil, nil, makeCleanup(), fmt.Errorf("stat target asset %s: %w", layer.LogicalPath, statErr)
 		}
 
 		srcPath := filepath.Join(cachePath, "assets", layer.LogicalPath)
 
 		data, readErr := os.ReadFile(srcPath) //nolint:gosec // G304: path from controlled cache
 		if readErr != nil {
-			return nil, makeCleanup(), fmt.Errorf("read cached asset %s: %w", layer.LogicalPath, readErr)
+			return nil, nil, makeCleanup(), fmt.Errorf("read cached asset %s: %w", layer.LogicalPath, readErr)
+		}
+
+		// Validate YAML frontmatter for skill assets.
+		if layer.AssetType == "skill" {
+			if fmErr := ValidateSkillFrontmatter(data); fmErr != nil {
+				warnings = append(warnings, fmt.Sprintf("%s: %v", layer.LogicalPath, fmErr))
+			}
 		}
 
 		// Track directories we create (deepest first for cleanup).
@@ -194,11 +202,11 @@ func InjectAssetsForLoad(
 		}
 
 		if mkErr := os.MkdirAll(dir, 0o755); mkErr != nil { //nolint:gosec // G301: project dir
-			return nil, makeCleanup(), fmt.Errorf("create directory for %s: %w", layer.LogicalPath, mkErr)
+			return nil, nil, makeCleanup(), fmt.Errorf("create directory for %s: %w", layer.LogicalPath, mkErr)
 		}
 
 		if writeErr := os.WriteFile(targetPath, data, 0o644); writeErr != nil { //nolint:gosec // G306: project file
-			return nil, makeCleanup(), fmt.Errorf("write %s: %w", layer.LogicalPath, writeErr)
+			return nil, nil, makeCleanup(), fmt.Errorf("write %s: %w", layer.LogicalPath, writeErr)
 		}
 
 		createdFiles = append(createdFiles, targetPath)
@@ -210,6 +218,110 @@ func InjectAssetsForLoad(
 
 		injected = append(injected, relPath)
 	}
+
+	return injected, warnings, makeCleanup(), nil
+}
+
+// InjectToolConfigsForLoad merges tool_config assets from cache and writes
+// them into the project directory. This is needed for harnesses that read
+// their tool config from CWD only (e.g. Codex reads .codex/config.toml from
+// CWD, not from --add-dir paths). Any existing file at the target path is
+// backed up and restored by the returned cleanup function.
+func InjectToolConfigsForLoad(
+	projectDir, cachePath string,
+	manifest *client.BundleManifest,
+	mapper AssetMapper,
+) (injected []string, cleanup func(), err error) {
+	type backup struct {
+		path string
+		data []byte // nil means the file did not exist
+	}
+
+	var backups []backup
+
+	var createdFiles []string
+
+	makeCleanup := func() func() {
+		return func() {
+			// Remove files we created.
+			for _, f := range createdFiles {
+				_ = os.Remove(f)
+			}
+
+			// Restore backups.
+			for _, b := range backups {
+				if b.data == nil {
+					_ = os.Remove(b.path)
+				} else {
+					_ = os.WriteFile(b.path, b.data, 0o644) //nolint:gosec // G306: restoring original
+				}
+			}
+		}
+	}
+
+	// Collect tool_config layers grouped by target path.
+	toolConfigs := map[string][][]byte{}
+
+	for _, layer := range manifest.Layers {
+		if layer.AssetType != "tool_config" {
+			continue
+		}
+
+		targetPath, mapErr := mapper.MapAsset(projectDir, layer)
+		if mapErr != nil {
+			return nil, makeCleanup(), fmt.Errorf("map asset %s: %w", layer.LogicalPath, mapErr)
+		}
+
+		srcPath := filepath.Join(cachePath, "assets", layer.LogicalPath)
+
+		data, readErr := os.ReadFile(srcPath) //nolint:gosec // G304: path from controlled cache
+		if readErr != nil {
+			return nil, makeCleanup(), fmt.Errorf("read cached asset %s: %w", layer.LogicalPath, readErr)
+		}
+
+		toolConfigs[targetPath] = append(toolConfigs[targetPath], data)
+	}
+
+	for targetPath, docs := range toolConfigs {
+		// Back up existing file if present.
+		var existing []byte
+
+		data, readErr := os.ReadFile(targetPath) //nolint:gosec // G304: mapped project path
+
+		switch {
+		case readErr == nil:
+			existing = data
+			backups = append(backups, backup{path: targetPath, data: data})
+		case os.IsNotExist(readErr):
+			backups = append(backups, backup{path: targetPath, data: nil})
+		default:
+			return nil, makeCleanup(), fmt.Errorf("backup existing tool config %s: %w", targetPath, readErr)
+		}
+
+		merged, mergeErr := mergeToolConfigDocuments(existing, docs, targetPath)
+		if mergeErr != nil {
+			return nil, makeCleanup(), mergeErr
+		}
+
+		if mkErr := os.MkdirAll(filepath.Dir(targetPath), 0o755); mkErr != nil { //nolint:gosec // G301: project dir
+			return nil, makeCleanup(), fmt.Errorf("create directory for %s: %w", targetPath, mkErr)
+		}
+
+		if writeErr := os.WriteFile(targetPath, merged, 0o644); writeErr != nil { //nolint:gosec // G306: project file
+			return nil, makeCleanup(), fmt.Errorf("write tool config %s: %w", targetPath, writeErr)
+		}
+
+		createdFiles = append(createdFiles, targetPath)
+
+		relPath, _ := filepath.Rel(projectDir, targetPath)
+		if relPath == "" {
+			relPath = targetPath
+		}
+
+		injected = append(injected, relPath)
+	}
+
+	sort.Strings(injected)
 
 	return injected, makeCleanup(), nil
 }

@@ -22,7 +22,9 @@ type AssetMapper interface {
 }
 
 // prepareLoadCommon is shared logic for preparing load dirs across mappers.
-func prepareLoadCommon(mapper AssetMapper, cachePath string, manifest *client.BundleManifest) (tmpDir string, cleanup func(), err error) {
+// skipTypes, when non-nil, causes layers with matching AssetType to be excluded
+// from the temp directory (e.g. skills/agents that are injected into CWD instead).
+func prepareLoadCommon(mapper AssetMapper, cachePath string, manifest *client.BundleManifest, skipTypes map[string]bool) (tmpDir string, cleanup func(), err error) {
 	tmpDir, err = os.MkdirTemp("", "mush-bundle-*")
 	if err != nil {
 		return "", nil, fmt.Errorf("create temp dir: %w", err)
@@ -41,6 +43,10 @@ func prepareLoadCommon(mapper AssetMapper, cachePath string, manifest *client.Bu
 	assets := make([]mappedAsset, 0, len(manifest.Layers))
 
 	for _, layer := range manifest.Layers {
+		if skipTypes[layer.AssetType] {
+			continue
+		}
+
 		if vErr := ValidateLogicalPath(layer.LogicalPath); vErr != nil {
 			cleanup()
 			return "", nil, fmt.Errorf("invalid logical path: %w", vErr)

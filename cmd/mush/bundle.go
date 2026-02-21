@@ -158,15 +158,16 @@ Examples:
 
 			defer cleanup()
 
-			// Inject discoverable assets (agents, skills) into the project directory
-			// so the harness finds them. Claude Code only discovers these from
-			// CWD/.claude/{agents,skills}/, not from --add-dir directories.
+			// Inject discoverable assets (agents, skills) into the project directory.
+			// For add_dir mode harnesses these are excluded from the temp dir
+			// (via PrepareLoad) to avoid duplication, since the harness discovers
+			// them from both CWD and --add-dir.
 			projectDir, err := os.Getwd()
 			if err != nil {
 				return fmt.Errorf("get working directory: %w", err)
 			}
 
-			injected, assetCleanup, err := bundle.InjectAssetsForLoad(
+			injected, assetWarnings, assetCleanup, err := bundle.InjectAssetsForLoad(
 				projectDir, cachePath, &resolved.Manifest, mapper,
 			)
 			if err != nil {
@@ -174,6 +175,10 @@ Examples:
 			}
 
 			defer assetCleanup()
+
+			for _, w := range assetWarnings {
+				out.Warning("%s", w)
+			}
 
 			if len(injected) > 0 {
 				for _, relPath := range injected {
@@ -185,6 +190,24 @@ Examples:
 					slog.String("event.type", "bundle.load.assets_injected"),
 					slog.Int("asset_count", len(injected)),
 				)
+			}
+
+			// Inject tool configs into project dir for harnesses that read
+			// tool config from CWD only (no --mcp-config flag).
+			spec, _ := harness.GetProvider(normalized)
+			if spec != nil && (spec.CLI == nil || spec.CLI.MCPConfig == "") {
+				toolInjected, toolCleanup, toolErr := bundle.InjectToolConfigsForLoad(
+					projectDir, cachePath, &resolved.Manifest, mapper,
+				)
+				if toolErr != nil {
+					return fmt.Errorf("inject tool configs for load: %w", toolErr)
+				}
+
+				defer toolCleanup()
+
+				for _, relPath := range toolInjected {
+					out.Success("Injected: %s", relPath)
+				}
 			}
 
 			out.Success("Bundle assets prepared in load directory")

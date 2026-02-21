@@ -161,7 +161,7 @@ func TestInjectAssetsForLoad_HappyPath(t *testing.T) {
 
 	mapper := NewProviderMapper(claudeSpec)
 
-	injected, cleanup, err := InjectAssetsForLoad(projectDir, cacheDir, manifest, mapper)
+	injected, _, cleanup, err := InjectAssetsForLoad(projectDir, cacheDir, manifest, mapper)
 	if err != nil {
 		t.Fatalf("InjectAssetsForLoad() error = %v", err)
 	}
@@ -244,7 +244,7 @@ func TestInjectAssetsForLoad_SkipsExisting(t *testing.T) {
 
 	mapper := NewProviderMapper(claudeSpec)
 
-	injected, cleanup, err := InjectAssetsForLoad(projectDir, cacheDir, manifest, mapper)
+	injected, _, cleanup, err := InjectAssetsForLoad(projectDir, cacheDir, manifest, mapper)
 	if err != nil {
 		t.Fatalf("InjectAssetsForLoad() error = %v", err)
 	}
@@ -308,7 +308,7 @@ func TestInjectAssetsForLoad_Cleanup(t *testing.T) {
 
 	mapper := NewProviderMapper(claudeSpec)
 
-	injected, cleanup, err := InjectAssetsForLoad(projectDir, cacheDir, manifest, mapper)
+	injected, _, cleanup, err := InjectAssetsForLoad(projectDir, cacheDir, manifest, mapper)
 	if err != nil {
 		t.Fatalf("InjectAssetsForLoad() error = %v", err)
 	}
@@ -372,7 +372,7 @@ func TestInjectAssetsForLoad_NestedLogicalPath(t *testing.T) {
 
 	mapper := NewProviderMapper(claudeSpec)
 
-	injected, cleanup, err := InjectAssetsForLoad(projectDir, cacheDir, manifest, mapper)
+	injected, _, cleanup, err := InjectAssetsForLoad(projectDir, cacheDir, manifest, mapper)
 	if err != nil {
 		t.Fatalf("InjectAssetsForLoad() error = %v", err)
 	}
@@ -393,5 +393,251 @@ func TestInjectAssetsForLoad_NestedLogicalPath(t *testing.T) {
 
 	if string(data) != "Nested agent" {
 		t.Fatalf("nested agent content = %q, want %q", string(data), "Nested agent")
+	}
+}
+
+func TestInjectAssetsForLoad_SkillFrontmatterWarning(t *testing.T) {
+	projectDir := t.TempDir()
+	cacheDir := t.TempDir()
+
+	assetsDir := filepath.Join(cacheDir, "assets")
+
+	write := func(rel, data string) {
+		path := filepath.Join(assetsDir, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("MkdirAll(%s) error = %v", rel, err)
+		}
+
+		if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+			t.Fatalf("WriteFile(%s) error = %v", rel, err)
+		}
+	}
+
+	// Skill with invalid YAML frontmatter (unquoted colon in value).
+	write("skills/bad/SKILL.md", "---\nname: test\ndescription: something: broken\n---\n# Skill\n")
+
+	// Skill with valid YAML frontmatter.
+	write("skills/good/SKILL.md", "---\nname: good\ndescription: \"works fine\"\n---\n# Skill\n")
+
+	manifest := &client.BundleManifest{
+		Layers: []client.BundleLayer{
+			{LogicalPath: "skills/bad/SKILL.md", AssetType: "skill"},
+			{LogicalPath: "skills/good/SKILL.md", AssetType: "skill"},
+		},
+	}
+
+	claudeSpec, ok := harness.GetProvider("claude")
+	if !ok {
+		t.Fatal("claude provider not found")
+	}
+
+	mapper := NewProviderMapper(claudeSpec)
+
+	injected, warnings, cleanup, err := InjectAssetsForLoad(projectDir, cacheDir, manifest, mapper)
+	if err != nil {
+		t.Fatalf("InjectAssetsForLoad() error = %v", err)
+	}
+
+	defer cleanup()
+
+	// Both should still be injected (warnings are non-fatal).
+	if len(injected) != 2 {
+		t.Fatalf("InjectAssetsForLoad() injected %d paths, want 2; got %v", len(injected), injected)
+	}
+
+	// Should have exactly one warning for the bad skill.
+	if len(warnings) != 1 {
+		t.Fatalf("InjectAssetsForLoad() warnings = %d, want 1; got %v", len(warnings), warnings)
+	}
+
+	if !strings.Contains(warnings[0], "skills/bad/SKILL.md") {
+		t.Fatalf("warning should mention bad skill path, got: %s", warnings[0])
+	}
+
+	if !strings.Contains(warnings[0], "invalid YAML frontmatter") {
+		t.Fatalf("warning should mention invalid YAML, got: %s", warnings[0])
+	}
+}
+
+func TestInjectToolConfigsForLoad_HappyPath(t *testing.T) {
+	projectDir := t.TempDir()
+	cacheDir := t.TempDir()
+
+	assetsDir := filepath.Join(cacheDir, "assets")
+
+	write := func(rel, data string) {
+		path := filepath.Join(assetsDir, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("MkdirAll(%s) error = %v", rel, err)
+		}
+
+		if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+			t.Fatalf("WriteFile(%s) error = %v", rel, err)
+		}
+	}
+
+	write("tools/a.toml", "[mcp_servers.alpha]\ncommand = \"a\"\n")
+	write("tools/b.toml", "[mcp_servers.beta]\ncommand = \"b\"\n")
+
+	manifest := &client.BundleManifest{
+		Layers: []client.BundleLayer{
+			{LogicalPath: "tools/a.toml", AssetType: "tool_config"},
+			{LogicalPath: "tools/b.toml", AssetType: "tool_config"},
+		},
+	}
+
+	codexSpec, ok := harness.GetProvider("codex")
+	if !ok {
+		t.Fatal("codex provider not found")
+	}
+
+	mapper := NewProviderMapper(codexSpec)
+
+	injected, cleanup, err := InjectToolConfigsForLoad(projectDir, cacheDir, manifest, mapper)
+	if err != nil {
+		t.Fatalf("InjectToolConfigsForLoad() error = %v", err)
+	}
+
+	defer cleanup()
+
+	if len(injected) != 1 {
+		t.Fatalf("InjectToolConfigsForLoad() injected %d paths, want 1; got %v", len(injected), injected)
+	}
+
+	// Verify merged config file.
+	configPath := filepath.Join(projectDir, ".codex", "config.toml")
+
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("ReadFile(config.toml) error = %v", err)
+	}
+
+	config := string(data)
+	if !strings.Contains(config, "alpha") || !strings.Contains(config, "beta") {
+		t.Fatalf("config.toml missing merged servers: %s", config)
+	}
+}
+
+func TestInjectToolConfigsForLoad_BackupRestore(t *testing.T) {
+	projectDir := t.TempDir()
+	cacheDir := t.TempDir()
+
+	assetsDir := filepath.Join(cacheDir, "assets")
+
+	write := func(rel, data string) {
+		path := filepath.Join(assetsDir, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("MkdirAll(%s) error = %v", rel, err)
+		}
+
+		if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+			t.Fatalf("WriteFile(%s) error = %v", rel, err)
+		}
+	}
+
+	// Pre-create an existing config file.
+	existingPath := filepath.Join(projectDir, ".codex", "config.toml")
+	if err := os.MkdirAll(filepath.Dir(existingPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+
+	originalContent := "[mcp_servers.existing]\ncommand = \"original\"\n"
+
+	if err := os.WriteFile(existingPath, []byte(originalContent), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	write("tools/new.toml", "[mcp_servers.new_server]\ncommand = \"new\"\n")
+
+	manifest := &client.BundleManifest{
+		Layers: []client.BundleLayer{
+			{LogicalPath: "tools/new.toml", AssetType: "tool_config"},
+		},
+	}
+
+	codexSpec, ok := harness.GetProvider("codex")
+	if !ok {
+		t.Fatal("codex provider not found")
+	}
+
+	mapper := NewProviderMapper(codexSpec)
+
+	injected, cleanup, err := InjectToolConfigsForLoad(projectDir, cacheDir, manifest, mapper)
+	if err != nil {
+		t.Fatalf("InjectToolConfigsForLoad() error = %v", err)
+	}
+
+	if len(injected) != 1 {
+		t.Fatalf("InjectToolConfigsForLoad() injected %d, want 1", len(injected))
+	}
+
+	// Verify merged content before cleanup.
+	data, err := os.ReadFile(existingPath)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+
+	merged := string(data)
+	if !strings.Contains(merged, "existing") || !strings.Contains(merged, "new_server") {
+		t.Fatalf("merged config missing servers: %s", merged)
+	}
+
+	// Run cleanup — should restore original content.
+	cleanup()
+
+	data, err = os.ReadFile(existingPath)
+	if err != nil {
+		t.Fatalf("ReadFile() after cleanup error = %v", err)
+	}
+
+	if string(data) != originalContent {
+		t.Fatalf("config after cleanup = %q, want %q", string(data), originalContent)
+	}
+}
+
+func TestInjectToolConfigsForLoad_NoToolConfigs(t *testing.T) {
+	projectDir := t.TempDir()
+	cacheDir := t.TempDir()
+
+	assetsDir := filepath.Join(cacheDir, "assets")
+	if err := os.MkdirAll(assetsDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+
+	write := func(rel, data string) {
+		path := filepath.Join(assetsDir, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("MkdirAll(%s) error = %v", rel, err)
+		}
+
+		if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+			t.Fatalf("WriteFile(%s) error = %v", rel, err)
+		}
+	}
+
+	write("researcher.md", "Agent content")
+
+	manifest := &client.BundleManifest{
+		Layers: []client.BundleLayer{
+			{LogicalPath: "researcher.md", AssetType: "agent_definition"},
+		},
+	}
+
+	codexSpec, ok := harness.GetProvider("codex")
+	if !ok {
+		t.Fatal("codex provider not found")
+	}
+
+	mapper := NewProviderMapper(codexSpec)
+
+	injected, cleanup, err := InjectToolConfigsForLoad(projectDir, cacheDir, manifest, mapper)
+	if err != nil {
+		t.Fatalf("InjectToolConfigsForLoad() error = %v", err)
+	}
+
+	defer cleanup()
+
+	if len(injected) != 0 {
+		t.Fatalf("InjectToolConfigsForLoad() injected %d paths, want 0", len(injected))
 	}
 }

@@ -1,9 +1,12 @@
 package bundle
 
 import (
+	"bytes"
 	"fmt"
 	"path/filepath"
 	"strings"
+
+	"gopkg.in/yaml.v3"
 )
 
 // ValidateLogicalPath checks that a logical path is safe and does not attempt
@@ -41,6 +44,77 @@ func ValidateLogicalPath(logicalPath string) error {
 		if part == ".." {
 			return fmt.Errorf("logical path contains '..' component: %s", logicalPath)
 		}
+	}
+
+	return nil
+}
+
+// ValidateSkillFrontmatter extracts YAML frontmatter (between --- delimiters)
+// from a SKILL.md file and validates it parses as YAML. Returns nil if valid
+// or if no frontmatter is present.
+func ValidateSkillFrontmatter(data []byte) error {
+	frontmatter := extractFrontmatter(data)
+	if frontmatter == nil {
+		return nil
+	}
+
+	var doc any
+	if err := yaml.Unmarshal(frontmatter, &doc); err != nil {
+		return fmt.Errorf("invalid YAML frontmatter: %w (hint: ensure values containing colons are quoted)", err)
+	}
+
+	return nil
+}
+
+// extractFrontmatter returns the YAML frontmatter bytes between --- delimiters,
+// or nil if no frontmatter is found. Handles both \n and \r\n line endings and
+// requires the opening/closing delimiters to be on their own lines.
+func extractFrontmatter(data []byte) []byte {
+	trimmed := bytes.TrimLeft(data, " \t\r\n")
+	if len(trimmed) == 0 {
+		return nil
+	}
+
+	// Find end of the first line.
+	firstNL := bytes.IndexByte(trimmed, '\n')
+	if firstNL < 0 {
+		return nil
+	}
+
+	// Opening delimiter must be exactly "---" (with optional trailing \r/spaces).
+	firstLine := bytes.Trim(trimmed[:firstNL], " \t\r")
+	if !bytes.Equal(firstLine, []byte("---")) {
+		return nil
+	}
+
+	contentStart := firstNL + 1
+	if contentStart >= len(trimmed) {
+		return nil
+	}
+
+	// Scan subsequent lines for a closing delimiter.
+	i := contentStart
+
+	for i < len(trimmed) {
+		j := bytes.IndexByte(trimmed[i:], '\n')
+
+		var line []byte
+
+		var next int
+
+		if j < 0 {
+			line = trimmed[i:]
+			next = len(trimmed)
+		} else {
+			line = trimmed[i : i+j]
+			next = i + j + 1
+		}
+
+		if bytes.Equal(bytes.Trim(line, " \t\r"), []byte("---")) {
+			return trimmed[contentStart:i]
+		}
+
+		i = next
 	}
 
 	return nil

@@ -92,8 +92,8 @@ func TestGetProvider_Codex(t *testing.T) {
 		t.Fatalf("MCP.Format = %v, want toml", spec.MCP)
 	}
 
-	if spec.BundleDir == nil || spec.BundleDir.Mode != "cd_flag" {
-		t.Fatalf("BundleDir.Mode = %v, want cd_flag", spec.BundleDir)
+	if spec.BundleDir == nil || spec.BundleDir.Mode != "add_dir" {
+		t.Fatalf("BundleDir.Mode = %v, want add_dir", spec.BundleDir)
 	}
 }
 
