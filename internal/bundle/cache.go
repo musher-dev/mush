@@ -18,7 +18,12 @@ import (
 func CacheDir() string {
 	cacheDir, err := paths.BundleCacheDir()
 	if err != nil {
-		return filepath.Join(os.Getenv("HOME"), ".cache", "mush", "cache")
+		home, homeErr := os.UserHomeDir()
+		if homeErr != nil {
+			return filepath.Join(os.TempDir(), "mush", "cache")
+		}
+
+		return filepath.Join(home, ".cache", "mush", "cache")
 	}
 
 	return cacheDir

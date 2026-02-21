@@ -16,9 +16,11 @@ func TestClaudeSetupBundleLoadDoesNotBlockOnReady(t *testing.T) {
 
 	exec.startPTYFunc = func(context.Context) error { return nil }
 	exec.startOutputFunc = func() {}
-	exec.waitForReadyFunc = func(context.Context) {
+	exec.waitForReadyFunc = func(context.Context) bool {
 		close(waitStarted)
 		<-releaseReady
+
+		return true
 	}
 
 	done := make(chan error, 1)
@@ -70,9 +72,11 @@ func TestClaudeSetupLinkModeBlocksUntilReady(t *testing.T) {
 
 	exec.startPTYFunc = func(context.Context) error { return nil }
 	exec.startOutputFunc = func() {}
-	exec.waitForReadyFunc = func(context.Context) {
+	exec.waitForReadyFunc = func(context.Context) bool {
 		close(waitStarted)
 		<-releaseReady
+
+		return true
 	}
 
 	done := make(chan error, 1)
@@ -113,5 +117,48 @@ func TestClaudeSetupLinkModeBlocksUntilReady(t *testing.T) {
 	case <-onReadyCalled:
 	case <-time.After(250 * time.Millisecond):
 		t.Fatal("OnReady not called in link mode after readiness")
+	}
+}
+
+func TestClaudeSetupOnReadySkippedOnCancel(t *testing.T) {
+	exec := NewClaudeExecutor()
+	onReadyCalled := make(chan struct{}, 1)
+
+	ctx, cancel := context.WithCancel(t.Context())
+
+	exec.startPTYFunc = func(context.Context) error { return nil }
+	exec.startOutputFunc = func() {}
+	exec.waitForReadyFunc = func(ctx context.Context) bool {
+		<-ctx.Done()
+		return false
+	}
+
+	done := make(chan error, 1)
+
+	go func() {
+		done <- exec.Setup(ctx, &SetupOptions{
+			BundleLoadMode: false,
+			OnReady: func() {
+				onReadyCalled <- struct{}{}
+			},
+		})
+	}()
+
+	// Cancel the context to abort waitForReady.
+	cancel()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Setup() error = %v", err)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("Setup() did not return after context cancellation")
+	}
+
+	select {
+	case <-onReadyCalled:
+		t.Fatal("OnReady should not be called after context cancellation")
+	default:
 	}
 }

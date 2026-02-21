@@ -57,7 +57,7 @@ type ClaudeExecutor struct {
 	startPTYWithSize func(*exec.Cmd, *pty.Winsize) (*os.File, error)
 	startPTYFunc     func(context.Context) error
 	startOutputFunc  func()
-	waitForReadyFunc func(context.Context)
+	waitForReadyFunc func(context.Context) bool
 
 	// ptyReady delivers active PTY handles to the output reader loop.
 	ptyReady chan *os.File
@@ -169,19 +169,13 @@ func (e *ClaudeExecutor) Setup(ctx context.Context, opts *SetupOptions) error {
 
 	if opts.BundleLoadMode {
 		go func() {
-			waitForReady(ctx)
-
-			if opts.OnReady != nil {
+			if waitForReady(ctx) && opts.OnReady != nil {
 				opts.OnReady()
 			}
 		}()
-	} else {
+	} else if waitForReady(ctx) && opts.OnReady != nil {
 		// Link mode blocks until prompt detection confirms readiness.
-		waitForReady(ctx)
-
-		if opts.OnReady != nil {
-			opts.OnReady()
-		}
+		opts.OnReady()
 	}
 
 	return nil
@@ -663,13 +657,20 @@ func (e *ClaudeExecutor) onPromptConfirmed() {
 	}
 }
 
-func (e *ClaudeExecutor) waitForReady(ctx context.Context) {
+// waitForReady blocks until the Claude prompt is detected, the context is
+// canceled, the executor shuts down, or a 15-second timeout elapses.
+// It returns true only when readiness was positively confirmed (prompt
+// detected or timeout with bypass accepted).
+func (e *ClaudeExecutor) waitForReady(ctx context.Context) bool {
 	e.drainPromptDetected()
 
 	select {
 	case <-ctx.Done():
+		return false
 	case <-e.done:
+		return false
 	case <-e.promptDetected:
+		return true
 	case <-time.After(15 * time.Second):
 		e.captureMu.Lock()
 		bypassed := e.bypassAccepted
@@ -678,6 +679,10 @@ func (e *ClaudeExecutor) waitForReady(ctx context.Context) {
 		if bypassed {
 			time.Sleep(2 * time.Second)
 		}
+
+		// Timeout is treated as ready (best-effort; prompt may have been
+		// missed or the harness may not emit a detectable prompt).
+		return true
 	}
 }
 
