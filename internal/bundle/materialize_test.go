@@ -125,7 +125,7 @@ func TestInstallFromCache_Conflict(t *testing.T) {
 	}
 }
 
-func TestInjectAgentsForLoad_HappyPath(t *testing.T) {
+func TestInjectAssetsForLoad_HappyPath(t *testing.T) {
 	projectDir := t.TempDir()
 	cacheDir := t.TempDir()
 
@@ -144,11 +144,13 @@ func TestInjectAgentsForLoad_HappyPath(t *testing.T) {
 
 	write("architect.md", "Agent content")
 	write("skills/web/SKILL.md", "Skill content")
+	write("tools/mcp.json", `{"mcpServers":{}}`)
 
 	manifest := &client.BundleManifest{
 		Layers: []client.BundleLayer{
 			{LogicalPath: "architect.md", AssetType: "agent_definition"},
 			{LogicalPath: "skills/web/SKILL.md", AssetType: "skill"},
+			{LogicalPath: "tools/mcp.json", AssetType: "tool_config"},
 		},
 	}
 
@@ -159,16 +161,16 @@ func TestInjectAgentsForLoad_HappyPath(t *testing.T) {
 
 	mapper := NewProviderMapper(claudeSpec)
 
-	injected, cleanup, err := InjectAgentsForLoad(projectDir, cacheDir, manifest, mapper)
+	injected, cleanup, err := InjectAssetsForLoad(projectDir, cacheDir, manifest, mapper)
 	if err != nil {
-		t.Fatalf("InjectAgentsForLoad() error = %v", err)
+		t.Fatalf("InjectAssetsForLoad() error = %v", err)
 	}
 
 	defer cleanup()
 
-	// Only agent_definition should be injected, not skills.
-	if len(injected) != 1 {
-		t.Fatalf("InjectAgentsForLoad() injected %d paths, want 1; got %v", len(injected), injected)
+	// Both agent and skill should be injected; tool_config should NOT.
+	if len(injected) != 2 {
+		t.Fatalf("InjectAssetsForLoad() injected %d paths, want 2; got %v", len(injected), injected)
 	}
 
 	agentPath := filepath.Join(projectDir, ".claude", "agents", "architect.md")
@@ -181,9 +183,26 @@ func TestInjectAgentsForLoad_HappyPath(t *testing.T) {
 	if string(data) != "Agent content" {
 		t.Fatalf("agent content = %q, want %q", string(data), "Agent content")
 	}
+
+	skillPath := filepath.Join(projectDir, ".claude", "skills", "skills", "web", "SKILL.md")
+
+	data, err = os.ReadFile(skillPath)
+	if err != nil {
+		t.Fatalf("skill file not found: %v", err)
+	}
+
+	if string(data) != "Skill content" {
+		t.Fatalf("skill content = %q, want %q", string(data), "Skill content")
+	}
+
+	// tool_config should NOT be injected into the project dir.
+	toolPath := filepath.Join(projectDir, ".mcp.json")
+	if _, statErr := os.Stat(toolPath); statErr == nil {
+		t.Fatal("tool_config should not be injected into project dir")
+	}
 }
 
-func TestInjectAgentsForLoad_SkipsExisting(t *testing.T) {
+func TestInjectAssetsForLoad_SkipsExisting(t *testing.T) {
 	projectDir := t.TempDir()
 	cacheDir := t.TempDir()
 
@@ -225,16 +244,16 @@ func TestInjectAgentsForLoad_SkipsExisting(t *testing.T) {
 
 	mapper := NewProviderMapper(claudeSpec)
 
-	injected, cleanup, err := InjectAgentsForLoad(projectDir, cacheDir, manifest, mapper)
+	injected, cleanup, err := InjectAssetsForLoad(projectDir, cacheDir, manifest, mapper)
 	if err != nil {
-		t.Fatalf("InjectAgentsForLoad() error = %v", err)
+		t.Fatalf("InjectAssetsForLoad() error = %v", err)
 	}
 
 	defer cleanup()
 
 	// Should be skipped since the file already exists.
 	if len(injected) != 0 {
-		t.Fatalf("InjectAgentsForLoad() injected %d paths, want 0", len(injected))
+		t.Fatalf("InjectAssetsForLoad() injected %d paths, want 0", len(injected))
 	}
 
 	// Original content should be preserved.
@@ -255,7 +274,7 @@ func TestInjectAgentsForLoad_SkipsExisting(t *testing.T) {
 	}
 }
 
-func TestInjectAgentsForLoad_Cleanup(t *testing.T) {
+func TestInjectAssetsForLoad_Cleanup(t *testing.T) {
 	projectDir := t.TempDir()
 	cacheDir := t.TempDir()
 
@@ -289,13 +308,13 @@ func TestInjectAgentsForLoad_Cleanup(t *testing.T) {
 
 	mapper := NewProviderMapper(claudeSpec)
 
-	injected, cleanup, err := InjectAgentsForLoad(projectDir, cacheDir, manifest, mapper)
+	injected, cleanup, err := InjectAssetsForLoad(projectDir, cacheDir, manifest, mapper)
 	if err != nil {
-		t.Fatalf("InjectAgentsForLoad() error = %v", err)
+		t.Fatalf("InjectAssetsForLoad() error = %v", err)
 	}
 
 	if len(injected) != 2 {
-		t.Fatalf("InjectAgentsForLoad() injected %d, want 2", len(injected))
+		t.Fatalf("InjectAssetsForLoad() injected %d, want 2", len(injected))
 	}
 
 	// Verify files exist before cleanup.
@@ -324,7 +343,7 @@ func TestInjectAgentsForLoad_Cleanup(t *testing.T) {
 	}
 }
 
-func TestInjectAgentsForLoad_NestedLogicalPath(t *testing.T) {
+func TestInjectAssetsForLoad_NestedLogicalPath(t *testing.T) {
 	projectDir := t.TempDir()
 	cacheDir := t.TempDir()
 
@@ -353,15 +372,15 @@ func TestInjectAgentsForLoad_NestedLogicalPath(t *testing.T) {
 
 	mapper := NewProviderMapper(claudeSpec)
 
-	injected, cleanup, err := InjectAgentsForLoad(projectDir, cacheDir, manifest, mapper)
+	injected, cleanup, err := InjectAssetsForLoad(projectDir, cacheDir, manifest, mapper)
 	if err != nil {
-		t.Fatalf("InjectAgentsForLoad() error = %v", err)
+		t.Fatalf("InjectAssetsForLoad() error = %v", err)
 	}
 
 	defer cleanup()
 
 	if len(injected) != 1 {
-		t.Fatalf("InjectAgentsForLoad() injected %d, want 1", len(injected))
+		t.Fatalf("InjectAssetsForLoad() injected %d, want 1", len(injected))
 	}
 
 	// Should be at .claude/agents/agents/shaping-architect.md (mapper joins AgentDir + LogicalPath).

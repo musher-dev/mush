@@ -158,31 +158,32 @@ Examples:
 
 			defer cleanup()
 
-			// Inject agent_definition assets into the project directory so the
-			// harness discovers them (e.g., Claude Code only looks under CWD/.claude/agents/).
+			// Inject discoverable assets (agents, skills) into the project directory
+			// so the harness finds them. Claude Code only discovers these from
+			// CWD/.claude/{agents,skills}/, not from --add-dir directories.
 			projectDir, err := os.Getwd()
 			if err != nil {
 				return fmt.Errorf("get working directory: %w", err)
 			}
 
-			injected, agentCleanup, err := bundle.InjectAgentsForLoad(
+			injected, assetCleanup, err := bundle.InjectAssetsForLoad(
 				projectDir, cachePath, &resolved.Manifest, mapper,
 			)
 			if err != nil {
-				return fmt.Errorf("inject agents for load: %w", err)
+				return fmt.Errorf("inject assets for load: %w", err)
 			}
 
-			defer agentCleanup()
+			defer assetCleanup()
 
 			if len(injected) > 0 {
 				for _, relPath := range injected {
-					out.Success("Agent injected: %s", relPath)
+					out.Success("Injected: %s", relPath)
 				}
 
 				logger.Info(
-					"agents injected into project dir",
-					slog.String("event.type", "bundle.load.agents_injected"),
-					slog.Int("agent_count", len(injected)),
+					"assets injected into project dir",
+					slog.String("event.type", "bundle.load.assets_injected"),
+					slog.Int("asset_count", len(injected)),
 				)
 			}
 
