@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.6.1](https://github.com/musher-dev/mush/compare/v2.6.0...v2.6.1) (2026-02-21)
+
+
+### Bug Fixes
+
+* **harness:** move MCPProviderSpec to platform-independent file ([#48](https://github.com/musher-dev/mush/issues/48)) ([bb2c3fc](https://github.com/musher-dev/mush/commit/bb2c3fc55e7fedfdb2562041b7e7f53de3ea5686))
+
 ## [2.6.0](https://github.com/musher-dev/mush/compare/v2.5.0...v2.6.0) (2026-02-21)
 
 
