@@ -12,6 +12,7 @@ import (
 func setTestHome(t *testing.T, dir string) {
 	t.Helper()
 	t.Setenv("HOME", dir)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, ".config"))
 
 	if runtime.GOOS == "windows" {
 		t.Setenv("USERPROFILE", dir)
