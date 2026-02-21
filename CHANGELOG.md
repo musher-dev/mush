@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.8.1](https://github.com/musher-dev/mush/compare/v2.8.0...v2.8.1) (2026-02-21)
+
+
+### Bug Fixes
+
+* **bundle:** preserve CWD for codex bundle load and validate SKILL.md frontmatter ([#55](https://github.com/musher-dev/mush/issues/55)) ([e583791](https://github.com/musher-dev/mush/commit/e583791f67dc214ebaf25c62455bf89608653a1d))
+
 ## [2.8.0](https://github.com/musher-dev/mush/compare/v2.7.0...v2.8.0) (2026-02-21)
 
 
