@@ -6,12 +6,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
+
+	"github.com/creack/pty"
 
 	"github.com/musher-dev/mush/internal/ansi"
 	"github.com/musher-dev/mush/internal/client"
@@ -24,7 +26,7 @@ type CodexExecutor struct {
 
 	mu         sync.Mutex
 	cmd        *exec.Cmd
-	stdin      io.WriteCloser
+	ptmx       *os.File
 	waitDoneCh chan struct{}
 }
 
@@ -172,16 +174,16 @@ func (e *CodexExecutor) Reset(_ context.Context) error {
 // WriteInput forwards terminal input to the interactive Codex process.
 func (e *CodexExecutor) WriteInput(p []byte) (int, error) {
 	e.mu.Lock()
-	stdin := e.stdin
+	ptmx := e.ptmx
 	e.mu.Unlock()
 
-	if stdin == nil {
+	if ptmx == nil {
 		return 0, nil
 	}
 
-	n, err := stdin.Write(p)
+	n, err := ptmx.Write(p)
 	if err != nil {
-		return n, fmt.Errorf("write to codex stdin: %w", err)
+		return n, fmt.Errorf("write to codex pty: %w", err)
 	}
 
 	return n, nil
@@ -200,36 +202,45 @@ func (e *CodexExecutor) startInteractive(ctx context.Context, opts *SetupOptions
 	}
 
 	cmd := exec.CommandContext(ctx, "codex", args...) //nolint:gosec // G204: args from controlled input
-	cmd.Env = os.Environ()
 
-	stdin, err := cmd.StdinPipe()
+	cmd.Env = append(os.Environ(), "TERM=xterm-256color", "FORCE_COLOR=1")
+
+	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{
+		Rows: uint16(opts.TermHeight),
+		Cols: uint16(opts.TermWidth),
+	})
 	if err != nil {
-		return fmt.Errorf("codex stdin pipe: %w", err)
-	}
-
-	var stdout io.Writer = os.Stdout
-	if opts.TermWriter != nil {
-		stdout = opts.TermWriter
-	}
-
-	if opts.OnOutput != nil {
-		stdout = io.MultiWriter(stdout, outputCallbackWriter{fn: opts.OnOutput})
-	}
-
-	cmd.Stdout = stdout
-	cmd.Stderr = stdout
-
-	if err := cmd.Start(); err != nil {
-		_ = stdin.Close()
 		return fmt.Errorf("start codex interactive session: %w", err)
 	}
 
 	e.mu.Lock()
 	e.cmd = cmd
-	e.stdin = stdin
+	e.ptmx = ptmx
 	e.waitDoneCh = make(chan struct{})
 	waitDoneCh := e.waitDoneCh
 	e.mu.Unlock()
+
+	// Read PTY output and forward to terminal writer.
+	go func() {
+		buf := make([]byte, 4096)
+
+		for {
+			n, readErr := ptmx.Read(buf)
+			if n > 0 {
+				if opts.TermWriter != nil {
+					_, _ = opts.TermWriter.Write(buf[:n])
+				}
+
+				if opts.OnOutput != nil {
+					opts.OnOutput(buf[:n])
+				}
+			}
+
+			if readErr != nil {
+				return
+			}
+		}
+	}()
 
 	go func() {
 		_ = cmd.Wait()
@@ -248,27 +259,35 @@ func (e *CodexExecutor) startInteractive(ctx context.Context, opts *SetupOptions
 func (e *CodexExecutor) Teardown() {
 	e.mu.Lock()
 	cmd := e.cmd
-	stdin := e.stdin
+	ptmx := e.ptmx
 	waitDoneCh := e.waitDoneCh
 	e.cmd = nil
-	e.stdin = nil
+	e.ptmx = nil
 	e.waitDoneCh = nil
 	e.mu.Unlock()
 
-	if stdin != nil {
-		_ = stdin.Close()
+	if ptmx != nil {
+		_ = ptmx.Close()
 	}
 
 	if cmd == nil || cmd.Process == nil {
 		return
 	}
 
-	_ = cmd.Process.Signal(os.Interrupt)
+	pgid := 0
+
+	if cmd.Process.Pid > 0 {
+		if g, err := syscall.Getpgid(cmd.Process.Pid); err == nil {
+			pgid = g
+		}
+	}
+
+	sendSignal(cmd.Process.Pid, pgid, syscall.SIGTERM)
 
 	select {
 	case <-waitDoneCh:
 	case <-time.After(2 * time.Second):
-		_ = cmd.Process.Kill()
+		sendSignal(cmd.Process.Pid, pgid, syscall.SIGKILL)
 
 		if waitDoneCh != nil {
 			select {
@@ -277,18 +296,6 @@ func (e *CodexExecutor) Teardown() {
 			}
 		}
 	}
-}
-
-type outputCallbackWriter struct {
-	fn func([]byte)
-}
-
-func (w outputCallbackWriter) Write(p []byte) (int, error) {
-	if w.fn != nil {
-		w.fn(p)
-	}
-
-	return len(p), nil
 }
 
 // Ensure CodexExecutor satisfies the required interfaces.

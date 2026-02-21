@@ -114,12 +114,22 @@ func InstallFromCache(
 	return paths, nil
 }
 
-// InjectAgentsForLoad copies agent_definition assets from cache into the project
-// directory's native agent folder so the harness discovers them. It skips files
-// that already exist (protecting user's own agents). Returns the list of injected
-// paths and a cleanup function that removes only the files and directories it created.
+// discoveredAssetTypes are asset types that harnesses discover from the project
+// directory (CWD) rather than from --add-dir or similar flags. These must be
+// injected into the project dir during bundle load so the harness finds them.
+var discoveredAssetTypes = map[string]bool{
+	"agent_definition": true,
+	"skill":            true,
+}
+
+// InjectAssetsForLoad copies discoverable assets (agents, skills) from cache
+// into the project directory so the harness discovers them. Tool configs are
+// excluded because they are handled separately via merge logic and --mcp-config.
+// It skips files that already exist (protecting user's own assets). Returns the
+// list of injected paths and a cleanup function that removes only the files and
+// directories it created.
 // On error the returned cleanup removes any files and directories already created.
-func InjectAgentsForLoad(
+func InjectAssetsForLoad(
 	projectDir, cachePath string,
 	manifest *client.BundleManifest,
 	mapper AssetMapper,
@@ -142,27 +152,27 @@ func InjectAgentsForLoad(
 	}
 
 	for _, layer := range manifest.Layers {
-		if layer.AssetType != "agent_definition" {
+		if !discoveredAssetTypes[layer.AssetType] {
 			continue
 		}
 
 		targetPath, mapErr := mapper.MapAsset(projectDir, layer)
 		if mapErr != nil {
-			return nil, makeCleanup(), fmt.Errorf("map agent asset %s: %w", layer.LogicalPath, mapErr)
+			return nil, makeCleanup(), fmt.Errorf("map asset %s: %w", layer.LogicalPath, mapErr)
 		}
 
-		// Skip if the file already exists (don't overwrite user's agents).
+		// Skip if the file already exists (don't overwrite user's assets).
 		if _, statErr := os.Stat(targetPath); statErr == nil {
 			continue
 		} else if !os.IsNotExist(statErr) {
-			return nil, makeCleanup(), fmt.Errorf("stat target agent %s: %w", layer.LogicalPath, statErr)
+			return nil, makeCleanup(), fmt.Errorf("stat target asset %s: %w", layer.LogicalPath, statErr)
 		}
 
 		srcPath := filepath.Join(cachePath, "assets", layer.LogicalPath)
 
 		data, readErr := os.ReadFile(srcPath) //nolint:gosec // G304: path from controlled cache
 		if readErr != nil {
-			return nil, makeCleanup(), fmt.Errorf("read cached agent %s: %w", layer.LogicalPath, readErr)
+			return nil, makeCleanup(), fmt.Errorf("read cached asset %s: %w", layer.LogicalPath, readErr)
 		}
 
 		// Track directories we create (deepest first for cleanup).
@@ -184,11 +194,11 @@ func InjectAgentsForLoad(
 		}
 
 		if mkErr := os.MkdirAll(dir, 0o755); mkErr != nil { //nolint:gosec // G301: project dir
-			return nil, makeCleanup(), fmt.Errorf("create directory for agent %s: %w", layer.LogicalPath, mkErr)
+			return nil, makeCleanup(), fmt.Errorf("create directory for %s: %w", layer.LogicalPath, mkErr)
 		}
 
 		if writeErr := os.WriteFile(targetPath, data, 0o644); writeErr != nil { //nolint:gosec // G306: project file
-			return nil, makeCleanup(), fmt.Errorf("write agent %s: %w", layer.LogicalPath, writeErr)
+			return nil, makeCleanup(), fmt.Errorf("write %s: %w", layer.LogicalPath, writeErr)
 		}
 
 		createdFiles = append(createdFiles, targetPath)
