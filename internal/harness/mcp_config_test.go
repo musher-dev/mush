@@ -48,7 +48,7 @@ func TestBuildMCPProviderSpecs(t *testing.T) {
 		},
 	}
 
-	specs := buildMCPProviderSpecs(cfg, now)
+	specs := BuildMCPProviderSpecs(cfg, now)
 	if len(specs) != 1 {
 		t.Fatalf("spec count = %d, want 1", len(specs))
 	}
@@ -58,7 +58,7 @@ func TestBuildMCPProviderSpecs(t *testing.T) {
 	}
 }
 
-func TestCreateClaudeMCPConfigFile(t *testing.T) {
+func TestCreateMCPConfigFile(t *testing.T) {
 	now := time.Date(2026, 2, 14, 12, 0, 0, 0, time.UTC)
 	exp := now.Add(10 * time.Minute)
 	cfg := &client.RunnerConfigResponse{
@@ -76,9 +76,14 @@ func TestCreateClaudeMCPConfigFile(t *testing.T) {
 		},
 	}
 
-	path, sig, cleanup, err := createClaudeMCPConfigFile(cfg, now)
+	mcpSpec := &MCPSpec{
+		Def:         &MCPDef{Format: "json", ConfigPath: ".mcp.json"},
+		BuildConfig: BuildJSONMCPConfig,
+	}
+
+	path, sig, cleanup, err := CreateMCPConfigFile(mcpSpec, cfg, now)
 	if err != nil {
-		t.Fatalf("createClaudeMCPConfigFile() error = %v", err)
+		t.Fatalf("CreateMCPConfigFile() error = %v", err)
 	}
 
 	if path == "" {
@@ -171,7 +176,7 @@ func TestLoadedMCPProviderNames(t *testing.T) {
 		},
 	}
 
-	names := loadedMCPProviderNames(cfg, now)
+	names := LoadedMCPProviderNames(cfg, now)
 	if len(names) != 2 {
 		t.Fatalf("name count = %d, want 2", len(names))
 	}

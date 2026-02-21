@@ -5,10 +5,16 @@ import (
 	"testing"
 
 	"github.com/musher-dev/mush/internal/client"
+	"github.com/musher-dev/mush/internal/harness"
 )
 
-func TestClaudeAssetMapper_MapAsset(t *testing.T) {
-	mapper := &ClaudeAssetMapper{}
+func TestProviderMapper_Claude_MapAsset(t *testing.T) {
+	spec, ok := harness.GetProvider("claude")
+	if !ok {
+		t.Fatal("claude provider not found")
+	}
+
+	mapper := NewProviderMapper(spec)
 	workDir := "/project"
 
 	tests := []struct {
@@ -66,8 +72,13 @@ func TestClaudeAssetMapper_MapAsset(t *testing.T) {
 	}
 }
 
-func TestCodexAssetMapper_MapAsset(t *testing.T) {
-	mapper := &CodexAssetMapper{}
+func TestProviderMapper_Codex_MapAsset(t *testing.T) {
+	spec, ok := harness.GetProvider("codex")
+	if !ok {
+		t.Fatal("codex provider not found")
+	}
+
+	mapper := NewProviderMapper(spec)
 	workDir := "/project"
 
 	tests := []struct {
@@ -117,5 +128,21 @@ func TestCodexAssetMapper_MapAsset(t *testing.T) {
 				t.Fatalf("MapAsset() = %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestProviderMapper_MergesAgents(t *testing.T) {
+	claudeSpec, _ := harness.GetProvider("claude")
+	codexSpec, _ := harness.GetProvider("codex")
+
+	claudeMapper := NewProviderMapper(claudeSpec)
+	codexMapper := NewProviderMapper(codexSpec)
+
+	if claudeMapper.MergesAgents() {
+		t.Fatal("Claude mapper should not merge agents (uses agentDir)")
+	}
+
+	if !codexMapper.MergesAgents() {
+		t.Fatal("Codex mapper should merge agents (uses agentFile)")
 	}
 }

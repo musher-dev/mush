@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"time"
 
@@ -32,7 +33,6 @@ type Writer struct {
 	Err      io.Writer
 	JSON     bool
 	Quiet    bool
-	Verbose  bool
 	NoInput  bool
 	terminal *terminal.Info
 
@@ -154,11 +154,9 @@ func (w *Writer) Write(p []byte) (n int, err error) {
 	return written, nil
 }
 
-// Debug writes to stdout only in verbose mode.
+// Debug emits a structured debug log record.
 func (w *Writer) Debug(format string, args ...interface{}) {
-	if w.Verbose {
-		w.mutedColor.Fprintf(w.Out, "[debug] "+format+"\n", args...)
-	}
+	slog.Debug(fmt.Sprintf(format, args...))
 }
 
 func (w *Writer) writeStatus(writer io.Writer, tone *color.Color, prefix, message string) {

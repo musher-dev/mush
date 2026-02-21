@@ -92,7 +92,7 @@ func TestClaudeExecutionFailed(t *testing.T) {
 			exitCode: 1,
 			stderr:   "",
 			wantMsg:  "failed",
-			wantHint: "--verbose",
+			wantHint: "--log-level=debug",
 		},
 		{
 			name:     "generic error",

@@ -22,7 +22,7 @@ func (c *Client) RegisterLink(ctx context.Context, req *RegisterLinkRequest) (*R
 		return nil, err
 	}
 
-	resp, err := c.httpClient.Do(httpReq)
+	resp, err := c.do(httpReq, "/api/v1/runner/links:register")
 	if err != nil {
 		return nil, fmt.Errorf("failed to register link: %w", err)
 	}
@@ -59,7 +59,7 @@ func (c *Client) HeartbeatLink(ctx context.Context, linkID, currentJobID string)
 		return nil, err
 	}
 
-	resp, err := c.httpClient.Do(httpReq)
+	resp, err := c.do(httpReq, "/api/v1/runner/links/{link_id}:heartbeat")
 	if err != nil {
 		return nil, fmt.Errorf("failed to heartbeat link: %w", err)
 	}
@@ -92,7 +92,7 @@ func (c *Client) DeregisterLink(ctx context.Context, linkID string, req Deregist
 		return err
 	}
 
-	resp, err := c.httpClient.Do(httpReq)
+	resp, err := c.do(httpReq, "/api/v1/runner/links/{link_id}:deregister")
 	if err != nil {
 		return fmt.Errorf("failed to deregister link: %w", err)
 	}

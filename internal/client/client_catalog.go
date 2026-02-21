@@ -16,7 +16,7 @@ func (c *Client) ListHabitats(ctx context.Context) ([]HabitatSummary, error) {
 		return nil, err
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req, "/api/v1/runner/habitats")
 	if err != nil {
 		return nil, fmt.Errorf("failed to list habitats: %w", err)
 	}
@@ -56,7 +56,7 @@ func (c *Client) ListQueues(ctx context.Context, habitatID string) ([]QueueSumma
 		return nil, err
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req, "/api/v1/queues")
 	if err != nil {
 		return nil, fmt.Errorf("failed to list queues: %w", err)
 	}
@@ -87,7 +87,7 @@ func (c *Client) GetQueueInstructionAvailability(ctx context.Context, queueID st
 		return nil, err
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req, "/api/v1/runner/queues/{queue_id}/instruction-availability")
 	if err != nil {
 		return nil, fmt.Errorf("failed to get instruction availability: %w", err)
 	}

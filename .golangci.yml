@@ -90,7 +90,7 @@ linters:
             - internal/auth/**/*.go
             - internal/config/**/*.go
             - internal/update/**/*.go
-            - internal/claude/**/*.go
+            - internal/harness/provider.go
             - internal/linking/**/*.go
             - internal/errors/**/*.go
             - internal/buildinfo/**/*.go

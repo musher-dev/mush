@@ -148,7 +148,10 @@ Mush looks for configuration in this order (highest priority first):
 | `--quiet` | Minimal output (for CI) |
 | `--no-color` | Disable colored output |
 | `--no-input` | Disable interactive prompts |
-| `--verbose` / `-v` | Enable debug logging |
+| `--log-level` | Structured log level (`error`, `warn`, `info`, `debug`) |
+| `--log-format` | Structured log format (`json`, `text`) |
+| `--log-file` | Optional log file path (JSONL/text append) |
+| `--log-stderr` | Structured stderr mode (`auto`, `on`, `off`) |
 
 ## How It Works
 

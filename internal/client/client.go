@@ -12,11 +12,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/musher-dev/mush/internal/buildinfo"
+	"github.com/musher-dev/mush/internal/observability"
 )
 
 const (
@@ -31,6 +33,16 @@ type Client struct {
 	baseURL    string
 	apiKey     string
 	httpClient *http.Client
+}
+
+// HTTPStatusError is returned when an API call receives a non-success HTTP status.
+type HTTPStatusError struct {
+	Operation string
+	Status    int
+}
+
+func (e *HTTPStatusError) Error() string {
+	return fmt.Sprintf("%s failed with status %d", e.Operation, e.Status)
 }
 
 // Identity represents the authenticated service account identity.
@@ -372,7 +384,7 @@ func (c *Client) ValidateKey(ctx context.Context) (*Identity, error) {
 		return nil, err
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req, "/api/v1/runner/me")
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to API: %w", err)
 	}
@@ -405,7 +417,7 @@ func (c *Client) GetRunnerConfig(ctx context.Context) (*RunnerConfigResponse, er
 		return nil, err
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req, "/api/v1/runner/config")
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch runner config: %w", err)
 	}
@@ -448,6 +460,41 @@ func (c *Client) newRequest(ctx context.Context, method, url string, body io.Rea
 	return req, nil
 }
 
+func (c *Client) do(req *http.Request, route string) (*http.Response, error) {
+	logger := observability.FromContext(req.Context()).With(
+		slog.String("component", "client"),
+		slog.String("http.request.method", req.Method),
+		slog.String("http.route", route),
+	)
+
+	start := time.Now()
+
+	logger.Debug("request started", slog.String("event.type", "http.request.start"))
+
+	resp, err := c.httpClient.Do(req)
+	durationMS := time.Since(start).Milliseconds()
+
+	if err != nil {
+		logger.Error(
+			"request failed",
+			slog.String("event.type", "http.request.error"),
+			slog.Int64("duration_ms", durationMS),
+			slog.String("error", err.Error()),
+		)
+
+		return nil, fmt.Errorf("http request: %w", err)
+	}
+
+	logger.Debug(
+		"request completed",
+		slog.String("event.type", "http.request.finish"),
+		slog.Int("http.response.status_code", resp.StatusCode),
+		slog.Int64("duration_ms", durationMS),
+	)
+
+	return resp, nil
+}
+
 func encodeJSON(v any) ([]byte, error) {
 	data, err := json.Marshal(v)
 	if err != nil {
@@ -471,10 +518,10 @@ func emptyJSONBody() io.Reader {
 
 // unexpectedStatus creates a formatted error from an unexpected HTTP status code.
 func unexpectedStatus(operation string, statusCode int, body io.Reader) error {
-	respBody, readErr := io.ReadAll(body)
-	if readErr != nil {
-		return fmt.Errorf("%s failed with status %d (failed to read body: %w)", operation, statusCode, readErr)
-	}
+	_, _ = io.Copy(io.Discard, body)
 
-	return fmt.Errorf("%s failed with status %d: %s", operation, statusCode, string(respBody))
+	return &HTTPStatusError{
+		Operation: operation,
+		Status:    statusCode,
+	}
 }

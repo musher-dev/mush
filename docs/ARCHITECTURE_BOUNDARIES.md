@@ -30,7 +30,6 @@ This document defines the dependency boundaries for `mush` and how linting enfor
 - `internal/auth`
 - `internal/config`
 - `internal/update`
-- `internal/claude`
 - `internal/linking`
 - `internal/errors`
 - `internal/buildinfo`

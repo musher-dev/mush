@@ -26,7 +26,7 @@ type BashExecutor struct {
 func init() {
 	Register(Info{
 		Name:      "bash",
-		Available: func() bool { return true }, // checked at execution time
+		Available: AvailableFunc("bash"),
 		New:       func() Executor { return &BashExecutor{} },
 	})
 }

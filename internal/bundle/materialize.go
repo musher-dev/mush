@@ -54,7 +54,7 @@ func InstallFromCache(
 		switch {
 		case asset.layer.AssetType == "tool_config":
 			toolConfigs[asset.targetPath] = append(toolConfigs[asset.targetPath], asset.data)
-		case asset.layer.AssetType == "agent_definition" && filepath.Base(asset.targetPath) == "AGENTS.md":
+		case asset.layer.AssetType == "agent_definition" && mapper.MergesAgents():
 			agentsMD[asset.targetPath] = append(agentsMD[asset.targetPath], AgentDoc{
 				Name:    asset.layer.LogicalPath,
 				Content: asset.data,

@@ -1,0 +1,21 @@
+name: codex
+displayName: Codex CLI
+description: OpenAI Codex CLI code generation tool
+binary: codex
+
+directories:
+  project: .codex
+  user: ~/.codex
+
+bundleDir:
+  mode: cd_flag
+  flag: "-C"
+
+assets:
+  skillDir: .agents/skills
+  agentFile: AGENTS.md
+  toolConfigFile: .codex/config.toml
+
+mcp:
+  format: toml
+  configPath: .codex/config.toml

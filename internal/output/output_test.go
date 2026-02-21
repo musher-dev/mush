@@ -252,43 +252,13 @@ func TestDefault(t *testing.T) {
 }
 
 func TestWriter_Debug(t *testing.T) {
-	tests := []struct {
-		name    string
-		verbose bool
-		format  string
-		args    []interface{}
-		wantOut bool
-	}{
-		{
-			name:    "verbose mode shows debug",
-			verbose: true,
-			format:  "debug message %s",
-			args:    []interface{}{"test"},
-			wantOut: true,
-		},
-		{
-			name:    "non-verbose mode hides debug",
-			verbose: false,
-			format:  "debug message",
-			args:    nil,
-			wantOut: false,
-		},
-	}
+	var buf bytes.Buffer
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			var buf bytes.Buffer
+	w := NewWriter(&buf, &buf, testTerminal())
+	w.Debug("debug message %s", "test")
 
-			w := NewWriter(&buf, &buf, testTerminal())
-			w.Verbose = tt.verbose
-
-			w.Debug(tt.format, tt.args...)
-
-			hasOutput := buf.Len() > 0
-			if hasOutput != tt.wantOut {
-				t.Errorf("Debug() hasOutput = %v, want %v (output: %q)", hasOutput, tt.wantOut, buf.String())
-			}
-		})
+	if buf.Len() != 0 {
+		t.Fatalf("Debug() should not write to output buffers, got %q", buf.String())
 	}
 }
 

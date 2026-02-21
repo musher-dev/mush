@@ -1,0 +1,24 @@
+name: claude
+displayName: Claude Code
+description: Anthropic Claude Code AI assistant
+binary: claude
+
+directories:
+  project: .claude
+  user: ~/.claude
+
+bundleDir:
+  mode: add_dir
+  flag: "--add-dir"
+
+cli:
+  mcpConfig: "--mcp-config"
+
+assets:
+  skillDir: .claude/skills
+  agentDir: .claude/agents
+  toolConfigFile: .mcp.json
+
+mcp:
+  format: json
+  configPath: .mcp.json

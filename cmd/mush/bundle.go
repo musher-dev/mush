@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/signal"
 	"sort"
@@ -19,6 +20,7 @@ import (
 	"github.com/musher-dev/mush/internal/client"
 	clierrors "github.com/musher-dev/mush/internal/errors"
 	"github.com/musher-dev/mush/internal/harness"
+	"github.com/musher-dev/mush/internal/observability"
 	"github.com/musher-dev/mush/internal/output"
 )
 
@@ -56,6 +58,10 @@ Examples:
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := output.FromContext(cmd.Context())
+			logger := observability.FromContext(cmd.Context()).With(
+				slog.String("component", "bundle"),
+				slog.String("event.type", "bundle.load.start"),
+			)
 
 			// Parse bundle reference.
 			ref, err := bundle.ParseRef(args[0])
@@ -66,6 +72,8 @@ Examples:
 					Code:    clierrors.ExitUsage,
 				}
 			}
+
+			logger = logger.With(slog.String("bundle.slug", ref.Slug))
 
 			// Validate harness type.
 			if harnessType == "" {
@@ -118,6 +126,8 @@ Examples:
 			// Pull the bundle.
 			resolved, cachePath, err := bundle.Pull(cmd.Context(), c, workspaceKey, ref.Slug, ref.Version, out)
 			if err != nil {
+				logger.Error("bundle load pull failed", slog.String("event.type", "bundle.load.error"), slog.String("error", err.Error()))
+
 				if !c.IsAuthenticated() && isForbiddenError(err) {
 					return &clierrors.CLIError{
 						Message: fmt.Sprintf("Failed to pull bundle: %s", ref.Slug),
@@ -151,6 +161,12 @@ Examples:
 			out.Success("Bundle assets prepared in load directory")
 			out.Print("Assets: %d loaded\n", len(resolved.Manifest.Layers))
 			out.Println()
+			logger.Info(
+				"bundle load ready",
+				slog.String("event.type", "bundle.load.ready"),
+				slog.String("bundle.version", resolved.Version),
+				slog.Int("bundle.asset_count", len(resolved.Manifest.Layers)),
+			)
 
 			// Setup graceful shutdown.
 			ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
@@ -166,8 +182,11 @@ Examples:
 			}
 
 			if err := harness.Run(ctx, cfg); err != nil {
+				logger.Error("bundle load runtime failed", slog.String("event.type", "bundle.load.error"), slog.String("error", err.Error()))
 				return fmt.Errorf("bundle load: %w", err)
 			}
+
+			logger.Info("bundle load exited", slog.String("event.type", "bundle.load.exit"))
 
 			if cmd.Context().Err() == nil && ctx.Err() != nil {
 				out.Println()
@@ -202,6 +221,10 @@ Examples:
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := output.FromContext(cmd.Context())
+			logger := observability.FromContext(cmd.Context()).With(
+				slog.String("component", "bundle"),
+				slog.String("event.type", "bundle.install.start"),
+			)
 
 			// Parse bundle reference.
 			ref, err := bundle.ParseRef(args[0])
@@ -212,6 +235,8 @@ Examples:
 					Code:    clierrors.ExitUsage,
 				}
 			}
+
+			logger = logger.With(slog.String("bundle.slug", ref.Slug))
 
 			// Validate harness type.
 			if harnessType == "" {
@@ -250,6 +275,8 @@ Examples:
 			// Pull the bundle.
 			resolved, cachePath, err := bundle.Pull(cmd.Context(), c, workspaceKey, ref.Slug, ref.Version, out)
 			if err != nil {
+				logger.Error("bundle install pull failed", slog.String("event.type", "bundle.install.error"), slog.String("error", err.Error()))
+
 				if !c.IsAuthenticated() && isForbiddenError(err) {
 					return &clierrors.CLIError{
 						Message: fmt.Sprintf("Failed to pull bundle: %s", ref.Slug),
@@ -282,8 +309,11 @@ Examples:
 			if installErr != nil {
 				var conflict *bundle.InstallConflictError
 				if errors.As(installErr, &conflict) {
+					logger.Warn("bundle install conflict", slog.String("event.type", "bundle.install.conflict"), slog.String("error", installErr.Error()))
 					return clierrors.InstallConflict(conflict.Path)
 				}
+
+				logger.Error("bundle install failed", slog.String("event.type", "bundle.install.error"), slog.String("error", installErr.Error()))
 
 				return fmt.Errorf("install bundle assets: %w", installErr)
 			}
@@ -306,6 +336,12 @@ Examples:
 
 			out.Println()
 			out.Success("Installed %d assets from %s v%s", len(resolved.Manifest.Layers), ref.Slug, resolved.Version)
+			logger.Info(
+				"bundle install completed",
+				slog.String("event.type", "bundle.install.complete"),
+				slog.String("bundle.version", resolved.Version),
+				slog.Int("bundle.asset_count", len(installedPaths)),
+			)
 
 			return nil
 		},
@@ -513,14 +549,12 @@ func newBundleUninstallCmd() *cobra.Command {
 
 // mapperForHarness returns the AssetMapper for a given harness type.
 func mapperForHarness(harnessType string) bundle.AssetMapper {
-	switch harnessType {
-	case "claude":
-		return &bundle.ClaudeAssetMapper{}
-	case "codex":
-		return &bundle.CodexAssetMapper{}
-	default:
+	spec, ok := harness.GetProvider(harnessType)
+	if !ok || !harness.HasAssetMapping(harnessType) {
 		return nil
 	}
+
+	return bundle.NewProviderMapper(spec)
 }
 
 // joinNames joins a slice of strings with ", ".

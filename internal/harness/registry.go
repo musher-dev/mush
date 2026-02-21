@@ -16,6 +16,10 @@ type Info struct {
 
 	// New creates a new Executor instance for this harness type.
 	New func() Executor
+
+	// MCPSpec describes MCP configuration support for this harness.
+	// Nil means no MCP support (e.g., bash).
+	MCPSpec *MCPSpec
 }
 
 var (
