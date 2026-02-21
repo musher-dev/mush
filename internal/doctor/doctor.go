@@ -16,9 +16,9 @@ import (
 
 	"github.com/musher-dev/mush/internal/auth"
 	"github.com/musher-dev/mush/internal/buildinfo"
-	"github.com/musher-dev/mush/internal/claude"
 	"github.com/musher-dev/mush/internal/client"
 	"github.com/musher-dev/mush/internal/config"
+	"github.com/musher-dev/mush/internal/harness"
 	"github.com/musher-dev/mush/internal/update"
 )
 
@@ -173,7 +173,7 @@ func checkAuthentication(ctx context.Context) Result {
 
 // checkClaudeCLI verifies Claude Code CLI is available.
 func checkClaudeCLI(ctx context.Context) Result {
-	if !claude.Available() {
+	if !harness.AvailableFunc("claude")() {
 		return Result{
 			Status:  StatusFail,
 			Message: "Not found in PATH",

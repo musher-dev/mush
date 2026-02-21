@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 
 	"github.com/musher-dev/mush/internal/client"
+	"github.com/musher-dev/mush/internal/observability"
 	"github.com/musher-dev/mush/internal/output"
 )
 
@@ -38,6 +40,16 @@ func IsCached(workspace, slug, version string) bool {
 // It tries OCI pull first (if oci_ref present), falling back to per-asset API download.
 // Returns the resolve response, the cache path, and any error.
 func Pull(ctx context.Context, c *client.Client, workspace, slug, version string, out *output.Writer) (*client.BundleResolveResponse, string, error) {
+	logger := observability.FromContext(ctx).With(
+		slog.String("component", "bundle"),
+		slog.String("bundle.slug", slug),
+	)
+	if version != "" {
+		logger = logger.With(slog.String("bundle.version", version))
+	}
+
+	logger.Info("resolving bundle", slog.String("event.type", "bundle.resolve.start"))
+
 	// 1. Resolve bundle via API.
 	spin := out.Spinner("Resolving bundle")
 	spin.Start()
@@ -45,8 +57,16 @@ func Pull(ctx context.Context, c *client.Client, workspace, slug, version string
 	resolved, err := c.ResolveBundle(ctx, slug, version)
 	if err != nil {
 		spin.StopWithFailure("Failed to resolve bundle")
+		logger.Error("bundle resolution failed", slog.String("event.type", "bundle.resolve.error"), slog.String("error", err.Error()))
+
 		return nil, "", fmt.Errorf("resolve bundle: %w", err)
 	}
+
+	logger.Info(
+		"bundle resolved",
+		slog.String("event.type", "bundle.resolve.ok"),
+		slog.String("bundle.version", resolved.Version),
+	)
 
 	spin.StopWithSuccess(fmt.Sprintf("Resolved %s v%s", slug, resolved.Version))
 
@@ -54,8 +74,12 @@ func Pull(ctx context.Context, c *client.Client, workspace, slug, version string
 	cachePath := CachePath(workspace, slug, resolved.Version)
 	if IsCached(workspace, slug, resolved.Version) {
 		out.Success("Using cached bundle")
+		logger.Info("bundle cache hit", slog.String("event.type", "bundle.cache.hit"), slog.Bool("bundle.cache_hit", true))
+
 		return resolved, cachePath, nil
 	}
+
+	logger.Info("bundle cache miss", slog.String("event.type", "bundle.cache.miss"), slog.Bool("bundle.cache_hit", false))
 
 	// 3. Download assets.
 	assetsDir := filepath.Join(cachePath, "assets")
@@ -65,6 +89,8 @@ func Pull(ctx context.Context, c *client.Client, workspace, slug, version string
 
 	// Try OCI pull first if oci_ref is present.
 	if resolved.OCIRef != "" {
+		logger.Info("starting OCI pull", slog.String("event.type", "bundle.pull.oci.start"))
+
 		spin = out.Spinner("Pulling from OCI registry")
 		spin.Start()
 
@@ -80,6 +106,7 @@ func Pull(ctx context.Context, c *client.Client, workspace, slug, version string
 			}
 
 			spin.StopWithSuccess("Pulled from OCI registry")
+			logger.Info("OCI pull completed", slog.String("event.type", "bundle.pull.oci.ok"))
 			// Write manifest.
 			if err := writeManifest(cachePath, resolved); err != nil {
 				return nil, "", err
@@ -90,6 +117,7 @@ func Pull(ctx context.Context, c *client.Client, workspace, slug, version string
 
 		// OCI pull failed, fall back to API.
 		spin.StopWithFailure("OCI pull failed, falling back to API")
+		logger.Warn("OCI pull failed, using API fallback", slog.String("event.type", "bundle.pull.oci.fallback"), slog.String("error", ociErr.Error()))
 	}
 
 	if len(resolved.Manifest.Layers) == 0 {
@@ -101,27 +129,36 @@ func Pull(ctx context.Context, c *client.Client, workspace, slug, version string
 	// Per-asset API download.
 	spin = out.Spinner(fmt.Sprintf("Downloading %d assets", len(resolved.Manifest.Layers)))
 	spin.Start()
+	logger.Info("bundle asset download started", slog.String("event.type", "bundle.download.start"), slog.Int("bundle.asset_count", len(resolved.Manifest.Layers)))
 
 	for _, layer := range resolved.Manifest.Layers {
 		if err := ValidateLogicalPath(layer.LogicalPath); err != nil {
 			spin.StopWithFailure("Path validation failed")
+			logger.Error("bundle asset path validation failed", slog.String("event.type", "bundle.download.asset.error"), slog.String("bundle.asset.logical_path", layer.LogicalPath), slog.String("error", err.Error()))
+
 			return nil, "", fmt.Errorf("invalid logical path: %w", err)
 		}
 
 		if layer.AssetID == "" {
 			spin.StopWithFailure("Asset metadata missing")
+			logger.Error("bundle asset metadata missing", slog.String("event.type", "bundle.download.asset.error"), slog.String("bundle.asset.logical_path", layer.LogicalPath))
+
 			return nil, "", fmt.Errorf("asset %s is missing asset ID for API download", layer.LogicalPath)
 		}
 
 		data, fetchErr := c.FetchBundleAsset(ctx, layer.AssetID)
 		if fetchErr != nil {
 			spin.StopWithFailure("Asset download failed")
+			logger.Error("bundle asset download failed", slog.String("event.type", "bundle.download.asset.error"), slog.String("bundle.asset.logical_path", layer.LogicalPath), slog.String("error", fetchErr.Error()))
+
 			return nil, "", fmt.Errorf("fetch asset %s: %w", layer.AssetID, fetchErr)
 		}
 
 		// Verify SHA256.
 		if err := verifySHA256(data, layer.ContentSHA256); err != nil {
 			spin.StopWithFailure("Integrity check failed")
+			logger.Error("bundle asset integrity check failed", slog.String("event.type", "bundle.download.asset.error"), slog.String("bundle.asset.logical_path", layer.LogicalPath), slog.String("error", err.Error()))
+
 			return nil, "", fmt.Errorf("asset %s: %w", layer.LogicalPath, err)
 		}
 
@@ -137,6 +174,7 @@ func Pull(ctx context.Context, c *client.Client, workspace, slug, version string
 	}
 
 	spin.StopWithSuccess(fmt.Sprintf("Downloaded %d assets", len(resolved.Manifest.Layers)))
+	logger.Info("bundle asset download completed", slog.String("event.type", "bundle.download.complete"), slog.Int("bundle.asset_count", len(resolved.Manifest.Layers)))
 
 	// Write manifest.
 	if err := writeManifest(cachePath, resolved); err != nil {

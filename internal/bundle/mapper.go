@@ -19,6 +19,10 @@ type AssetMapper interface {
 	// PrepareLoad creates a temp directory with assets in native structure for `bundle load`.
 	// Returns the temp dir path and a cleanup function.
 	PrepareLoad(ctx context.Context, cachePath string, manifest *client.BundleManifest) (tmpDir string, cleanup func(), err error)
+
+	// MergesAgents returns true if agent definitions are composed into a single file
+	// (e.g., AGENTS.md), false if each agent is written as an individual file.
+	MergesAgents() bool
 }
 
 // prepareLoadCommon is shared logic for preparing load dirs across mappers.
@@ -76,7 +80,7 @@ func prepareLoadCommon(mapper AssetMapper, cachePath string, manifest *client.Bu
 		switch {
 		case asset.layer.AssetType == "tool_config":
 			toolConfigs[asset.targetPath] = append(toolConfigs[asset.targetPath], asset.data)
-		case asset.layer.AssetType == "agent_definition" && filepath.Base(asset.targetPath) == "AGENTS.md":
+		case asset.layer.AssetType == "agent_definition" && mapper.MergesAgents():
 			agentsMD[asset.targetPath] = append(agentsMD[asset.targetPath], AgentDoc{
 				Name:    asset.layer.LogicalPath,
 				Content: asset.data,

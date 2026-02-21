@@ -56,5 +56,5 @@ func Run(ctx context.Context, cfg *Config) error {
 
 // LoadedMCPServers returns the names of MCP providers that are effectively loaded.
 func LoadedMCPServers(cfg *client.RunnerConfigResponse, now time.Time) []string {
-	return loadedMCPProviderNames(cfg, now)
+	return LoadedMCPProviderNames(cfg, now)
 }

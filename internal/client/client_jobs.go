@@ -37,7 +37,7 @@ func (c *Client) ClaimJob(ctx context.Context, habitatID, queueID string, waitTi
 		return nil, err
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req, "/api/v1/runner/jobs:claim")
 	if err != nil {
 		return nil, fmt.Errorf("failed to claim job: %w", err)
 	}
@@ -105,7 +105,7 @@ func (c *Client) CompleteJob(ctx context.Context, jobID string, output map[strin
 		return err
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req, "/api/v1/runner/jobs/{job_id}:complete")
 	if err != nil {
 		return fmt.Errorf("failed to complete job: %w", err)
 	}
@@ -138,7 +138,7 @@ func (c *Client) FailJob(ctx context.Context, jobID, errorCode, errorMsg string,
 		return err
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req, "/api/v1/runner/jobs/{job_id}:fail")
 	if err != nil {
 		return fmt.Errorf("failed to fail job: %w", err)
 	}
@@ -160,7 +160,7 @@ func (c *Client) ReleaseJob(ctx context.Context, jobID string) error {
 		return err
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req, "/api/v1/runner/jobs/{job_id}:release")
 	if err != nil {
 		return fmt.Errorf("failed to release job: %w", err)
 	}
@@ -181,7 +181,7 @@ func (c *Client) updateJobStatus(ctx context.Context, jobID, endpointAction, ope
 		return nil, err
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req, "/api/v1/runner/jobs/{job_id}:"+endpointAction)
 	if err != nil {
 		return nil, fmt.Errorf("failed to %s: %w", operation, err)
 	}

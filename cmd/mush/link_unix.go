@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os/signal"
 	"slices"
 	"strings"
@@ -17,6 +18,7 @@ import (
 	"github.com/musher-dev/mush/internal/config"
 	clierrors "github.com/musher-dev/mush/internal/errors"
 	"github.com/musher-dev/mush/internal/harness"
+	"github.com/musher-dev/mush/internal/observability"
 	"github.com/musher-dev/mush/internal/output"
 )
 
@@ -61,6 +63,10 @@ Examples:
 		Args: noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := output.FromContext(cmd.Context())
+			logger := observability.FromContext(cmd.Context()).With(
+				slog.String("component", "link"),
+				slog.String("event.type", "link.start"),
+			)
 
 			// Validate harness type if specified.
 			var supportedHarnesses []string
@@ -147,6 +153,7 @@ Examples:
 
 			runnerConfig, err = c.GetRunnerConfig(cmd.Context())
 			if err != nil {
+				logger.Warn("runner config unavailable", slog.String("event.type", "link.runner_config.unavailable"), slog.String("error", err.Error()))
 				out.Warning("Runner config unavailable, continuing without MCP provisioning: %v", err)
 			}
 
@@ -178,6 +185,13 @@ Examples:
 
 			if slices.Contains(supportedHarnesses, "claude") {
 				mcpServers := harness.LoadedMCPServers(runnerConfig, time.Now())
+				logger.Info(
+					"MCP servers evaluated",
+					slog.String("event.type", "mcp.specs.built"),
+					slog.Int("mcp.server_count", len(mcpServers)),
+					slog.Any("mcp.server_names", mcpServers),
+				)
+
 				if len(mcpServers) == 0 {
 					out.Print("MCP servers: none\n")
 				} else {
@@ -209,8 +223,11 @@ Examples:
 
 			err = runWatchLink(ctx, c, habitatID, queueID, supportedHarnesses, runnerConfig)
 			if err != nil {
+				logger.Error("link watch runtime failed", slog.String("event.type", "link.error"), slog.String("error", err.Error()))
 				return err
 			}
+
+			logger.Info("link watch exited", slog.String("event.type", "link.ready"))
 
 			if cmd.Context().Err() == nil && ctx.Err() != nil {
 				out.Println()

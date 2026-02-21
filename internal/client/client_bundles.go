@@ -69,7 +69,7 @@ func (c *Client) resolveBundleAttempt(
 		return nil, err
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req, path)
 	if err != nil {
 		return nil, fmt.Errorf("resolve bundle (%s): %w", path, err)
 	}
@@ -105,7 +105,7 @@ func (c *Client) fetchBundleAssetAttempt(ctx context.Context, path string) ([]by
 		return nil, err
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req, path)
 	if err != nil {
 		return nil, fmt.Errorf("fetch bundle asset (%s): %w", path, err)
 	}

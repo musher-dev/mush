@@ -274,7 +274,7 @@ func ClaudeExecutionFailed(exitCode int, stderr string) *CLIError {
 		msg = "Network error connecting to Claude API"
 		hint = "Check your network connection"
 	case exitCode == 1 && stderr == "":
-		hint = "Run with --verbose for more details"
+		hint = "Run with --log-level=debug for more details"
 	default:
 		if stderr != "" {
 			// Truncate long error messages

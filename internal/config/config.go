@@ -9,6 +9,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -62,7 +63,7 @@ func Load() *Config {
 	if err := v.ReadInConfig(); err != nil {
 		var configNotFound viper.ConfigFileNotFoundError
 		if !errors.As(err, &configNotFound) {
-			fmt.Fprintf(os.Stderr, "Warning: error reading config file: %v\n", err)
+			slog.Default().Warn("error reading config file", "component", "config", "event.type", "config.read.warning", "error", err.Error())
 		}
 	}
 

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"os/exec"
 	"sync"
@@ -17,7 +18,6 @@ import (
 	"github.com/creack/pty"
 
 	"github.com/musher-dev/mush/internal/ansi"
-	"github.com/musher-dev/mush/internal/claude"
 	"github.com/musher-dev/mush/internal/client"
 )
 
@@ -76,9 +76,22 @@ type ClaudeExecutor struct {
 func init() {
 	Register(Info{
 		Name:      "claude",
-		Available: claude.Available,
+		Available: AvailableFunc("claude"),
 		New:       func() Executor { return NewClaudeExecutor() },
+		MCPSpec: &MCPSpec{
+			Def:         mustGetProvider("claude").MCP,
+			BuildConfig: BuildJSONMCPConfig,
+		},
 	})
+}
+
+func mustGetProvider(name string) *ProviderSpec {
+	spec, ok := GetProvider(name)
+	if !ok {
+		panic(fmt.Sprintf("harness: provider %q not found", name))
+	}
+
+	return spec
 }
 
 // NewClaudeExecutor creates a new ClaudeExecutor with default settings.
@@ -272,9 +285,9 @@ func (e *ClaudeExecutor) WriteInput(p []byte) (int, error) {
 
 // NeedsRefresh implements Refreshable.
 func (e *ClaudeExecutor) NeedsRefresh(cfg *client.RunnerConfigResponse) bool {
-	specs := buildMCPProviderSpecs(cfg, time.Now())
+	specs := BuildMCPProviderSpecs(cfg, time.Now())
 
-	sig, err := mcpSignature(specs)
+	sig, err := MCPSignature(specs)
 	if err != nil {
 		return false
 	}
@@ -290,6 +303,13 @@ func (e *ClaudeExecutor) ApplyRefresh(ctx context.Context, cfg *client.RunnerCon
 	oldNames := e.loadedMCPNames
 
 	if err := e.applyRunnerConfig(cfg); err != nil {
+		slog.Default().Error(
+			"MCP config refresh failed",
+			slog.String("component", "mcp"),
+			slog.String("event.type", "mcp.reload.error"),
+			slog.String("error", err.Error()),
+		)
+
 		return err
 	}
 
@@ -307,6 +327,14 @@ func (e *ClaudeExecutor) ApplyRefresh(ctx context.Context, cfg *client.RunnerCon
 		e.opts.OnOutput([]byte(msg))
 	}
 
+	slog.Default().Info(
+		"MCP servers reloaded",
+		slog.String("component", "mcp"),
+		slog.String("event.type", "mcp.reload"),
+		slog.Int("mcp.server_count", len(newNames)),
+		slog.Any("mcp.server_names", newNames),
+	)
+
 	return nil
 }
 
@@ -314,6 +342,12 @@ func (e *ClaudeExecutor) ApplyRefresh(ctx context.Context, cfg *client.RunnerCon
 
 func (e *ClaudeExecutor) startPTY(ctx context.Context) error {
 	args := e.commandArgs()
+	slog.Default().Debug(
+		"starting harness PTY",
+		slog.String("component", "harness"),
+		slog.String("event.type", "harness.pty.start"),
+		slog.Any("harness.args", args),
+	)
 
 	cmd := exec.CommandContext(ctx, "claude", args...) //nolint:gosec // args are entirely controlled by our code
 
@@ -359,17 +393,19 @@ func (e *ClaudeExecutor) startPTY(ctx context.Context) error {
 }
 
 func (e *ClaudeExecutor) commandArgs() []string {
+	spec, _ := GetProvider("claude")
+
 	var args []string
 	if !e.opts.BundleLoadMode {
 		args = append(args, "--dangerously-skip-permissions")
 	}
 
-	if e.opts.BundleDir != "" {
-		args = append(args, "--add-dir", e.opts.BundleDir)
+	if e.opts.BundleDir != "" && spec.BundleDir != nil && spec.BundleDir.Flag != "" {
+		args = append(args, spec.BundleDir.Flag, e.opts.BundleDir)
 	}
 
-	if e.mcpConfigPath != "" {
-		args = append(args, "--mcp-config", e.mcpConfigPath)
+	if e.mcpConfigPath != "" && spec.CLI != nil && spec.CLI.MCPConfig != "" {
+		args = append(args, spec.CLI.MCPConfig, e.mcpConfigPath)
 	}
 
 	return args
@@ -392,6 +428,12 @@ func (e *ClaudeExecutor) closePTY() {
 	if cmd == nil || cmd.Process == nil {
 		return
 	}
+
+	slog.Default().Debug(
+		"stopping harness PTY",
+		slog.String("component", "harness"),
+		slog.String("event.type", "harness.pty.stop"),
+	)
 
 	waitCh := make(chan error, 1)
 
@@ -700,12 +742,17 @@ func (e *ClaudeExecutor) currentJobPath() string {
 func (e *ClaudeExecutor) applyRunnerConfig(cfg *client.RunnerConfigResponse) error {
 	now := time.Now()
 
-	path, sig, cleanup, err := createClaudeMCPConfigFile(cfg, now)
+	info, ok := Lookup("claude")
+	if !ok || info.MCPSpec == nil {
+		return nil
+	}
+
+	path, sig, cleanup, err := CreateMCPConfigFile(info.MCPSpec, cfg, now)
 	if err != nil {
 		return err
 	}
 
-	names := loadedMCPProviderNames(cfg, now)
+	names := LoadedMCPProviderNames(cfg, now)
 
 	oldCleanup := e.mcpConfigRemove
 	e.mcpConfigPath = path
@@ -717,6 +764,14 @@ func (e *ClaudeExecutor) applyRunnerConfig(cfg *client.RunnerConfigResponse) err
 	if oldCleanup != nil {
 		_ = oldCleanup()
 	}
+
+	slog.Default().Info(
+		"MCP config applied",
+		slog.String("component", "mcp"),
+		slog.String("event.type", "mcp.config.applied"),
+		slog.Int("mcp.server_count", len(names)),
+		slog.Any("mcp.server_names", names),
+	)
 
 	return nil
 }

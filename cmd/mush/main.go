@@ -4,16 +4,19 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/fatih/color"
+	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 
 	"github.com/musher-dev/mush/internal/buildinfo"
 	clierrors "github.com/musher-dev/mush/internal/errors"
+	"github.com/musher-dev/mush/internal/observability"
 	"github.com/musher-dev/mush/internal/output"
 	"github.com/musher-dev/mush/internal/update"
 )
@@ -40,6 +43,7 @@ func run() (exitCode int) {
 
 	// Set runner version from build-time ldflags
 	buildinfo.Version = version
+	buildinfo.Commit = commit
 
 	out := output.Default()
 
@@ -105,7 +109,10 @@ func newRootCmd() *cobra.Command {
 		quiet      bool
 		noColor    bool
 		noInput    bool
-		verbose    bool
+		logLevel   string
+		logFormat  string
+		logFile    string
+		logStderr  string
 	)
 
 	out := output.Default()
@@ -132,7 +139,6 @@ Get started:
 			// Configure output based on flags
 			out.JSON = jsonOutput
 			out.Quiet = quiet
-			out.Verbose = verbose
 			out.NoInput = noInput
 
 			if noColor {
@@ -141,8 +147,37 @@ Get started:
 				color.NoColor = true
 			}
 
+			logCfg := observability.Config{
+				Level:          pickFlagOrEnv(logLevel, "MUSH_LOG_LEVEL", "info"),
+				Format:         pickFlagOrEnv(logFormat, "MUSH_LOG_FORMAT", "json"),
+				LogFile:        pickFlagOrEnv(logFile, "MUSH_LOG_FILE", ""),
+				StderrMode:     pickFlagOrEnv(logStderr, "MUSH_LOG_STDERR", "auto"),
+				InteractiveTTY: out.Terminal().IsTTY && isInteractiveCommand(cmd.CommandPath()),
+				SessionID:      uuid.NewString(),
+				CommandPath:    cmd.CommandPath(),
+				Version:        version,
+				Commit:         commit,
+			}
+
+			logger, cleanup, err := observability.NewLogger(&logCfg)
+			if err != nil {
+				return &clierrors.CLIError{
+					Message: fmt.Sprintf("Invalid logging configuration: %v", err),
+					Hint:    "Use --log-level (error|warn|info|debug), --log-format (json|text), --log-stderr (auto|on|off), and/or --log-file",
+					Code:    clierrors.ExitUsage,
+				}
+			}
+
+			slog.SetDefault(logger)
+
 			// Store writer in context for subcommands
-			cmd.SetContext(out.WithContext(cmd.Context()))
+			ctx := out.WithContext(cmd.Context())
+			ctx = observability.WithLogger(ctx, logger)
+			cmd.SetContext(ctx)
+
+			if cleanup != nil {
+				cmd.PostRunE = wrapPostRunCleanup(cmd.PostRunE, cleanup)
+			}
 
 			// Launch background update check; tracked by updateWg so PostRunE
 			// can wait for the state file write before reading it.
@@ -172,7 +207,10 @@ Get started:
 	rootCmd.PersistentFlags().BoolVar(&quiet, "quiet", false, "Minimal output (for CI)")
 	rootCmd.PersistentFlags().BoolVar(&noColor, "no-color", false, "Disable colored output")
 	rootCmd.PersistentFlags().BoolVar(&noInput, "no-input", false, "Disable interactive prompts")
-	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Enable debug logging")
+	rootCmd.PersistentFlags().StringVar(&logLevel, "log-level", "", "Log level: error, warn, info, debug")
+	rootCmd.PersistentFlags().StringVar(&logFormat, "log-format", "", "Log format: json, text")
+	rootCmd.PersistentFlags().StringVar(&logFile, "log-file", "", "Optional structured log file path")
+	rootCmd.PersistentFlags().StringVar(&logStderr, "log-stderr", "", "Structured logging to stderr: auto, on, off")
 
 	// Enable typo suggestions for unknown commands
 	rootCmd.SuggestionsMinimumDistance = 2
@@ -205,6 +243,41 @@ Get started:
 	rootCmd.AddCommand(newCompletionCmd())
 
 	return rootCmd
+}
+
+func wrapPostRunCleanup(postRun func(*cobra.Command, []string) error, cleanup func() error) func(*cobra.Command, []string) error {
+	return func(cmd *cobra.Command, args []string) error {
+		if postRun != nil {
+			if err := postRun(cmd, args); err != nil {
+				_ = cleanup()
+				return err
+			}
+		}
+
+		if err := cleanup(); err != nil {
+			return fmt.Errorf("cleanup logger resources: %w", err)
+		}
+
+		return nil
+	}
+}
+
+func pickFlagOrEnv(flagValue, envKey, fallback string) string {
+	trimmed := strings.TrimSpace(flagValue)
+	if trimmed != "" {
+		return trimmed
+	}
+
+	if envValue := strings.TrimSpace(os.Getenv(envKey)); envValue != "" {
+		return envValue
+	}
+
+	return fallback
+}
+
+func isInteractiveCommand(path string) bool {
+	return path == "mush link" || strings.HasPrefix(path, "mush link ") ||
+		path == "mush bundle load" || strings.HasPrefix(path, "mush bundle load ")
 }
 
 // VersionInfo represents version information for JSON output.

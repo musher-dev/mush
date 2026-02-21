@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/musher-dev/mush/internal/client"
+	"github.com/musher-dev/mush/internal/harness"
 )
 
 func TestInstallFromCache_CodexMergesAgentsAndToolConfig(t *testing.T) {
@@ -46,7 +47,12 @@ func TestInstallFromCache_CodexMergesAgentsAndToolConfig(t *testing.T) {
 		},
 	}
 
-	installed, err := InstallFromCache(workDir, cacheDir, manifest, &CodexAssetMapper{}, false)
+	codexSpec, ok := harness.GetProvider("codex")
+	if !ok {
+		t.Fatal("codex provider not found")
+	}
+
+	installed, err := InstallFromCache(workDir, cacheDir, manifest, NewProviderMapper(codexSpec), false)
 	if err != nil {
 		t.Fatalf("InstallFromCache() error = %v", err)
 	}
@@ -104,7 +110,12 @@ func TestInstallFromCache_Conflict(t *testing.T) {
 		},
 	}
 
-	_, err := InstallFromCache(workDir, cacheDir, manifest, &ClaudeAssetMapper{}, false)
+	claudeSpec, ok := harness.GetProvider("claude")
+	if !ok {
+		t.Fatal("claude provider not found")
+	}
+
+	_, err := InstallFromCache(workDir, cacheDir, manifest, NewProviderMapper(claudeSpec), false)
 	if err == nil {
 		t.Fatal("InstallFromCache() expected conflict error, got nil")
 	}
