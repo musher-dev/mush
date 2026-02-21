@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.6.0](https://github.com/musher-dev/mush/compare/v2.5.0...v2.6.0) (2026-02-21)
+
+
+### Features
+
+* **harness:** add structured logging and data-driven provider specs ([#46](https://github.com/musher-dev/mush/issues/46)) ([390eec9](https://github.com/musher-dev/mush/commit/390eec969c6a2e11b5c6604b4a291a62221fec78))
+
 ## [2.5.0](https://github.com/musher-dev/mush/compare/v2.4.0...v2.5.0) (2026-02-20)
 
 
