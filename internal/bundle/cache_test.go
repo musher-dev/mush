@@ -19,7 +19,7 @@ func (f cacheRoundTripFunc) RoundTrip(req *http.Request) (*http.Response, error)
 }
 
 func TestPullFailsWhenResolveLacksDownloadMetadata(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 
 	clientHTTP := &http.Client{
 		Transport: cacheRoundTripFunc(func(r *http.Request) (*http.Response, error) {

@@ -158,6 +158,34 @@ Examples:
 
 			defer cleanup()
 
+			// Inject agent_definition assets into the project directory so the
+			// harness discovers them (e.g., Claude Code only looks under CWD/.claude/agents/).
+			projectDir, err := os.Getwd()
+			if err != nil {
+				return fmt.Errorf("get working directory: %w", err)
+			}
+
+			injected, agentCleanup, err := bundle.InjectAgentsForLoad(
+				projectDir, cachePath, &resolved.Manifest, mapper,
+			)
+			if err != nil {
+				return fmt.Errorf("inject agents for load: %w", err)
+			}
+
+			defer agentCleanup()
+
+			if len(injected) > 0 {
+				for _, relPath := range injected {
+					out.Success("Agent injected: %s", relPath)
+				}
+
+				logger.Info(
+					"agents injected into project dir",
+					slog.String("event.type", "bundle.load.agents_injected"),
+					slog.Int("agent_count", len(injected)),
+				)
+			}
+
 			out.Success("Bundle assets prepared in load directory")
 			out.Print("Assets: %d loaded\n", len(resolved.Manifest.Layers))
 			out.Println()

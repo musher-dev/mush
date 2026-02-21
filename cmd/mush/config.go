@@ -8,6 +8,7 @@ import (
 	"github.com/musher-dev/mush/internal/config"
 	clierrors "github.com/musher-dev/mush/internal/errors"
 	"github.com/musher-dev/mush/internal/output"
+	"github.com/musher-dev/mush/internal/paths"
 )
 
 func newConfigCmd() *cobra.Command {
@@ -42,10 +43,16 @@ func newConfigListCmd() *cobra.Command {
 				out.Muted("No configuration set.")
 				out.Println()
 				out.Println("Available settings:")
+
+				historyDir := "<user config dir>/mush/history"
+				if resolved, err := paths.HistoryDir(); err == nil {
+					historyDir = resolved
+				}
+
 				out.Print("  api.url       Platform API URL (default: %s)\n", config.DefaultAPIURL)
 				out.Print("  worker.poll   Poll interval in seconds (default: %d)\n", config.DefaultPollInterval)
 				out.Print("  history.enabled   Enable PTY transcript capture (default: true)\n")
-				out.Print("  history.dir       Transcript storage directory (default: ~/.config/mush/history)\n")
+				out.Print("  history.dir       Transcript storage directory (default: %s)\n", historyDir)
 				out.Print("  history.lines     In-memory transcript lines per session (default: 10000)\n")
 				out.Print("  history.retention Default prune window (default: 720h)\n")
 

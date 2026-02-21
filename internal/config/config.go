@@ -2,7 +2,7 @@
 //
 // Configuration sources (in priority order):
 //  1. Environment variables (MUSH_*)
-//  2. Config file (~/.config/mush/config.yaml)
+//  2. Config file (<user config dir>/mush/config.yaml)
 //  3. Built-in defaults
 package config
 
@@ -16,6 +16,8 @@ import (
 	"time"
 
 	"github.com/spf13/viper"
+
+	"github.com/musher-dev/mush/internal/paths"
 )
 
 const (
@@ -45,10 +47,15 @@ func Load() *Config {
 	v.SetDefault("history.retention", (30 * 24 * time.Hour).String())
 
 	// Config file location
-	home, err := os.UserHomeDir()
+	configDir, err := paths.ConfigRoot()
 	if err == nil {
-		configDir := filepath.Join(home, ".config", "mush")
-		v.SetDefault("history.dir", filepath.Join(configDir, "history"))
+		historyDir, historyErr := paths.HistoryDir()
+		if historyErr == nil {
+			v.SetDefault("history.dir", historyDir)
+		} else {
+			v.SetDefault("history.dir", filepath.Join(configDir, "history"))
+		}
+
 		v.AddConfigPath(configDir)
 		v.SetConfigName("config")
 		v.SetConfigType("yaml")
@@ -90,12 +97,11 @@ func (c *Config) Set(key string, value interface{}) error {
 	c.v.Set(key, value)
 
 	// Ensure config directory exists
-	home, err := os.UserHomeDir()
+	configDir, err := paths.ConfigRoot()
 	if err != nil {
-		return fmt.Errorf("resolve user home directory: %w", err)
+		return fmt.Errorf("resolve config directory: %w", err)
 	}
 
-	configDir := filepath.Join(home, ".config", "mush")
 	if err := os.MkdirAll(configDir, 0o700); err != nil {
 		return fmt.Errorf("create config directory: %w", err)
 	}

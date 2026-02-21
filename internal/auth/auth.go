@@ -3,7 +3,7 @@
 // Credentials are sourced in the following priority order:
 //  1. Environment variable: MUSHER_API_KEY
 //  2. OS Keyring (macOS Keychain, Windows Credential Manager, Linux Secret Service)
-//  3. Config file fallback: ~/.config/mush/credentials (for non-interactive environments)
+//  3. Config file fallback: <user config dir>/mush/credentials (for non-interactive environments)
 package auth
 
 import (
@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/musher-dev/mush/internal/paths"
 	"github.com/zalando/go-keyring"
 )
 
@@ -87,12 +88,12 @@ func DeleteAPIKey() error {
 
 // credentialsFilePath returns the path to the credentials file.
 func credentialsFilePath() string {
-	home, err := os.UserHomeDir()
+	path, err := paths.CredentialsFile()
 	if err != nil {
 		return ""
 	}
 
-	return filepath.Join(home, ".config", "mush", "credentials")
+	return filepath.Clean(path)
 }
 
 // readCredentialsFile reads the API key from the file fallback.

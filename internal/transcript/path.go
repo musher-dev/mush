@@ -2,16 +2,16 @@ package transcript
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
+
+	"github.com/musher-dev/mush/internal/paths"
 )
 
 // DefaultDir returns the default history directory.
 func DefaultDir() (string, error) {
-	home, err := os.UserHomeDir()
+	historyDir, err := paths.HistoryDir()
 	if err != nil {
-		return "", fmt.Errorf("resolve user home directory: %w", err)
+		return "", fmt.Errorf("resolve transcript history directory: %w", err)
 	}
 
-	return filepath.Join(home, ".config", "mush", "history"), nil
+	return historyDir, nil
 }

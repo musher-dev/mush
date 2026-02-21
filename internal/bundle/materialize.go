@@ -114,6 +114,85 @@ func InstallFromCache(
 	return paths, nil
 }
 
+// InjectAgentsForLoad copies agent_definition assets from cache into the project
+// directory's native agent folder so the harness discovers them. It skips files
+// that already exist (protecting user's own agents). Returns the list of injected
+// paths and a cleanup function that removes only the files and directories it created.
+func InjectAgentsForLoad(
+	projectDir, cachePath string,
+	manifest *client.BundleManifest,
+	mapper AssetMapper,
+) (injected []string, cleanup func(), err error) {
+	var createdFiles []string
+
+	var createdDirs []string
+
+	noop := func() {}
+
+	for _, layer := range manifest.Layers {
+		if layer.AssetType != "agent_definition" {
+			continue
+		}
+
+		targetPath, mapErr := mapper.MapAsset(projectDir, layer)
+		if mapErr != nil {
+			return nil, noop, fmt.Errorf("map agent asset %s: %w", layer.LogicalPath, mapErr)
+		}
+
+		// Skip if the file already exists (don't overwrite user's agents).
+		if _, statErr := os.Stat(targetPath); statErr == nil {
+			continue
+		}
+
+		srcPath := filepath.Join(cachePath, "assets", layer.LogicalPath)
+
+		data, readErr := os.ReadFile(srcPath) //nolint:gosec // G304: path from controlled cache
+		if readErr != nil {
+			return nil, noop, fmt.Errorf("read cached agent %s: %w", layer.LogicalPath, readErr)
+		}
+
+		// Track directories we create (deepest first for cleanup).
+		dir := filepath.Dir(targetPath)
+		for d := dir; d != projectDir; d = filepath.Dir(d) {
+			if _, statErr := os.Stat(d); statErr != nil {
+				createdDirs = append(createdDirs, d)
+			} else {
+				break
+			}
+		}
+
+		if mkErr := os.MkdirAll(dir, 0o755); mkErr != nil { //nolint:gosec // G301: project dir
+			return nil, noop, fmt.Errorf("create directory for agent %s: %w", layer.LogicalPath, mkErr)
+		}
+
+		if writeErr := os.WriteFile(targetPath, data, 0o644); writeErr != nil { //nolint:gosec // G306: project file
+			return nil, noop, fmt.Errorf("write agent %s: %w", layer.LogicalPath, writeErr)
+		}
+
+		createdFiles = append(createdFiles, targetPath)
+
+		relPath, _ := filepath.Rel(projectDir, targetPath)
+		if relPath == "" {
+			relPath = targetPath
+		}
+
+		injected = append(injected, relPath)
+	}
+
+	cleanup = func() {
+		for _, f := range createdFiles {
+			_ = os.Remove(f)
+		}
+
+		// Remove created directories in reverse order (deepest first).
+		for i := len(createdDirs) - 1; i >= 0; i-- {
+			_ = os.Remove(createdDirs[i]) // only removes if empty
+		}
+	}
+
+	return injected, cleanup, nil
+}
+
 // InstallConflictError is returned when installation would overwrite an existing file.
 type InstallConflictError struct {
 	Path string

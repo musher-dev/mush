@@ -59,7 +59,7 @@ func TestCredentialsFilePath(t *testing.T) {
 		t.Skip("Could not determine home directory")
 	}
 
-	// Should contain .config/mush/credentials
+	// Should contain mush/credentials under the user config directory.
 	if !filepath.IsAbs(path) {
 		t.Errorf("credentialsFilePath() = %q, want absolute path", path)
 	}

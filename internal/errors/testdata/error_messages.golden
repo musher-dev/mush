@@ -60,7 +60,7 @@ Code: 2
 
 --- ConfigFailed ---
 Message: Failed to store credentials
-Hint: Check file permissions for ~/.config/mush/ or run 'mush doctor'
+Hint: Check file permissions for your Mush config directory or run 'mush doctor'
 Code: 4
 
 --- JobNotFound ---

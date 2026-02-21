@@ -11,16 +11,17 @@ import (
 	"github.com/musher-dev/mush/internal/client"
 	"github.com/musher-dev/mush/internal/observability"
 	"github.com/musher-dev/mush/internal/output"
+	"github.com/musher-dev/mush/internal/paths"
 )
 
 // CacheDir returns the base cache directory for bundles.
 func CacheDir() string {
-	configDir, err := os.UserConfigDir()
+	cacheDir, err := paths.BundleCacheDir()
 	if err != nil {
-		configDir = filepath.Join(os.Getenv("HOME"), ".config")
+		return filepath.Join(os.Getenv("HOME"), ".cache", "mush", "cache")
 	}
 
-	return filepath.Join(configDir, "mush", "cache")
+	return cacheDir
 }
 
 // CachePath returns the cache path for a specific bundle version.

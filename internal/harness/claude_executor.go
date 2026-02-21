@@ -55,6 +55,9 @@ type ClaudeExecutor struct {
 	// PTY injection helpers (injectable for tests).
 	setPTYSize       func(*os.File, *pty.Winsize) error
 	startPTYWithSize func(*exec.Cmd, *pty.Winsize) (*os.File, error)
+	startPTYFunc     func(context.Context) error
+	startOutputFunc  func()
+	waitForReadyFunc func(context.Context)
 
 	// ptyReady delivers active PTY handles to the output reader loop.
 	ptyReady chan *os.File
@@ -96,7 +99,7 @@ func mustGetProvider(name string) *ProviderSpec {
 
 // NewClaudeExecutor creates a new ClaudeExecutor with default settings.
 func NewClaudeExecutor() *ClaudeExecutor {
-	return &ClaudeExecutor{
+	executor := &ClaudeExecutor{
 		promptDetected:      make(chan struct{}, 1),
 		ptyReady:            make(chan *os.File, 4),
 		done:                make(chan struct{}),
@@ -105,6 +108,14 @@ func NewClaudeExecutor() *ClaudeExecutor {
 		startPTYWithSize:    pty.StartWithSize,
 		ptyShutdownDeadline: defaultPTYShutdownDeadline,
 	}
+
+	executor.startPTYFunc = executor.startPTY
+	executor.startOutputFunc = func() {
+		go executor.copyPTYOutput()
+	}
+	executor.waitForReadyFunc = executor.waitForReady
+
+	return executor
 }
 
 // Setup initializes the Claude executor: signal dir, stop hook, MCP config, PTY.
@@ -133,18 +144,44 @@ func (e *ClaudeExecutor) Setup(ctx context.Context, opts *SetupOptions) error {
 	}
 
 	// Start the PTY.
-	if err := e.startPTY(ctx); err != nil {
+	startPTY := e.startPTYFunc
+	if startPTY == nil {
+		startPTY = e.startPTY
+	}
+
+	if err := startPTY(ctx); err != nil {
 		return fmt.Errorf("failed to start PTY: %w", err)
 	}
 
-	// Start the output reader goroutine.
-	go e.copyPTYOutput()
+	startOutput := e.startOutputFunc
+	if startOutput == nil {
+		startOutput = func() {
+			go e.copyPTYOutput()
+		}
+	}
 
-	// Wait for Claude to be ready.
-	e.waitForReady(ctx)
+	startOutput()
 
-	if opts.OnReady != nil {
-		opts.OnReady()
+	waitForReady := e.waitForReadyFunc
+	if waitForReady == nil {
+		waitForReady = e.waitForReady
+	}
+
+	if opts.BundleLoadMode {
+		go func() {
+			waitForReady(ctx)
+
+			if opts.OnReady != nil {
+				opts.OnReady()
+			}
+		}()
+	} else {
+		// Link mode blocks until prompt detection confirms readiness.
+		waitForReady(ctx)
+
+		if opts.OnReady != nil {
+			opts.OnReady()
+		}
 	}
 
 	return nil

@@ -211,10 +211,15 @@ func (m *RootModel) termPrintf(format string, args ...any) {
 func NewRootModel(ctx context.Context, cfg *Config) *RootModel {
 	ctx, cancel := context.WithCancel(ctx)
 
+	initialStatus := StatusConnecting
+	if cfg.BundleLoadMode {
+		initialStatus = StatusStarting
+	}
+
 	return &RootModel{
 		ctx:                 ctx,
 		cancel:              cancel,
-		status:              StatusConnecting,
+		status:              initialStatus,
 		lastHeartbeat:       time.Now(),
 		client:              cfg.Client,
 		cfg:                 config.Load(),
@@ -346,6 +351,14 @@ func (m *RootModel) Run() error {
 			OnOutput: func(p []byte) {
 				m.appendTranscript("pty", p)
 			},
+			OnReady: func() {
+				if m.bundleLoadMode {
+					m.statusMu.Lock()
+					m.status = StatusReady
+					m.statusMu.Unlock()
+					m.drawStatusBar()
+				}
+			},
 			OnExit: m.signalDone,
 		}
 
@@ -469,10 +482,6 @@ func (m *RootModel) runLinkMode() error {
 
 // runBundleLoadMode runs a single interactive session with bundle assets.
 func (m *RootModel) runBundleLoadMode() error {
-	m.statusMu.Lock()
-	m.status = StatusConnected
-	m.statusMu.Unlock()
-
 	// Start goroutines.
 	var wg sync.WaitGroup
 

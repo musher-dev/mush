@@ -212,6 +212,10 @@ func (m *RootModel) drawBundleLoadStatusBar() {
 
 func renderStatus(status ConnectionStatus) string {
 	switch status {
+	case StatusStarting:
+		return "\x1b[33m\x1b[1mStarting\x1b[0m"
+	case StatusReady:
+		return "\x1b[32m\x1b[1mReady\x1b[0m"
 	case StatusConnected:
 		return "\x1b[32m\x1b[1mConnected\x1b[0m"
 	case StatusProcessing:
