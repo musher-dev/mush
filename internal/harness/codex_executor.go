@@ -196,6 +196,10 @@ func (e *CodexExecutor) startInteractive(ctx context.Context, opts *SetupOptions
 	var args []string
 	if !opts.BundleLoadMode {
 		args = append(args, "--dangerously-bypass-approvals-and-sandbox")
+	} else if opts.BundleDir != "" {
+		// --add-dir requires at least workspace-write sandbox mode;
+		// without this, codex defaults to read-only and ignores --add-dir.
+		args = append(args, "--sandbox", "workspace-write")
 	}
 
 	if opts.BundleDir != "" && spec != nil && spec.BundleDir != nil && spec.BundleDir.Flag != "" {
