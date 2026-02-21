@@ -413,7 +413,7 @@ func TestInjectAssetsForLoad_SkillFrontmatterWarning(t *testing.T) {
 		}
 	}
 
-	// Skill with invalid YAML frontmatter (unquoted colon in value).
+	// Skill with invalid YAML frontmatter (unquoted colon in value) — repairable.
 	write("skills/bad/SKILL.md", "---\nname: test\ndescription: something: broken\n---\n# Skill\n")
 
 	// Skill with valid YAML frontmatter.
@@ -445,7 +445,7 @@ func TestInjectAssetsForLoad_SkillFrontmatterWarning(t *testing.T) {
 		t.Fatalf("InjectAssetsForLoad() injected %d paths, want 2; got %v", len(injected), injected)
 	}
 
-	// Should have exactly one warning for the bad skill.
+	// Should have exactly one warning for the auto-repaired skill.
 	if len(warnings) != 1 {
 		t.Fatalf("InjectAssetsForLoad() warnings = %d, want 1; got %v", len(warnings), warnings)
 	}
@@ -454,8 +454,79 @@ func TestInjectAssetsForLoad_SkillFrontmatterWarning(t *testing.T) {
 		t.Fatalf("warning should mention bad skill path, got: %s", warnings[0])
 	}
 
-	if !strings.Contains(warnings[0], "invalid YAML frontmatter") {
-		t.Fatalf("warning should mention invalid YAML, got: %s", warnings[0])
+	if !strings.Contains(warnings[0], "auto-repaired") {
+		t.Fatalf("warning should mention auto-repaired, got: %s", warnings[0])
+	}
+
+	// Verify the injected file has repaired content.
+	skillPath := filepath.Join(projectDir, ".claude", "skills", "skills", "bad", "SKILL.md")
+
+	data, readErr := os.ReadFile(skillPath)
+	if readErr != nil {
+		t.Fatalf("ReadFile(repaired skill) error = %v", readErr)
+	}
+
+	if !strings.Contains(string(data), `description: "something: broken"`) {
+		t.Fatalf("injected skill should have repaired frontmatter, got: %s", string(data))
+	}
+}
+
+func TestInjectAssetsForLoad_SkillFrontmatterUnrepairable(t *testing.T) {
+	projectDir := t.TempDir()
+	cacheDir := t.TempDir()
+
+	assetsDir := filepath.Join(cacheDir, "assets")
+
+	write := func(rel, data string) {
+		path := filepath.Join(assetsDir, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("MkdirAll(%s) error = %v", rel, err)
+		}
+
+		if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+			t.Fatalf("WriteFile(%s) error = %v", rel, err)
+		}
+	}
+
+	// Skill with unrepairable YAML frontmatter (bad indentation).
+	write("skills/broken/SKILL.md", "---\nname: test\n  bad:\n indent\n---\n# Skill\n")
+
+	manifest := &client.BundleManifest{
+		Layers: []client.BundleLayer{
+			{LogicalPath: "skills/broken/SKILL.md", AssetType: "skill"},
+		},
+	}
+
+	claudeSpec, ok := harness.GetProvider("claude")
+	if !ok {
+		t.Fatal("claude provider not found")
+	}
+
+	mapper := NewProviderMapper(claudeSpec)
+
+	injected, warnings, cleanup, err := InjectAssetsForLoad(projectDir, cacheDir, manifest, mapper)
+	if err != nil {
+		t.Fatalf("InjectAssetsForLoad() error = %v", err)
+	}
+
+	defer cleanup()
+
+	// Should still be injected (warnings are non-fatal).
+	if len(injected) != 1 {
+		t.Fatalf("InjectAssetsForLoad() injected %d paths, want 1; got %v", len(injected), injected)
+	}
+
+	// Should have one warning mentioning strict harnesses.
+	if len(warnings) != 1 {
+		t.Fatalf("InjectAssetsForLoad() warnings = %d, want 1; got %v", len(warnings), warnings)
+	}
+
+	if !strings.Contains(warnings[0], "strict harnesses") {
+		t.Fatalf("warning should mention strict harnesses, got: %s", warnings[0])
+	}
+
+	if !strings.Contains(warnings[0], "skills/broken/SKILL.md") {
+		t.Fatalf("warning should mention broken skill path, got: %s", warnings[0])
 	}
 }
 
