@@ -19,10 +19,6 @@ type AssetMapper interface {
 	// PrepareLoad creates a temp directory with assets in native structure for `bundle load`.
 	// Returns the temp dir path and a cleanup function.
 	PrepareLoad(ctx context.Context, cachePath string, manifest *client.BundleManifest) (tmpDir string, cleanup func(), err error)
-
-	// MergesAgents returns true if agent definitions are composed into a single file
-	// (e.g., AGENTS.md), false if each agent is written as an individual file.
-	MergesAgents() bool
 }
 
 // prepareLoadCommon is shared logic for preparing load dirs across mappers.
@@ -74,17 +70,11 @@ func prepareLoadCommon(mapper AssetMapper, cachePath string, manifest *client.Bu
 	}
 
 	toolConfigs := map[string][][]byte{}
-	agentsMD := map[string][]AgentDoc{}
 
 	for _, asset := range assets {
-		switch {
-		case asset.layer.AssetType == "tool_config":
+		switch asset.layer.AssetType {
+		case "tool_config":
 			toolConfigs[asset.targetPath] = append(toolConfigs[asset.targetPath], asset.data)
-		case asset.layer.AssetType == "agent_definition" && mapper.MergesAgents():
-			agentsMD[asset.targetPath] = append(agentsMD[asset.targetPath], AgentDoc{
-				Name:    asset.layer.LogicalPath,
-				Content: asset.data,
-			})
 		default:
 			if mkErr := os.MkdirAll(filepath.Dir(asset.targetPath), 0o755); mkErr != nil { //nolint:gosec // G301: temp dir
 				cleanup()
@@ -113,20 +103,6 @@ func prepareLoadCommon(mapper AssetMapper, cachePath string, manifest *client.Bu
 		if writeErr := os.WriteFile(targetPath, merged, 0o644); writeErr != nil { //nolint:gosec // G306: temp file
 			cleanup()
 			return "", nil, fmt.Errorf("write merged tool config %s: %w", targetPath, writeErr)
-		}
-	}
-
-	for targetPath, docs := range agentsMD {
-		merged := ComposeAgentsMarkdown(nil, docs)
-
-		if mkErr := os.MkdirAll(filepath.Dir(targetPath), 0o755); mkErr != nil { //nolint:gosec // G301: temp dir
-			cleanup()
-			return "", nil, fmt.Errorf("create dir for %s: %w", targetPath, mkErr)
-		}
-
-		if writeErr := os.WriteFile(targetPath, merged, 0o644); writeErr != nil { //nolint:gosec // G306: temp file
-			cleanup()
-			return "", nil, fmt.Errorf("write merged agents file %s: %w", targetPath, writeErr)
 		}
 	}
 

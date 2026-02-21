@@ -39,18 +39,3 @@ func TestMergeTOMLDocs(t *testing.T) {
 		t.Fatalf("merged toml missing expected sections: %s", s)
 	}
 }
-
-func TestComposeAgentsMarkdown(t *testing.T) {
-	got := ComposeAgentsMarkdown(
-		[]byte("# Existing"),
-		[]AgentDoc{
-			{Name: "a.md", Content: []byte("Agent A")},
-			{Name: "b.md", Content: []byte("Agent B")},
-		},
-	)
-
-	s := string(got)
-	if !strings.Contains(s, "# Existing") || !strings.Contains(s, "Bundle Agent: a.md") || !strings.Contains(s, "Bundle Agent: b.md") {
-		t.Fatalf("ComposeAgentsMarkdown() unexpected output: %s", s)
-	}
-}

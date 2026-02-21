@@ -4,16 +4,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/pelletier/go-toml/v2"
 )
-
-// AgentDoc is an agent-definition document to append to AGENTS.md.
-type AgentDoc struct {
-	Name    string
-	Content []byte
-}
 
 // MergeJSONDocs merges multiple JSON object documents into one object.
 func MergeJSONDocs(existing []byte, docs [][]byte) ([]byte, error) {
@@ -63,31 +56,6 @@ func MergeTOMLDocs(existing []byte, docs [][]byte) ([]byte, error) {
 	}
 
 	return out, nil
-}
-
-// ComposeAgentsMarkdown appends bundle agent definitions to AGENTS.md.
-func ComposeAgentsMarkdown(existing []byte, docs []AgentDoc) []byte {
-	var b strings.Builder
-
-	existingTrimmed := strings.TrimSpace(string(existing))
-	if existingTrimmed != "" {
-		b.WriteString(existingTrimmed)
-		b.WriteString("\n\n")
-	}
-
-	for i, doc := range docs {
-		if i > 0 {
-			b.WriteString("\n\n")
-		}
-
-		b.WriteString("## Bundle Agent: ")
-		b.WriteString(doc.Name)
-		b.WriteString("\n\n")
-		b.WriteString(strings.TrimSpace(string(doc.Content)))
-		b.WriteString("\n")
-	}
-
-	return []byte(b.String())
 }
 
 func unmarshalJSONObject(in []byte, dst map[string]any) error {

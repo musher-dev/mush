@@ -10,7 +10,7 @@ import (
 )
 
 // InstallFromCache installs bundle assets into workDir using mapper rules.
-// It performs merge semantics for tool_config and AGENTS.md agent definitions.
+// It performs merge semantics for tool_config assets.
 func InstallFromCache(
 	workDir string,
 	cachePath string,
@@ -47,18 +47,12 @@ func InstallFromCache(
 	}
 
 	toolConfigs := map[string][][]byte{}
-	agentsMD := map[string][]AgentDoc{}
 	installed := map[string]struct{}{}
 
 	for _, asset := range assets {
-		switch {
-		case asset.layer.AssetType == "tool_config":
+		switch asset.layer.AssetType {
+		case "tool_config":
 			toolConfigs[asset.targetPath] = append(toolConfigs[asset.targetPath], asset.data)
-		case asset.layer.AssetType == "agent_definition" && mapper.MergesAgents():
-			agentsMD[asset.targetPath] = append(agentsMD[asset.targetPath], AgentDoc{
-				Name:    asset.layer.LogicalPath,
-				Content: asset.data,
-			})
 		default:
 			if !force {
 				if _, statErr := os.Stat(asset.targetPath); statErr == nil {
@@ -100,30 +94,6 @@ func InstallFromCache(
 
 		if writeErr := os.WriteFile(targetPath, merged, 0o644); writeErr != nil { //nolint:gosec // G306: project file
 			return nil, fmt.Errorf("write merged tool config %s: %w", targetPath, writeErr)
-		}
-
-		relPath, _ := filepath.Rel(workDir, targetPath)
-		if relPath == "" {
-			relPath = targetPath
-		}
-
-		installed[relPath] = struct{}{}
-	}
-
-	for targetPath, docs := range agentsMD {
-		var existing []byte
-		if data, readErr := os.ReadFile(targetPath); readErr == nil { //nolint:gosec // G304: mapped project path
-			existing = data
-		}
-
-		merged := ComposeAgentsMarkdown(existing, docs)
-
-		if mkErr := os.MkdirAll(filepath.Dir(targetPath), 0o755); mkErr != nil { //nolint:gosec // G301: project dir
-			return nil, fmt.Errorf("create directory for %s: %w", targetPath, mkErr)
-		}
-
-		if writeErr := os.WriteFile(targetPath, merged, 0o644); writeErr != nil { //nolint:gosec // G306: project file
-			return nil, fmt.Errorf("write merged agents file %s: %w", targetPath, writeErr)
 		}
 
 		relPath, _ := filepath.Rel(workDir, targetPath)

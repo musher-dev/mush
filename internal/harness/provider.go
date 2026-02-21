@@ -46,7 +46,6 @@ type CLIFlags struct {
 type AssetPaths struct {
 	SkillDir       string `yaml:"skillDir"`
 	AgentDir       string `yaml:"agentDir"`
-	AgentFile      string `yaml:"agentFile"`
 	ToolConfigFile string `yaml:"toolConfigFile"`
 }
 
@@ -97,12 +96,6 @@ func mustLoadProviders(fsys embed.FS) map[string]*ProviderSpec {
 func validateProviderSpec(spec *ProviderSpec, filename string) {
 	if spec.Name == "" {
 		panic(fmt.Sprintf("harness: provider %s: name is required", filename))
-	}
-
-	if spec.Assets != nil {
-		if spec.Assets.AgentDir != "" && spec.Assets.AgentFile != "" {
-			panic(fmt.Sprintf("harness: provider %s: agentDir and agentFile are mutually exclusive", filename))
-		}
 	}
 
 	if spec.BundleDir != nil && spec.BundleDir.Mode != "" {

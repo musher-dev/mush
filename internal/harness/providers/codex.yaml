@@ -13,7 +13,7 @@ bundleDir:
 
 assets:
   skillDir: .agents/skills
-  agentFile: AGENTS.md
+  agentDir: .codex/agents
   toolConfigFile: .codex/config.toml
 
 mcp:
