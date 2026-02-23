@@ -35,7 +35,7 @@ jobs:
           install-fonts: true
 
       - name: Commit updated GIFs
-        uses: stefanzweifel/git-auto-commit-action@v5
+        uses: stefanzweifel/git-auto-commit-action@v7
         with:
           commit_message: 'docs(vhs): regenerate demo GIFs [skip ci]'
           file_pattern: 'docs/vhs/gif/*.gif'
