@@ -13,7 +13,9 @@ import (
 
 	"github.com/musher-dev/mush/internal/ansi"
 	"github.com/musher-dev/mush/internal/config"
+	clierrors "github.com/musher-dev/mush/internal/errors"
 	"github.com/musher-dev/mush/internal/output"
+	"github.com/musher-dev/mush/internal/prompt"
 	"github.com/musher-dev/mush/internal/transcript"
 )
 
@@ -21,6 +23,10 @@ func newHistoryCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "history",
 		Short: "Inspect transcript history from PTY sessions",
+		Long: `Inspect and manage transcript history captured during PTY harness sessions.
+
+Transcripts are stored locally and can be listed, viewed, or pruned to free
+disk space.`,
 	}
 
 	cmd.AddCommand(newHistoryListCmd())
@@ -34,19 +40,23 @@ func newHistoryListCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "list",
 		Short: "List stored transcript sessions",
-		Args:  noArgs,
+		Long:  `List all locally stored transcript sessions with their start and close times.`,
+		Example: `  mush history list
+  mush history list --json`,
+		Args: noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := output.FromContext(cmd.Context())
 			dir := config.Load().HistoryDir()
 
 			sessions, err := transcript.ListSessions(dir)
 			if err != nil {
-				return fmt.Errorf("list transcript sessions: %w", err)
+				return clierrors.Wrap(clierrors.ExitGeneral, "Failed to list transcript sessions", err).
+					WithHint("Check that the history directory exists and is readable")
 			}
 
 			if out.JSON {
-				if err := out.PrintJSON(sessions); err != nil {
-					return fmt.Errorf("print transcript sessions json: %w", err)
+				if err := out.PrintJSON(map[string]any{"items": sessions}); err != nil {
+					return clierrors.Wrap(clierrors.ExitGeneral, "Failed to write JSON output", err)
 				}
 
 				return nil
@@ -81,7 +91,13 @@ func newHistoryViewCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "view <session-id>",
 		Short: "View transcript events for a session",
-		Args:  cobra.ExactArgs(1),
+		Long: `Display the captured transcript events for a specific session.
+
+Use --follow to tail the transcript in real time while a session is active.
+Use --search to filter output to lines matching a substring.`,
+		Example: `  mush history view SESSION_ID
+  mush history view SESSION_ID --follow`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			sessionID := args[0]
 			out := output.FromContext(cmd.Context())
@@ -108,7 +124,7 @@ func newHistoryViewCmd() *cobra.Command {
 			events, err := transcript.ReadEvents(dir, sessionID)
 			if err != nil {
 				if !follow {
-					return fmt.Errorf("read transcript events: %w", err)
+					return clierrors.Wrap(clierrors.ExitGeneral, "Failed to read transcript events", err)
 				}
 			} else {
 				for _, event := range events {
@@ -140,7 +156,7 @@ func newHistoryViewCmd() *cobra.Command {
 			for {
 				liveEvents, nextOffset, err := transcript.ReadLiveEventsFrom(dir, sessionID, liveOffset)
 				if err != nil {
-					return fmt.Errorf("read live transcript events: %w", err)
+					return clierrors.Wrap(clierrors.ExitGeneral, "Failed to read live transcript events", err)
 				}
 
 				liveOffset = nextOffset
@@ -181,29 +197,87 @@ func newHistoryViewCmd() *cobra.Command {
 }
 
 func newHistoryPruneCmd() *cobra.Command {
-	var olderThan string
+	var (
+		olderThan string
+		force     bool
+	)
 
 	cmd := &cobra.Command{
 		Use:   "prune",
 		Short: "Delete transcript sessions older than a duration",
-		Args:  noArgs,
+		Long: `Delete transcript sessions older than the configured retention window.
+
+The default retention comes from the history.retention config key (default 720h).
+Use --older-than to override. Requires confirmation unless --force is passed.`,
+		Example: `  mush history prune
+  mush history prune --older-than 168h
+  mush history prune --force`,
+		Args: noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := output.FromContext(cmd.Context())
 			cfg := config.Load()
 			window := cfg.HistoryRetention()
 
 			if olderThan != "" {
-				d, err := time.ParseDuration(olderThan)
+				parsed, err := time.ParseDuration(olderThan)
 				if err != nil {
-					return fmt.Errorf("invalid duration for --older-than: %w", err)
+					return clierrors.Wrap(clierrors.ExitUsage, "Invalid duration for --older-than", err).
+						WithHint("Use Go duration format, e.g. 168h, 24h, 30m")
 				}
 
-				window = d
+				window = parsed
 			}
 
-			removed, err := transcript.PruneOlderThan(cfg.HistoryDir(), time.Now().Add(-window))
+			// Preview what will be pruned.
+			dir := cfg.HistoryDir()
+			cutoff := time.Now().Add(-window)
+
+			sessions, err := transcript.ListSessions(dir)
 			if err != nil {
-				return fmt.Errorf("prune transcript sessions: %w", err)
+				return clierrors.Wrap(clierrors.ExitGeneral, "Failed to list transcript sessions", err)
+			}
+
+			var count int
+
+			for _, s := range sessions {
+				if s.StartedAt.Before(cutoff) {
+					count++
+				}
+			}
+
+			if count == 0 {
+				out.Muted("No transcript sessions older than %s", window)
+				return nil
+			}
+
+			out.Print("Found %d session(s) older than %s\n", count, window)
+
+			// Require confirmation.
+			if !force {
+				if out.NoInput {
+					return clierrors.New(clierrors.ExitUsage, "Cannot confirm prune in non-interactive mode").
+						WithHint("Use --force to skip confirmation")
+				}
+
+				prompter := prompt.New(out)
+
+				confirmed, promptErr := prompter.Confirm(
+					fmt.Sprintf("Delete %d transcript session(s)?", count),
+					false,
+				)
+				if promptErr != nil {
+					return clierrors.Wrap(clierrors.ExitGeneral, "Failed to read confirmation", promptErr)
+				}
+
+				if !confirmed {
+					out.Info("Prune canceled")
+					return nil
+				}
+			}
+
+			removed, err := transcript.PruneOlderThan(dir, cutoff)
+			if err != nil {
+				return clierrors.Wrap(clierrors.ExitGeneral, "Failed to prune transcript sessions", err)
 			}
 
 			out.Success("Removed %d transcript session(s)", removed)
@@ -212,6 +286,7 @@ func newHistoryPruneCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&olderThan, "older-than", "", "Override retention window (example: 168h)")
+	cmd.Flags().BoolVarP(&force, "force", "f", false, "Skip confirmation prompt")
 
 	return cmd
 }

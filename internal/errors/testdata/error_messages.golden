@@ -30,7 +30,7 @@ Code: 4
 
 --- QueueNotFound ---
 Message: Queue not found: queue-123
-Hint: Run 'mush link' and select a queue, or pass a valid --queue-id
+Hint: Run 'mush worker start' and select a queue, or pass a valid --queue
 Code: 4
 
 --- NoQueuesForHabitat ---
@@ -40,7 +40,7 @@ Code: 4
 
 --- NoInstructionsForQueue ---
 Message: No active instructions found for queue: My Queue (my-queue)
-Hint: Create and activate an instruction for this queue in the console, then rerun 'mush link'
+Hint: Create and activate an instruction for this queue in the console, then rerun 'mush worker start'
 Code: 4
 
 --- HabitatRequired ---
@@ -50,7 +50,7 @@ Code: 4
 
 --- QueueRequired ---
 Message: Queue required
-Hint: Use --queue-id to specify a queue, or run without --no-input to select interactively
+Hint: Use --queue to specify a queue, or run without --no-input to select interactively
 Code: 64
 
 --- APIKeyEmpty ---
@@ -68,8 +68,8 @@ Message: Job not found: job-abc-123
 Hint: The job may have been completed, canceled, or the ID is incorrect
 Code: 1
 
---- LinkRegistrationFailed ---
-Message: Failed to register link
+--- WorkerRegistrationFailed ---
+Message: Failed to register worker
 Hint: Check your network connection and API credentials
 Code: 3
 

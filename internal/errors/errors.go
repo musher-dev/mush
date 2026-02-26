@@ -141,7 +141,7 @@ func NoHabitats() *CLIError {
 func QueueNotFound(name string) *CLIError {
 	return &CLIError{
 		Message: fmt.Sprintf("Queue not found: %s", name),
-		Hint:    "Run 'mush link' and select a queue, or pass a valid --queue-id",
+		Hint:    "Run 'mush worker start' and select a queue, or pass a valid --queue",
 		Code:    ExitConfig,
 	}
 }
@@ -172,7 +172,7 @@ func NoInstructionsForQueue(queueName, queueSlug string) *CLIError {
 
 	return &CLIError{
 		Message: fmt.Sprintf("No active instructions found for queue: %s", label),
-		Hint:    "Create and activate an instruction for this queue in the console, then rerun 'mush link'",
+		Hint:    "Create and activate an instruction for this queue in the console, then rerun 'mush worker start'",
 		Code:    ExitConfig,
 	}
 }
@@ -190,7 +190,7 @@ func HabitatRequired() *CLIError {
 func QueueRequired() *CLIError {
 	return &CLIError{
 		Message: "Queue required",
-		Hint:    "Use --queue-id to specify a queue, or run without --no-input to select interactively",
+		Hint:    "Use --queue to specify a queue, or run without --no-input to select interactively",
 		Code:    ExitUsage,
 	}
 }
@@ -223,10 +223,10 @@ func JobNotFound(jobID string) *CLIError {
 	}
 }
 
-// LinkRegistrationFailed returns an error when link registration fails.
-func LinkRegistrationFailed(cause error) *CLIError {
+// WorkerRegistrationFailed returns an error when worker registration fails.
+func WorkerRegistrationFailed(cause error) *CLIError {
 	return &CLIError{
-		Message: "Failed to register link",
+		Message: "Failed to register worker",
 		Hint:    "Check your network connection and API credentials",
 		Cause:   cause,
 		Code:    ExitNetwork,

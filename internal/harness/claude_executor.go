@@ -174,7 +174,7 @@ func (e *ClaudeExecutor) Setup(ctx context.Context, opts *SetupOptions) error {
 			}
 		}()
 	} else if waitForReady(ctx) && opts.OnReady != nil {
-		// Link mode blocks until prompt detection confirms readiness.
+		// Worker mode blocks until prompt detection confirms readiness.
 		opts.OnReady()
 	}
 
@@ -562,7 +562,7 @@ func (e *ClaudeExecutor) readPTYOutput(ptmx *os.File) {
 			e.opts.OnOutput(buf[:bytesRead])
 		}
 
-		// Detect bypass dialog and auto-accept (only in link mode where
+		// Detect bypass dialog and auto-accept (only in worker mode where
 		// --dangerously-skip-permissions triggers a trust dialog).
 		if !e.opts.BundleLoadMode {
 			e.captureMu.Lock()

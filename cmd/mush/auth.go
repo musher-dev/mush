@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"os"
 	"strings"
 
@@ -41,6 +40,8 @@ Your API key will be stored securely in your system's keyring
 (macOS Keychain, Windows Credential Manager, or Linux Secret Service).
 
 You can also set the MUSHER_API_KEY environment variable.`,
+		Example: `  mush auth login
+  mush auth login --api-key sk-...`,
 		Args: noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := output.FromContext(cmd.Context())
@@ -66,7 +67,7 @@ You can also set the MUSHER_API_KEY environment variable.`,
 
 				apiKey, err = prompter.Password("Enter your Musher API key")
 				if err != nil {
-					return fmt.Errorf("read api key prompt: %w", err)
+					return clierrors.Wrap(clierrors.ExitGeneral, "Failed to read API key", err)
 				}
 			}
 
@@ -116,7 +117,10 @@ func newAuthStatusCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "status",
 		Short: "Show authentication status",
-		Args:  noArgs,
+		Long:  `Validate stored credentials against the Musher API and display the authenticated identity.`,
+		Example: `  mush auth status
+  mush auth status --json`,
+		Args: noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := output.FromContext(cmd.Context())
 
@@ -143,7 +147,7 @@ func newAuthStatusCmd() *cobra.Command {
 					Credential: identity.CredentialName,
 					Workspace:  identity.WorkspaceName,
 				}); err != nil {
-					return fmt.Errorf("print auth status json: %w", err)
+					return clierrors.Wrap(clierrors.ExitGeneral, "Failed to write JSON output", err)
 				}
 
 				return nil
@@ -160,9 +164,11 @@ func newAuthStatusCmd() *cobra.Command {
 
 func newAuthLogoutCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "logout",
-		Short: "Clear stored credentials",
-		Args:  noArgs,
+		Use:     "logout",
+		Short:   "Clear stored credentials",
+		Long:    `Remove stored API credentials from the system keyring. Does not affect the MUSHER_API_KEY environment variable.`,
+		Example: `  mush auth logout`,
+		Args:    noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := output.FromContext(cmd.Context())
 

@@ -91,15 +91,26 @@ linters:
             - internal/config/**/*.go
             - internal/update/**/*.go
             - internal/harness/provider.go
-            - internal/linking/**/*.go
+            - internal/worker/**/*.go
             - internal/errors/**/*.go
             - internal/buildinfo/**/*.go
             - internal/terminal/**/*.go
+            - internal/paths/**/*.go
+            - internal/ansi/**/*.go
+            - internal/observability/**/*.go
+            - internal/transcript/**/*.go
+            - internal/testutil/**/*.go
           deny:
             - pkg: github.com/musher-dev/mush/internal/output
               desc: platform/core packages must not depend on output
             - pkg: github.com/musher-dev/mush/internal/prompt
               desc: platform/core packages must not depend on prompt
+        testutil_no_production:
+          files:
+            - "!**/*_test.go"
+          deny:
+            - pkg: github.com/musher-dev/mush/internal/testutil
+              desc: testutil is for tests only — must not be imported by production code
         doctor_no_output:
           files:
             - internal/doctor/**/*.go

@@ -22,7 +22,8 @@ The wizard will:
   4. Show next steps
 
 If credentials already exist, use --force to overwrite them.`,
-		Args: noArgs,
+		Example: `  mush init`,
+		Args:    noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := output.FromContext(cmd.Context())
 
@@ -32,7 +33,7 @@ If credentials already exist, use --force to overwrite them.`,
 		},
 	}
 
-	cmd.Flags().BoolVar(&force, "force", false, "Overwrite existing credentials without prompting")
+	cmd.Flags().BoolVarP(&force, "force", "f", false, "Overwrite existing credentials without prompting")
 
 	return cmd
 }

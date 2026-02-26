@@ -46,7 +46,7 @@ body:
       label: Steps to reproduce
       description: Minimal steps to reproduce the issue.
       placeholder: |
-        1. Run `mush link --habitat foo`
+        1. Run `mush worker start --habitat foo`
         2. Wait for a job to be claimed
         3. Observe error
     validations:
