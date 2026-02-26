@@ -58,6 +58,11 @@ func resolveHabitatID(ctx context.Context, c *client.Client, habitatFlag string,
 	// Interactive mode: always prompt
 	selected, err := prompt.SelectHabitat(habitats, out)
 	if err != nil {
+		if prompt.IsCanceled(err) {
+			return "", clierrors.New(clierrors.ExitUsage, "Habitat selection canceled").
+				WithHint("Pass --habitat to select non-interactively")
+		}
+
 		return "", clierrors.Wrap(clierrors.ExitGeneral, "Failed to select habitat", err)
 	}
 
@@ -108,6 +113,11 @@ func resolveQueue(
 	// Interactive mode: always prompt
 	selected, err := prompt.SelectQueue(queues, out)
 	if err != nil {
+		if prompt.IsCanceled(err) {
+			return client.QueueSummary{}, clierrors.New(clierrors.ExitUsage, "Queue selection canceled").
+				WithHint("Pass --queue to select non-interactively")
+		}
+
 		return client.QueueSummary{}, clierrors.Wrap(clierrors.ExitGeneral, "Failed to select queue", err)
 	}
 

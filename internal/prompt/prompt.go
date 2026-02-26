@@ -3,6 +3,7 @@ package prompt
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -162,10 +163,14 @@ func (o *queueOption) GetStatus() string {
 
 func selectSummary[T selectableSummary](title, itemLabel string, entries []T, out *output.Writer) (int, error) {
 	// Try arrow-key selection when stdin is a terminal.
-	if term.IsTerminal(int(os.Stdin.Fd())) {
+	if shouldUseArrowKeySelection() {
 		idx, err := selectArrowKey(title, entries)
 		if err == nil {
 			return idx, nil
+		}
+
+		if IsCanceled(err) {
+			return -1, err
 		}
 		// Fall through to numbered input on any error (e.g. raw mode failure).
 	}
@@ -215,6 +220,16 @@ func selectNumbered[T selectableSummary](title, itemLabel string, entries []T, o
 
 // errCanceled is returned when the user cancels arrow-key selection.
 var errCanceled = fmt.Errorf("selection canceled")
+
+// shouldUseArrowKeySelection gates raw-mode selector usage.
+var shouldUseArrowKeySelection = func() bool {
+	return term.IsTerminal(int(os.Stdin.Fd()))
+}
+
+// IsCanceled reports whether an error represents user-canceled selection.
+func IsCanceled(err error) bool {
+	return errors.Is(err, errCanceled)
+}
 
 // selectArrowKey provides arrow-key navigation for TTY selection.
 // Up/Down moves the cursor, Enter confirms, Esc/Ctrl+C cancels.
