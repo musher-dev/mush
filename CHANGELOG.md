@@ -1,5 +1,17 @@
 # Changelog
 
+## [3.0.0](https://github.com/musher-dev/mush/compare/v2.8.3...v3.0.0) (2026-02-26)
+
+
+### ⚠ BREAKING CHANGES
+
+* **worker:** `mush link` is removed; use `mush worker start` instead.
+
+### Features
+
+* **observability:** add opt-in OpenTelemetry tracing ([#66](https://github.com/musher-dev/mush/issues/66)) ([b5e5640](https://github.com/musher-dev/mush/commit/b5e5640da591b4d10a67281b24debfaf2b0c5578))
+* **worker:** rename link to worker with improved UX and architecture enforcement ([#64](https://github.com/musher-dev/mush/issues/64)) ([86373ad](https://github.com/musher-dev/mush/commit/86373ad03586a60436c4dec3ef5b1144f8ec56b7))
+
 ## [2.8.3](https://github.com/musher-dev/mush/compare/v2.8.2...v2.8.3) (2026-02-21)
 
 
