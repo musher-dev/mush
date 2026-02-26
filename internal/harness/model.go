@@ -947,7 +947,7 @@ func (m *RootModel) jobManagerLoop() {
 		if !m.isHarnessSupported(harnessType) {
 			errMsg := fmt.Sprintf("Unsupported harness type: %s", harnessType)
 			m.setLastError(errMsg)
-			m.releaseJob(job)
+			m.releaseJob(m.ctx, job)
 
 			continue
 		}
@@ -976,7 +976,7 @@ func (m *RootModel) processJob(job *client.Job) {
 	if !ok {
 		m.setLastError(fmt.Sprintf("No executor for harness type: %s", harnessType))
 		span.SetStatus(codes.Error, "unsupported harness type")
-		m.releaseJob(job)
+		m.releaseJob(ctx, job)
 
 		return
 	}
@@ -1049,16 +1049,16 @@ func (m *RootModel) processJob(job *client.Job) {
 		span.SetStatus(codes.Error, reason)
 
 		if retry {
-			m.failJob(job, reason, msg)
+			m.failJob(ctx, job, reason, msg)
 		} else {
-			m.failJobNoRetry(job, reason, msg)
+			m.failJobNoRetry(ctx, job, reason, msg)
 		}
 
 		return
 	}
 
 	span.SetStatus(codes.Ok, "")
-	m.completeJob(job, result.OutputData)
+	m.completeJob(ctx, job, result.OutputData)
 
 	// Reset the executor for the next job.
 	if err := executor.Reset(m.ctx); err != nil {
@@ -1095,11 +1095,11 @@ func (m *RootModel) heartbeatLoop(ctx context.Context, jobID string) {
 }
 
 // completeJob reports job completion to the API.
-func (m *RootModel) completeJob(job *client.Job, outputData map[string]any) {
-	err := m.client.CompleteJob(m.ctx, job.ID, outputData)
+func (m *RootModel) completeJob(ctx context.Context, job *client.Job, outputData map[string]any) {
+	err := m.client.CompleteJob(ctx, job.ID, outputData)
 	if err != nil {
 		m.setLastError(fmt.Sprintf("Complete failed: %v", err))
-		m.failJob(job, "completion_report_failed", err.Error())
+		m.failJob(ctx, job, "completion_report_failed", err.Error())
 
 		return
 	}
@@ -1110,15 +1110,15 @@ func (m *RootModel) completeJob(job *client.Job, outputData map[string]any) {
 }
 
 // releaseJob returns a job to the queue.
-func (m *RootModel) releaseJob(job *client.Job) {
-	if err := m.client.ReleaseJob(m.ctx, job.ID); err != nil {
+func (m *RootModel) releaseJob(ctx context.Context, job *client.Job) {
+	if err := m.client.ReleaseJob(ctx, job.ID); err != nil {
 		m.setLastError(fmt.Sprintf("Release failed: %v", err))
 	}
 }
 
 // failJob reports job failure to the API (retryable).
-func (m *RootModel) failJob(job *client.Job, reason, message string) {
-	err := m.client.FailJob(m.ctx, job.ID, reason, message, true)
+func (m *RootModel) failJob(ctx context.Context, job *client.Job, reason, message string) {
+	err := m.client.FailJob(ctx, job.ID, reason, message, true)
 	if err != nil {
 		m.setLastError(fmt.Sprintf("Fail report failed: %v", err))
 	}
@@ -1129,8 +1129,8 @@ func (m *RootModel) failJob(job *client.Job, reason, message string) {
 }
 
 // failJobNoRetry reports a permanent job failure (no retry).
-func (m *RootModel) failJobNoRetry(job *client.Job, reason, message string) {
-	err := m.client.FailJob(m.ctx, job.ID, reason, message, false)
+func (m *RootModel) failJobNoRetry(ctx context.Context, job *client.Job, reason, message string) {
+	err := m.client.FailJob(ctx, job.ID, reason, message, false)
 	if err != nil {
 		m.setLastError(fmt.Sprintf("Fail report failed: %v", err))
 	}
