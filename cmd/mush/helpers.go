@@ -1,6 +1,10 @@
 package main
 
 import (
+	"net/http"
+
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+
 	"github.com/musher-dev/mush/internal/auth"
 	"github.com/musher-dev/mush/internal/client"
 	"github.com/musher-dev/mush/internal/config"
@@ -24,7 +28,10 @@ func newAPIClient() (auth.CredentialSource, *client.Client, error) {
 	}
 
 	cfg := config.Load()
-	c := client.New(cfg.APIURL(), apiKey)
+	httpClient := &http.Client{
+		Transport: otelhttp.NewTransport(http.DefaultTransport),
+	}
+	c := client.NewWithHTTPClient(cfg.APIURL(), apiKey, httpClient)
 
 	return source, c, nil
 }
@@ -37,7 +44,10 @@ var tryAPIClient = newTryAPIClient
 func newTryAPIClient() (auth.CredentialSource, *client.Client, string, error) {
 	source, apiKey := auth.GetCredentials()
 	cfg := config.Load()
-	c := client.New(cfg.APIURL(), apiKey)
+	httpClient := &http.Client{
+		Transport: otelhttp.NewTransport(http.DefaultTransport),
+	}
+	c := client.NewWithHTTPClient(cfg.APIURL(), apiKey, httpClient)
 
 	if apiKey == "" {
 		return auth.SourceNone, c, "public", nil

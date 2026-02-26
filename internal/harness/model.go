@@ -19,9 +19,14 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/term"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/musher-dev/mush/internal/buildinfo"
 	"github.com/musher-dev/mush/internal/client"
 	"github.com/musher-dev/mush/internal/config"
+	"github.com/musher-dev/mush/internal/observability"
 	"github.com/musher-dev/mush/internal/transcript"
 	"github.com/musher-dev/mush/internal/worker"
 )
@@ -954,11 +959,23 @@ func (m *RootModel) jobManagerLoop() {
 
 // processJob handles the lifecycle of a single job using the executor.
 func (m *RootModel) processJob(job *client.Job) {
+	ctx, span := observability.Tracer("mush.harness").Start(m.ctx, "job.process",
+		trace.WithAttributes(
+			attribute.String("job.id", job.ID),
+			attribute.String("job.queue_id", job.QueueID),
+			attribute.String("job.harness_type", job.GetHarnessType()),
+			attribute.String("job.priority", job.Priority),
+			attribute.Int("job.attempt_number", job.AttemptNumber),
+		),
+	)
+	defer span.End()
+
 	harnessType := job.GetHarnessType()
 
 	executor, ok := m.executors[harnessType]
 	if !ok {
 		m.setLastError(fmt.Sprintf("No executor for harness type: %s", harnessType))
+		span.SetStatus(codes.Error, "unsupported harness type")
 		m.releaseJob(job)
 
 		return
@@ -991,7 +1008,7 @@ func (m *RootModel) processJob(job *client.Job) {
 		m.statusMu.Unlock()
 	}()
 
-	if _, err := m.client.StartJob(m.ctx, job.ID); err != nil {
+	if _, err := m.client.StartJob(ctx, job.ID); err != nil {
 		m.setLastError(fmt.Sprintf("Start job failed: %v", err))
 	}
 
@@ -1001,11 +1018,21 @@ func (m *RootModel) processJob(job *client.Job) {
 		execTimeout = time.Duration(job.Execution.TimeoutMs) * time.Millisecond
 	}
 
-	execCtx, cancelExec := context.WithTimeout(m.ctx, execTimeout)
+	execCtx, cancelExec := context.WithTimeout(ctx, execTimeout)
 	defer cancelExec()
 
 	// Execute the job via the executor.
+	execCtx, execSpan := observability.Tracer("mush.harness").Start(execCtx, "job.execute",
+		trace.WithAttributes(
+			attribute.String("job.id", job.ID),
+			attribute.String("job.harness_type", harnessType),
+		),
+	)
+
 	result, execErr := executor.Execute(execCtx, job)
+
+	execSpan.End()
+
 	if execErr != nil {
 		reason := "execution_error"
 		msg := execErr.Error()
@@ -1018,6 +1045,9 @@ func (m *RootModel) processJob(job *client.Job) {
 			retry = ee.Retry
 		}
 
+		span.RecordError(execErr)
+		span.SetStatus(codes.Error, reason)
+
 		if retry {
 			m.failJob(job, reason, msg)
 		} else {
@@ -1027,6 +1057,7 @@ func (m *RootModel) processJob(job *client.Job) {
 		return
 	}
 
+	span.SetStatus(codes.Ok, "")
 	m.completeJob(job, result.OutputData)
 
 	// Reset the executor for the next job.

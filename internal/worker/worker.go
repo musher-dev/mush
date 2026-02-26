@@ -7,8 +7,12 @@ import (
 	"runtime"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/google/uuid"
 	"github.com/musher-dev/mush/internal/client"
+	"github.com/musher-dev/mush/internal/observability"
 )
 
 const (
@@ -42,6 +46,9 @@ func Register(
 	metadata map[string]any,
 	version string,
 ) (string, error) {
+	ctx, span := observability.Tracer("mush.worker").Start(ctx, "worker.register")
+	defer span.End()
+
 	if instanceID == "" {
 		instanceID = uuid.NewString()
 	}
@@ -63,6 +70,8 @@ func Register(
 	if resp.WorkerID == "" {
 		return "", fmt.Errorf("register returned empty worker ID")
 	}
+
+	span.SetAttributes(attribute.String("worker.id", resp.WorkerID))
 
 	return resp.WorkerID, nil
 }
@@ -113,6 +122,15 @@ func Deregister(apiClient *client.Client, workerID string, completed, failed int
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+
+	ctx, span := observability.Tracer("mush.worker").Start(ctx, "worker.deregister",
+		trace.WithAttributes(
+			attribute.String("worker.id", workerID),
+			attribute.Int("worker.jobs_completed", completed),
+			attribute.Int("worker.jobs_failed", failed),
+		),
+	)
+	defer span.End()
 
 	req := client.DeregisterWorkerRequest{
 		Reason:        "graceful_shutdown",
