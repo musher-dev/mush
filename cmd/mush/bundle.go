@@ -22,6 +22,7 @@ import (
 	"github.com/musher-dev/mush/internal/harness"
 	"github.com/musher-dev/mush/internal/observability"
 	"github.com/musher-dev/mush/internal/output"
+	"github.com/musher-dev/mush/internal/prompt"
 )
 
 func newBundleCmd() *cobra.Command {
@@ -50,11 +51,9 @@ func newBundleLoadCmd() *cobra.Command {
 		Short: "Load a bundle into an ephemeral session",
 		Long: `Pull a bundle and launch a harness with the bundle's assets injected
 into a temporary directory. The session is interactive — exit the harness
-(Ctrl+Q) to clean up.
-
-Examples:
-  mush bundle load my-agent-kit --harness claude
-  mush bundle load my-agent-kit:0.1.0 --harness claude`,
+(Ctrl+Q) to clean up.`,
+		Example: `  mush bundle load my-kit --harness claude
+  mush bundle load my-kit:0.1.0 --harness claude`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := output.FromContext(cmd.Context())
@@ -137,7 +136,8 @@ Examples:
 					}
 				}
 
-				return fmt.Errorf("pull bundle: %w", err)
+				return clierrors.Wrap(clierrors.ExitNetwork, "Failed to pull bundle", err).
+					WithHint("Check your network connection and bundle slug")
 			}
 
 			// Get the mapper for this harness type.
@@ -153,7 +153,7 @@ Examples:
 			// Prepare load directory.
 			tmpDir, cleanup, err := mapper.PrepareLoad(cmd.Context(), cachePath, &resolved.Manifest)
 			if err != nil {
-				return fmt.Errorf("prepare load directory: %w", err)
+				return clierrors.Wrap(clierrors.ExitGeneral, "Failed to prepare load directory", err)
 			}
 
 			defer cleanup()
@@ -164,14 +164,14 @@ Examples:
 			// them from both CWD and --add-dir.
 			projectDir, err := os.Getwd()
 			if err != nil {
-				return fmt.Errorf("get working directory: %w", err)
+				return clierrors.Wrap(clierrors.ExitGeneral, "Failed to get working directory", err)
 			}
 
 			injected, assetWarnings, assetCleanup, err := bundle.InjectAssetsForLoad(
 				projectDir, cachePath, &resolved.Manifest, mapper,
 			)
 			if err != nil {
-				return fmt.Errorf("inject assets for load: %w", err)
+				return clierrors.Wrap(clierrors.ExitGeneral, "Failed to inject assets for load", err)
 			}
 
 			defer assetCleanup()
@@ -200,7 +200,7 @@ Examples:
 					projectDir, cachePath, &resolved.Manifest, mapper,
 				)
 				if toolErr != nil {
-					return fmt.Errorf("inject tool configs for load: %w", toolErr)
+					return clierrors.Wrap(clierrors.ExitGeneral, "Failed to inject tool configs for load", toolErr)
 				}
 
 				defer toolCleanup()
@@ -235,7 +235,7 @@ Examples:
 
 			if err := harness.Run(ctx, cfg); err != nil {
 				logger.Error("bundle load runtime failed", slog.String("event.type", "bundle.load.error"), slog.String("error", err.Error()))
-				return fmt.Errorf("bundle load: %w", err)
+				return clierrors.Wrap(clierrors.ExitExecution, "Bundle load failed", err)
 			}
 
 			logger.Info("bundle load exited", slog.String("event.type", "bundle.load.exit"))
@@ -265,11 +265,9 @@ func newBundleInstallCmd() *cobra.Command {
 		Use:   "install <slug>[:<version>]",
 		Short: "Install bundle assets into the current project",
 		Long: `Pull a bundle and install its assets into the harness's native directory
-structure in the current project directory.
-
-Examples:
-  mush bundle install my-agent-kit --harness claude
-  mush bundle install my-agent-kit:0.1.0 --harness claude --force`,
+structure in the current project directory.`,
+		Example: `  mush bundle install my-kit --harness claude
+  mush bundle install my-kit:0.1.0 --harness claude --force`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := output.FromContext(cmd.Context())
@@ -338,7 +336,8 @@ Examples:
 					}
 				}
 
-				return fmt.Errorf("pull bundle: %w", err)
+				return clierrors.Wrap(clierrors.ExitNetwork, "Failed to pull bundle", err).
+					WithHint("Check your network connection and bundle slug")
 			}
 
 			// Get the mapper for this harness type.
@@ -354,7 +353,7 @@ Examples:
 			// Install assets.
 			workDir, err := os.Getwd()
 			if err != nil {
-				return fmt.Errorf("get working directory: %w", err)
+				return clierrors.Wrap(clierrors.ExitGeneral, "Failed to get working directory", err)
 			}
 
 			installedPaths, installErr := bundle.InstallFromCache(workDir, cachePath, &resolved.Manifest, mapper, force)
@@ -367,7 +366,7 @@ Examples:
 
 				logger.Error("bundle install failed", slog.String("event.type", "bundle.install.error"), slog.String("error", installErr.Error()))
 
-				return fmt.Errorf("install bundle assets: %w", installErr)
+				return clierrors.Wrap(clierrors.ExitGeneral, "Failed to install bundle assets", installErr)
 			}
 
 			for _, relPath := range installedPaths {
@@ -400,7 +399,7 @@ Examples:
 	}
 
 	cmd.Flags().StringVar(&harnessType, "harness", "", "Harness type to install for (required)")
-	cmd.Flags().BoolVar(&force, "force", false, "Overwrite existing files")
+	cmd.Flags().BoolVarP(&force, "force", "f", false, "Overwrite existing files")
 	_ = cmd.MarkFlagRequired("harness")
 
 	return cmd
@@ -410,23 +409,26 @@ func newBundleListCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "list",
 		Short: "List local bundle cache and installed bundles",
-		Args:  noArgs,
+		Long: `Show all bundles stored in the local cache and any bundles installed in the
+current project directory.`,
+		Example: `  mush bundle list`,
+		Args:    noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := output.FromContext(cmd.Context())
 
 			cached, err := bundle.ListCached()
 			if err != nil {
-				return fmt.Errorf("list cached bundles: %w", err)
+				return clierrors.Wrap(clierrors.ExitGeneral, "Failed to list cached bundles", err)
 			}
 
 			workDir, err := os.Getwd()
 			if err != nil {
-				return fmt.Errorf("get working directory: %w", err)
+				return clierrors.Wrap(clierrors.ExitGeneral, "Failed to get working directory", err)
 			}
 
 			installed, err := bundle.LoadInstalled(workDir)
 			if err != nil {
-				return fmt.Errorf("load installed bundles: %w", err)
+				return clierrors.Wrap(clierrors.ExitGeneral, "Failed to load installed bundles", err)
 			}
 
 			out.Println("Cached bundles:")
@@ -467,7 +469,10 @@ func newBundleInfoCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "info <slug>",
 		Short: "Show local details for a bundle slug",
-		Args:  cobra.ExactArgs(1),
+		Long: `Show cached versions and installation status for a specific bundle slug
+in the current project directory.`,
+		Example: `  mush bundle info my-agent-kit`,
+		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := output.FromContext(cmd.Context())
 
@@ -483,17 +488,17 @@ func newBundleInfoCmd() *cobra.Command {
 
 			cached, err := bundle.ListCached()
 			if err != nil {
-				return fmt.Errorf("list cached bundles: %w", err)
+				return clierrors.Wrap(clierrors.ExitGeneral, "Failed to list cached bundles", err)
 			}
 
 			workDir, err := os.Getwd()
 			if err != nil {
-				return fmt.Errorf("get working directory: %w", err)
+				return clierrors.Wrap(clierrors.ExitGeneral, "Failed to get working directory", err)
 			}
 
 			installed, err := bundle.LoadInstalled(workDir)
 			if err != nil {
-				return fmt.Errorf("load installed bundles: %w", err)
+				return clierrors.Wrap(clierrors.ExitGeneral, "Failed to load installed bundles", err)
 			}
 
 			var cachedMatches []bundle.CachedBundle
@@ -545,12 +550,21 @@ func newBundleInfoCmd() *cobra.Command {
 }
 
 func newBundleUninstallCmd() *cobra.Command {
-	var harnessType string
+	var (
+		harnessType string
+		force       bool
+	)
 
 	cmd := &cobra.Command{
 		Use:   "uninstall <slug> --harness <type>",
 		Short: "Remove installed bundle assets from the current project",
-		Args:  cobra.ExactArgs(1),
+		Long: `Remove previously installed bundle assets from the current project directory.
+
+Lists the files that will be removed and prompts for confirmation unless
+--force is passed.`,
+		Example: `  mush bundle uninstall my-kit --harness claude
+  mush bundle uninstall my-kit --harness claude --force`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := output.FromContext(cmd.Context())
 			slug := strings.TrimSpace(args[0])
@@ -570,16 +584,53 @@ func newBundleUninstallCmd() *cobra.Command {
 
 			workDir, err := os.Getwd()
 			if err != nil {
-				return fmt.Errorf("get working directory: %w", err)
+				return clierrors.Wrap(clierrors.ExitGeneral, "Failed to get working directory", err)
+			}
+
+			// Preview what will be removed.
+			entry, err := bundle.FindInstalled(workDir, slug, normalized)
+			if err != nil {
+				if errors.Is(err, bundle.ErrNotInstalled) {
+					return clierrors.BundleNotFound(slug)
+				}
+
+				return clierrors.Wrap(clierrors.ExitGeneral, "Failed to read installed bundles", err)
+			}
+
+			out.Println("The following files will be removed:")
+
+			for _, relPath := range entry.Assets {
+				out.Print("  %s\n", relPath)
+			}
+
+			out.Println()
+
+			// Require confirmation.
+			if !force {
+				if out.NoInput {
+					return clierrors.New(clierrors.ExitUsage, "Cannot confirm uninstall in non-interactive mode").
+						WithHint("Use --force to skip confirmation")
+				}
+
+				prompter := prompt.New(out)
+
+				confirmed, promptErr := prompter.Confirm(
+					fmt.Sprintf("Uninstall %s (%s)? This will remove %d file(s)", slug, normalized, len(entry.Assets)),
+					false,
+				)
+				if promptErr != nil {
+					return clierrors.Wrap(clierrors.ExitGeneral, "Failed to read confirmation", promptErr)
+				}
+
+				if !confirmed {
+					out.Info("Uninstall canceled")
+					return nil
+				}
 			}
 
 			removed, err := bundle.Uninstall(workDir, slug, normalized)
 			if err != nil {
-				return fmt.Errorf("uninstall bundle assets: %w", err)
-			}
-
-			if len(removed) == 0 {
-				return clierrors.BundleNotFound(slug)
+				return clierrors.Wrap(clierrors.ExitGeneral, "Failed to uninstall bundle assets", err)
 			}
 
 			for _, relPath := range removed {
@@ -594,6 +645,7 @@ func newBundleUninstallCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&harnessType, "harness", "", "Harness type to uninstall from (required)")
+	cmd.Flags().BoolVarP(&force, "force", "f", false, "Skip confirmation prompt")
 	_ = cmd.MarkFlagRequired("harness")
 
 	return cmd

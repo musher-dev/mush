@@ -20,7 +20,7 @@ Type "mush auth login --help"
 Enter
 Sleep 3s
 
-Type "mush link --help"
+Type "mush worker --help"
 Enter
 Sleep 4s
 

@@ -50,7 +50,7 @@ type Identity struct {
 	CredentialType string `json:"credentialType"`
 	CredentialID   string `json:"credentialId"`
 	CredentialName string `json:"credentialName"`
-	WorkerID       string `json:"workerId"`
+	RunnerID       string `json:"runnerId"`
 	WorkspaceID    string `json:"workspaceId"`
 	WorkspaceName  string `json:"workspaceName"`
 }
@@ -119,37 +119,37 @@ type JobFailRequest struct {
 	ShouldRetry  bool           `json:"shouldRetry"`
 }
 
-// RegisterLinkRequest is the request body for registering a link.
-type RegisterLinkRequest struct {
+// RegisterWorkerRequest is the request body for registering a worker.
+type RegisterWorkerRequest struct {
 	InstanceID     string         `json:"instanceId"`
 	HabitatID      string         `json:"habitatId"`
 	Name           string         `json:"name,omitempty"`
-	LinkType       string         `json:"linkType"`
+	WorkerType     string         `json:"workerType"`
 	ClientVersion  string         `json:"clientVersion,omitempty"`
 	ClientMetadata map[string]any `json:"clientMetadata,omitempty"`
 }
 
-// RegisterLinkResponse is the response from registering a link.
-type RegisterLinkResponse struct {
-	LinkID              string    `json:"linkId"`
+// RegisterWorkerResponse is the response from registering a worker.
+type RegisterWorkerResponse struct {
 	WorkerID            string    `json:"workerId"`
+	RunnerID            string    `json:"runnerId"`
 	HeartbeatDeadlineAt time.Time `json:"heartbeatDeadlineAt"`
 	HeartbeatIntervalMs int       `json:"heartbeatIntervalMs"`
 }
 
-// LinkHeartbeatRequest is the request body for link heartbeat.
-type LinkHeartbeatRequest struct {
+// WorkerHeartbeatRequest is the request body for worker heartbeat.
+type WorkerHeartbeatRequest struct {
 	CurrentJobID string `json:"currentJobId,omitempty"`
 }
 
-// LinkHeartbeatResponse is the response from link heartbeat.
-type LinkHeartbeatResponse struct {
+// WorkerHeartbeatResponse is the response from worker heartbeat.
+type WorkerHeartbeatResponse struct {
 	Status              string    `json:"status"`
 	HeartbeatDeadlineAt time.Time `json:"heartbeatDeadlineAt"`
 }
 
-// DeregisterLinkRequest is the request body for deregistering a link.
-type DeregisterLinkRequest struct {
+// DeregisterWorkerRequest is the request body for deregistering a worker.
+type DeregisterWorkerRequest struct {
 	Reason        string `json:"reason,omitempty"`
 	JobsCompleted int    `json:"jobsCompleted"`
 	JobsFailed    int    `json:"jobsFailed"`

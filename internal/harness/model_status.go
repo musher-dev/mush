@@ -16,11 +16,11 @@ func (m *RootModel) drawStatusBar() {
 		return
 	}
 
-	m.drawLinkStatusBar()
+	m.drawWorkerStatusBar()
 }
 
-// drawLinkStatusBar renders the standard link mode status bar.
-func (m *RootModel) drawLinkStatusBar() {
+// drawWorkerStatusBar renders the standard worker mode status bar.
+func (m *RootModel) drawWorkerStatusBar() {
 	m.statusMu.Lock()
 	habitatID := m.habitatID
 	queueID := m.queueID
@@ -48,9 +48,9 @@ func (m *RootModel) drawLinkStatusBar() {
 	builder.WriteString(escSaveCursor)
 	fmt.Fprintf(&builder, escMoveTo, 1, 1)
 
-	// Line 1: MUSH HARNESS | Habitat | Status | Job.
+	// Line 1: MUSH WORKER | Habitat | Status | Job.
 	line1Parts := []string{
-		"\x1b[1mMUSH HARNESS\x1b[0m",
+		"\x1b[1mMUSH WORKER\x1b[0m",
 		fmt.Sprintf("Habitat: \x1b[1m%s\x1b[0m", habitatID),
 		fmt.Sprintf("Status: %s", renderedStatus),
 	}

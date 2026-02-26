@@ -1,4 +1,4 @@
-package linking
+package worker
 
 import (
 	"context"
@@ -12,18 +12,18 @@ import (
 )
 
 const (
-	// LinkHeartbeatInterval is the interval for link heartbeats.
-	LinkHeartbeatInterval = 30 * time.Second
+	// WorkerHeartbeatInterval is the interval for worker heartbeats.
+	WorkerHeartbeatInterval = 30 * time.Second
 )
 
-// DefaultLinkInfo returns a name and metadata for link registration.
-func DefaultLinkInfo() (name string, metadata map[string]interface{}) {
+// DefaultWorkerInfo returns a name and metadata for worker registration.
+func DefaultWorkerInfo() (name string, metadata map[string]any) {
 	name, _ = os.Hostname()
 	if name == "" {
 		name = "unknown-host"
 	}
 
-	metadata = map[string]interface{}{
+	metadata = map[string]any{
 		"hostname": name,
 		"os":       runtime.GOOS,
 		"arch":     runtime.GOARCH,
@@ -32,55 +32,55 @@ func DefaultLinkInfo() (name string, metadata map[string]interface{}) {
 	return name, metadata
 }
 
-// Register registers a new link and returns its link ID.
+// Register registers a new worker and returns its worker ID.
 func Register(
 	ctx context.Context,
 	apiClient *client.Client,
 	habitatID string,
 	instanceID string,
 	name string,
-	metadata map[string]interface{},
+	metadata map[string]any,
 	version string,
 ) (string, error) {
 	if instanceID == "" {
 		instanceID = uuid.NewString()
 	}
 
-	req := &client.RegisterLinkRequest{
+	req := &client.RegisterWorkerRequest{
 		InstanceID:     instanceID,
 		HabitatID:      habitatID,
 		Name:           name,
-		LinkType:       "harness",
+		WorkerType:     "harness",
 		ClientVersion:  version,
 		ClientMetadata: metadata,
 	}
 
-	resp, err := apiClient.RegisterLink(ctx, req)
+	resp, err := apiClient.RegisterWorker(ctx, req)
 	if err != nil {
-		return "", fmt.Errorf("register link: %w", err)
+		return "", fmt.Errorf("register worker: %w", err)
 	}
 
-	if resp.LinkID == "" {
-		return "", fmt.Errorf("register returned empty link ID")
+	if resp.WorkerID == "" {
+		return "", fmt.Errorf("register returned empty worker ID")
 	}
 
-	return resp.LinkID, nil
+	return resp.WorkerID, nil
 }
 
-// StartHeartbeat sends periodic link heartbeats until the context is canceled.
+// StartHeartbeat sends periodic worker heartbeats until the context is canceled.
 // If onError is non-nil, it is called whenever a heartbeat attempt fails.
 func StartHeartbeat(
 	ctx context.Context,
 	apiClient *client.Client,
-	linkID string,
+	workerID string,
 	currentJobID func() string,
 	onError func(error),
 ) {
-	if linkID == "" {
+	if workerID == "" {
 		return
 	}
 
-	ticker := time.NewTicker(LinkHeartbeatInterval)
+	ticker := time.NewTicker(WorkerHeartbeatInterval)
 
 	go func() {
 		defer ticker.Stop()
@@ -95,7 +95,7 @@ func StartHeartbeat(
 					jobID = currentJobID()
 				}
 
-				if _, err := apiClient.HeartbeatLink(ctx, linkID, jobID); err != nil {
+				if _, err := apiClient.HeartbeatWorker(ctx, workerID, jobID); err != nil {
 					if onError != nil {
 						onError(err)
 					}
@@ -105,23 +105,23 @@ func StartHeartbeat(
 	}()
 }
 
-// Deregister gracefully disconnects a link.
-func Deregister(apiClient *client.Client, linkID string, completed, failed int) error {
-	if linkID == "" {
+// Deregister gracefully disconnects a worker.
+func Deregister(apiClient *client.Client, workerID string, completed, failed int) error {
+	if workerID == "" {
 		return nil
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	req := client.DeregisterLinkRequest{
+	req := client.DeregisterWorkerRequest{
 		Reason:        "graceful_shutdown",
 		JobsCompleted: completed,
 		JobsFailed:    failed,
 	}
 
-	if err := apiClient.DeregisterLink(ctx, linkID, req); err != nil {
-		return fmt.Errorf("deregister link %s: %w", linkID, err)
+	if err := apiClient.DeregisterWorker(ctx, workerID, req); err != nil {
+		return fmt.Errorf("deregister worker %s: %w", workerID, err)
 	}
 
 	return nil

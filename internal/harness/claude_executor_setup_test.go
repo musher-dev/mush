@@ -64,7 +64,7 @@ func TestClaudeSetupBundleLoadDoesNotBlockOnReady(t *testing.T) {
 	}
 }
 
-func TestClaudeSetupLinkModeBlocksUntilReady(t *testing.T) {
+func TestClaudeSetupWorkerModeBlocksUntilReady(t *testing.T) {
 	exec := NewClaudeExecutor()
 	waitStarted := make(chan struct{})
 	releaseReady := make(chan struct{})
@@ -93,7 +93,7 @@ func TestClaudeSetupLinkModeBlocksUntilReady(t *testing.T) {
 	select {
 	case <-waitStarted:
 	case <-time.After(250 * time.Millisecond):
-		t.Fatal("waitForReady did not run in link mode")
+		t.Fatal("waitForReady did not run in worker mode")
 	}
 
 	select {
@@ -116,7 +116,7 @@ func TestClaudeSetupLinkModeBlocksUntilReady(t *testing.T) {
 	select {
 	case <-onReadyCalled:
 	case <-time.After(250 * time.Millisecond):
-		t.Fatal("OnReady not called in link mode after readiness")
+		t.Fatal("OnReady not called in worker mode after readiness")
 	}
 }
 

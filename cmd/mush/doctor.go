@@ -17,7 +17,8 @@ Checks performed:
   - API connectivity and response time
   - Authentication status and credential source
   - Claude CLI availability and version`,
-		Args: noArgs,
+		Example: `  mush doctor`,
+		Args:    noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := output.FromContext(cmd.Context())
 

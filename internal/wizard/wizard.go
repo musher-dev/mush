@@ -140,7 +140,7 @@ func (w *Wizard) Run(ctx context.Context) error {
 	w.out.Println()
 	w.out.Println("Step 2: Select Habitat")
 	w.out.Println("----------------------")
-	w.out.Println("Select a habitat to link to. Habitats are execution contexts")
+	w.out.Println("Select a habitat to connect to. Habitats are execution contexts")
 	w.out.Println("where harnesses connect and jobs are routed.")
 	w.out.Println()
 
@@ -199,6 +199,6 @@ func (w *Wizard) showNextSteps() {
 	w.out.Println()
 	w.out.Println("Next steps:")
 	w.out.Println("  mush doctor        Check your setup")
-	w.out.Println("  mush link          Start processing jobs")
+	w.out.Println("  mush worker start  Start processing jobs")
 	w.out.Println("  mush --help        See all commands")
 }
