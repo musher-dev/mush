@@ -239,15 +239,15 @@ func TestClientJobLifecycleEndpoints(t *testing.T) {
 	}
 }
 
-func TestClientLinkLifecycleEndpoints(t *testing.T) {
+func TestClientWorkerLifecycleEndpoints(t *testing.T) {
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	c := newMockClient(t, func(r *http.Request) (*http.Response, error) {
 		switch r.URL.Path {
-		case "/api/v1/runner/links:register":
-			return jsonResponse(http.StatusCreated, `{"linkId":"link-123","workerId":"worker-456","heartbeatDeadlineAt":"`+now+`","heartbeatIntervalMs":30000}`), nil
-		case "/api/v1/runner/links/link-123:heartbeat":
+		case "/api/v1/runner/workers:register":
+			return jsonResponse(http.StatusCreated, `{"workerId":"worker-123","runnerId":"runner-456","heartbeatDeadlineAt":"`+now+`","heartbeatIntervalMs":30000}`), nil
+		case "/api/v1/runner/workers/worker-123:heartbeat":
 			return jsonResponse(http.StatusOK, `{"status":"active","heartbeatDeadlineAt":"`+now+`"}`), nil
-		case "/api/v1/runner/links/link-123:deregister":
+		case "/api/v1/runner/workers/worker-123:deregister":
 			return jsonResponse(http.StatusOK, `{}`), nil
 		default:
 			t.Fatalf("unexpected path: %s", r.URL.Path)
@@ -255,17 +255,17 @@ func TestClientLinkLifecycleEndpoints(t *testing.T) {
 		}
 	})
 
-	resp, err := c.RegisterLink(t.Context(), &RegisterLinkRequest{InstanceID: "instance-1", LinkType: "harness"})
-	if err != nil || resp.LinkID != "link-123" {
-		t.Fatalf("RegisterLink() resp=%#v err=%v", resp, err)
+	resp, err := c.RegisterWorker(t.Context(), &RegisterWorkerRequest{InstanceID: "instance-1", WorkerType: "harness"})
+	if err != nil || resp.WorkerID != "worker-123" {
+		t.Fatalf("RegisterWorker() resp=%#v err=%v", resp, err)
 	}
 
-	if _, err := c.HeartbeatLink(t.Context(), "link-123", "job-123"); err != nil {
-		t.Fatalf("HeartbeatLink() error = %v", err)
+	if _, err := c.HeartbeatWorker(t.Context(), "worker-123", "job-123"); err != nil {
+		t.Fatalf("HeartbeatWorker() error = %v", err)
 	}
 
-	if err := c.DeregisterLink(t.Context(), "link-123", DeregisterLinkRequest{Reason: "graceful_shutdown", JobsCompleted: 5, JobsFailed: 1}); err != nil {
-		t.Fatalf("DeregisterLink() error = %v", err)
+	if err := c.DeregisterWorker(t.Context(), "worker-123", DeregisterWorkerRequest{Reason: "graceful_shutdown", JobsCompleted: 5, JobsFailed: 1}); err != nil {
+		t.Fatalf("DeregisterWorker() error = %v", err)
 	}
 }
 

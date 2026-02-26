@@ -18,9 +18,9 @@ func habitatMockClient(t *testing.T, habitats []client.HabitatSummary) *client.C
 		t.Fatalf("marshal habitats: %v", err)
 	}
 
-	hc := &http.Client{Transport: linkRoundTripFunc(func(r *http.Request) (*http.Response, error) {
+	hc := &http.Client{Transport: workerRoundTripFunc(func(r *http.Request) (*http.Response, error) {
 		if r.URL.Path == "/api/v1/runner/habitats" && r.Method == http.MethodGet {
-			return linkJSONResponse(http.StatusOK, string(payload)), nil
+			return workerJSONResponse(http.StatusOK, string(payload)), nil
 		}
 
 		t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)

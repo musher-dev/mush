@@ -76,7 +76,7 @@ func withMockTryAPIClient(t *testing.T, source auth.CredentialSource, c *client.
 func TestBundleInstallAnonymousFallbackShowsAuthHint(t *testing.T) {
 	// Mock tryAPIClient to return an anonymous client whose transport returns 403.
 	hc := &http.Client{
-		Transport: linkRoundTripFunc(func(r *http.Request) (*http.Response, error) {
+		Transport: workerRoundTripFunc(func(r *http.Request) (*http.Response, error) {
 			return &http.Response{
 				StatusCode: http.StatusForbidden,
 				Header:     http.Header{"Content-Type": []string{"application/json"}},
@@ -119,7 +119,7 @@ func TestBundleInstallAnonymousNon403ErrorNoAuthHint(t *testing.T) {
 	// Mock tryAPIClient to return an anonymous client whose transport returns 500.
 	// Non-403 errors should NOT produce an auth hint.
 	hc := &http.Client{
-		Transport: linkRoundTripFunc(func(r *http.Request) (*http.Response, error) {
+		Transport: workerRoundTripFunc(func(r *http.Request) (*http.Response, error) {
 			return &http.Response{
 				StatusCode: http.StatusInternalServerError,
 				Header:     http.Header{"Content-Type": []string{"application/json"}},

@@ -30,8 +30,8 @@ func TestUpdateCmd_DisabledByEnv(t *testing.T) {
 		t.Fatalf("expected no error, got: %v", err)
 	}
 
-	if !strings.Contains(stdout.String(), "disabled") {
-		t.Errorf("expected 'disabled' in output, got: %q", stdout.String())
+	if !strings.Contains(stderr.String(), "disabled") {
+		t.Errorf("expected 'disabled' in stderr, got: %q", stderr.String())
 	}
 }
 
@@ -59,9 +59,9 @@ func TestUpdateCmd_DevBuild(t *testing.T) {
 		t.Fatalf("expected no error, got: %v", err)
 	}
 
-	combined := stdout.String()
+	combined := stdout.String() + stderr.String()
 	if !strings.Contains(combined, "Development build") {
-		t.Errorf("expected 'Development build' in output, got: %q", combined)
+		t.Errorf("expected 'Development build' in output, got stdout: %q, stderr: %q", stdout.String(), stderr.String())
 	}
 }
 

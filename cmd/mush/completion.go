@@ -10,6 +10,8 @@ func newCompletionCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "completion [bash|zsh|fish|powershell]",
 		Short: "Generate shell completion scripts",
+		Example: `  mush completion bash
+  source <(mush completion bash)`,
 		Long: `Generate shell completion scripts for Mush CLI.
 
 To load completions:
