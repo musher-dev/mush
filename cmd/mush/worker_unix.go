@@ -4,8 +4,10 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"os/signal"
 	"slices"
 	"strings"
@@ -14,6 +16,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/musher-dev/mush/internal/bundle"
 	"github.com/musher-dev/mush/internal/client"
 	"github.com/musher-dev/mush/internal/config"
 	clierrors "github.com/musher-dev/mush/internal/errors"
@@ -22,23 +25,46 @@ import (
 	"github.com/musher-dev/mush/internal/output"
 )
 
-func newLinkCmd() *cobra.Command {
+func newWorkerCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "worker",
+		Short: "Manage the local worker runtime",
+		Long: `Manage the local worker runtime that connects your machine to a habitat
+and processes jobs from the Musher platform.
+
+Use subcommands to start, check status, or stop the worker.`,
+		Example: `  mush worker start
+  mush worker start --habitat prod --queue jobs
+  mush worker status
+  mush worker stop`,
+		Args: noArgs,
+	}
+
+	cmd.AddCommand(newWorkerStartCmd())
+	cmd.AddCommand(newWorkerStatusCmd())
+	cmd.AddCommand(newWorkerStopCmd())
+
+	return cmd
+}
+
+func newWorkerStartCmd() *cobra.Command {
 	var (
 		dryRun      bool
-		queueID     string
+		queue       string
 		habitat     string
 		harnessType string
+		bundleRef   string
 	)
 
 	cmd := &cobra.Command{
-		Use:   "link",
-		Short: "Link this machine to a habitat (watch mode)",
-		Long: `Link your machine to a habitat and start processing jobs.
+		Use:   "start",
+		Short: "Start the worker and begin processing jobs",
+		Long: `Start the worker, connecting your machine to a habitat and processing jobs.
 
 Watch mode is the only supported surface. Mush runs an interactive terminal UI
 that lets you watch job execution live.
 
-The link will:
+The worker will:
   1. Connect to the Musher platform
   2. Register with the selected habitat
   3. Poll for available jobs
@@ -52,20 +78,18 @@ Harness Types:
 
 Press Ctrl+C once to interrupt Claude; press Ctrl+C again quickly to exit.
 Press Ctrl+Q to exit the watch UI immediately.
-Press Ctrl+S to toggle copy mode (Esc to return to live input).
-
-Examples:
-  mush link                    # Watch mode, all harnesses
-  mush link --harness claude   # Watch mode, Claude only
-  mush link --harness bash     # Watch mode, Bash only
-  mush link --habitat local    # Link to specific habitat by slug
-  mush link --dry-run          # Verify connection without claiming jobs`,
+Press Ctrl+S to toggle copy mode (Esc to return to live input).`,
+		Example: `  mush worker start
+  mush worker start --habitat prod --queue jobs
+  mush worker start --harness claude
+  mush worker start --bundle my-kit:0.1.0
+  mush worker start --dry-run`,
 		Args: noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := output.FromContext(cmd.Context())
 			logger := observability.FromContext(cmd.Context()).With(
-				slog.String("component", "link"),
-				slog.String("event.type", "link.start"),
+				slog.String("component", "worker"),
+				slog.String("event.type", "worker.start"),
 			)
 
 			// Validate harness type if specified.
@@ -142,8 +166,8 @@ Examples:
 
 			identity, err := c.ValidateKey(cmd.Context())
 			if err != nil {
-				spin.StopWithFailure("Failed to authenticate")
-				return fmt.Errorf("validate credentials: %w", err)
+				spin.Stop()
+				return clierrors.AuthFailed(err)
 			}
 
 			spin.StopWithSuccess("Connected to " + apiURL)
@@ -153,7 +177,7 @@ Examples:
 
 			runnerConfig, err = c.GetRunnerConfig(cmd.Context())
 			if err != nil {
-				logger.Warn("runner config unavailable", slog.String("event.type", "link.runner_config.unavailable"), slog.String("error", err.Error()))
+				logger.Warn("runner config unavailable", slog.String("event.type", "worker.runner_config.unavailable"), slog.String("error", err.Error()))
 				out.Warning("Runner config unavailable, continuing without MCP provisioning: %v", err)
 			}
 
@@ -163,16 +187,24 @@ Examples:
 				return err
 			}
 
-			queue, err := resolveQueue(cmd.Context(), c, habitatID, queueID, out)
+			queue, err := resolveQueue(cmd.Context(), c, habitatID, queue, out)
 			if err != nil {
 				return err
 			}
 
-			queueID = queue.ID
+			queueID := queue.ID
+
+			// Install bundle assets if --bundle flag is set.
+			if bundleRef != "" {
+				if bundleErr := resolveBundle(cmd.Context(), c, identity.WorkspaceID, bundleRef, supportedHarnesses, out); bundleErr != nil {
+					return bundleErr
+				}
+			}
 
 			availability, err := c.GetQueueInstructionAvailability(cmd.Context(), queueID)
 			if err != nil {
-				return fmt.Errorf("check queue instruction availability: %w", err)
+				return clierrors.Wrap(clierrors.ExitNetwork, "Failed to check queue configuration", err).
+					WithHint("Check your network connection or run 'mush doctor'")
 			}
 
 			if availability == nil || !availability.HasActiveInstruction {
@@ -221,13 +253,13 @@ Examples:
 
 			out.Println()
 
-			err = runWatchLink(ctx, c, habitatID, queueID, supportedHarnesses, runnerConfig)
+			err = runWatch(ctx, c, habitatID, queueID, supportedHarnesses, runnerConfig)
 			if err != nil {
-				logger.Error("link watch runtime failed", slog.String("event.type", "link.error"), slog.String("error", err.Error()))
+				logger.Error("worker watch runtime failed", slog.String("event.type", "worker.error"), slog.String("error", err.Error()))
 				return err
 			}
 
-			logger.Info("link watch exited", slog.String("event.type", "link.ready"))
+			logger.Info("worker watch exited", slog.String("event.type", "worker.ready"))
 
 			if cmd.Context().Err() == nil && ctx.Err() != nil {
 				out.Println()
@@ -239,16 +271,15 @@ Examples:
 	}
 
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Verify connection without claiming jobs")
-	cmd.Flags().StringVarP(&queueID, "queue-id", "q", "", "Filter jobs by queue ID")
-	cmd.Flags().StringVar(&habitat, "habitat", "", "Habitat slug or ID to link to")
+	cmd.Flags().StringVar(&queue, "queue", "", "Filter jobs by queue slug or ID")
+	cmd.Flags().StringVar(&habitat, "habitat", "", "Habitat slug or ID to connect to")
 	cmd.Flags().StringVar(&harnessType, "harness", "", "Specific harness type: claude, bash (default: all)")
-
-	cmd.AddCommand(newLinkStatusCmd())
+	cmd.Flags().StringVar(&bundleRef, "bundle", "", "Bundle slug[:version] to install before starting")
 
 	return cmd
 }
 
-func runWatchLink(
+func runWatch(
 	ctx context.Context,
 	c *client.Client,
 	habitatID, queueID string,
@@ -268,7 +299,7 @@ func runWatchLink(
 	}
 
 	if err := harness.Run(ctx, cfg); err != nil {
-		return fmt.Errorf("run watch harness: %w", err)
+		return clierrors.Wrap(clierrors.ExitExecution, "Watch harness failed", err)
 	}
 
 	return nil
@@ -286,4 +317,111 @@ func normalizeHarnessType(harnessType string) (string, error) {
 
 func defaultSupportedHarnesses() []string {
 	return harness.AvailableNames()
+}
+
+// resolveBundle pulls and installs a bundle when the --bundle flag is set.
+func resolveBundle(
+	ctx context.Context,
+	c *client.Client,
+	workspaceKey string,
+	bundleFlag string,
+	supportedHarnesses []string,
+	out *output.Writer,
+) error {
+	logger := observability.FromContext(ctx).With(
+		slog.String("component", "worker"),
+		slog.String("event.type", "worker.bundle"),
+	)
+
+	ref, err := bundle.ParseRef(bundleFlag)
+	if err != nil {
+		return &clierrors.CLIError{
+			Message: err.Error(),
+			Hint:    "Use format: <slug> or <slug>:<version>",
+			Code:    clierrors.ExitUsage,
+		}
+	}
+
+	logger = logger.With(slog.String("bundle.slug", ref.Slug))
+
+	// Determine harness type for asset mapping — use first supported harness.
+	if len(supportedHarnesses) == 0 {
+		return &clierrors.CLIError{
+			Message: "No supported harnesses available for bundle install",
+			Hint:    "Specify a harness with --harness or ensure at least one harness is available",
+			Code:    clierrors.ExitUsage,
+		}
+	}
+
+	harnessType := supportedHarnesses[0]
+
+	mapper := mapperForHarness(harnessType)
+	if mapper == nil {
+		return &clierrors.CLIError{
+			Message: fmt.Sprintf("No asset mapper for harness type: %s", harnessType),
+			Hint:    "This harness type does not support bundle assets",
+			Code:    clierrors.ExitUsage,
+		}
+	}
+
+	// Pull the bundle.
+	spin := out.Spinner(fmt.Sprintf("Pulling bundle %s", ref.Slug))
+	spin.Start()
+
+	resolved, cachePath, err := bundle.Pull(ctx, c, workspaceKey, ref.Slug, ref.Version, out)
+	if err != nil {
+		spin.StopWithFailure(fmt.Sprintf("Failed to pull bundle %s", ref.Slug))
+		logger.Error("bundle pull failed", slog.String("event.type", "worker.bundle.error"), slog.String("error", err.Error()))
+
+		return clierrors.Wrap(clierrors.ExitNetwork, "Failed to pull bundle", err).
+			WithHint("Check your network connection and bundle slug")
+	}
+
+	spin.StopWithSuccess(fmt.Sprintf("Pulled bundle %s v%s", ref.Slug, resolved.Version))
+
+	// Install assets into the working directory.
+	workDir, err := os.Getwd()
+	if err != nil {
+		return clierrors.Wrap(clierrors.ExitGeneral, "Failed to get working directory", err)
+	}
+
+	installedPaths, installErr := bundle.InstallFromCache(workDir, cachePath, &resolved.Manifest, mapper, true)
+	if installErr != nil {
+		var conflict *bundle.InstallConflictError
+		if errors.As(installErr, &conflict) {
+			logger.Warn("bundle install conflict", slog.String("event.type", "worker.bundle.conflict"), slog.String("error", installErr.Error()))
+			return clierrors.InstallConflict(conflict.Path)
+		}
+
+		logger.Error("bundle install failed", slog.String("event.type", "worker.bundle.error"), slog.String("error", installErr.Error()))
+
+		return clierrors.Wrap(clierrors.ExitGeneral, "Failed to install bundle assets", installErr)
+	}
+
+	for _, relPath := range installedPaths {
+		out.Success("Installed: %s", relPath)
+	}
+
+	// Track the installation.
+	trackErr := bundle.TrackInstall(workDir, &bundle.InstalledBundle{
+		Slug:      ref.Slug,
+		Version:   resolved.Version,
+		Harness:   harnessType,
+		Assets:    installedPaths,
+		Timestamp: time.Now(),
+	})
+	if trackErr != nil {
+		out.Warning("Failed to track installation: %v", trackErr)
+	}
+
+	out.Success("Bundle %s v%s installed (%d assets)", ref.Slug, resolved.Version, len(installedPaths))
+
+	logger.Info(
+		"bundle installed for worker",
+		slog.String("event.type", "worker.bundle.installed"),
+		slog.String("bundle.version", resolved.Version),
+		slog.Int("bundle.asset_count", len(installedPaths)),
+	)
+
+	return nil
 }

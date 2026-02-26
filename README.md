@@ -42,7 +42,7 @@ go install github.com/musher-dev/mush/cmd/mush@latest
 ```bash
 mush init              # Guided setup (authenticates + validates)
 mush habitat list      # View available habitats
-mush link              # Start processing jobs
+mush worker start      # Start processing jobs
 ```
 
 Run `mush doctor` to verify your setup at any time.
@@ -61,15 +61,15 @@ mush version                   Show version information
 mush completion <shell>        Generate shell completion scripts
 ```
 
-### Link
+### Worker
 
 ```
-mush link                      Link to habitat and start processing
-mush link --habitat <slug>     Link to specific habitat
-mush link --harness <type>     Use a specific harness (claude or bash)
-mush link --dry-run            Verify connection without claiming jobs
-mush link status               Show link status
-mush unlink                    Gracefully disconnect
+mush worker start                      Start the worker and process jobs
+mush worker start --habitat <slug>     Connect to specific habitat
+mush worker start --harness <type>     Use a specific harness (claude or bash)
+mush worker start --dry-run            Verify connection without claiming jobs
+mush worker status                     Show worker status
+mush worker stop                       Gracefully disconnect
 ```
 
 ### Resources
@@ -108,7 +108,7 @@ Bundle resolution goes through `/api/v1/bundles:resolve` and uses returned regis
 
 ## Watch Controls
 
-When running `mush link` in watch mode:
+When running `mush worker start` in watch mode:
 
 - `Ctrl+C` during an active Claude job: first press sends interrupt to Claude; second press within 2s exits watch mode.
 - `Ctrl+C` while idle: exits watch mode immediately.
@@ -158,7 +158,7 @@ Mush looks for configuration in this order (highest priority first):
 ```mermaid
 flowchart LR
     A[Issue Tracker] --> B[Musher Queue]
-    B --> C[mush link]
+    B --> C[mush worker]
     C --> D[Claude Code / Bash]
     D --> E[Result]
 ```

@@ -22,8 +22,8 @@ import (
 	"github.com/musher-dev/mush/internal/buildinfo"
 	"github.com/musher-dev/mush/internal/client"
 	"github.com/musher-dev/mush/internal/config"
-	"github.com/musher-dev/mush/internal/linking"
 	"github.com/musher-dev/mush/internal/transcript"
+	"github.com/musher-dev/mush/internal/worker"
 )
 
 // SignalFileName is the marker file created by the Stop hook.
@@ -134,7 +134,7 @@ type RootModel struct {
 	queueID            string
 	supportedHarnesses []string
 	instanceID         string
-	linkID             string
+	workerID           string
 	signalDir          string
 	runnerConfig       *client.RunnerConfigResponse
 	transcriptEnabled  bool
@@ -379,26 +379,26 @@ func (m *RootModel) Run() error {
 		return m.runBundleLoadMode()
 	}
 
-	return m.runLinkMode()
+	return m.runWorkerMode()
 }
 
-// runLinkMode runs the standard job-polling link mode.
-func (m *RootModel) runLinkMode() error {
-	// Register link with the platform.
-	name, metadata := linking.DefaultLinkInfo()
+// runWorkerMode runs the standard job-polling worker mode.
+func (m *RootModel) runWorkerMode() error {
+	// Register worker with the platform.
+	name, metadata := worker.DefaultWorkerInfo()
 
-	linkID, err := linking.Register(m.ctx, m.client, m.habitatID, m.instanceID, name, metadata, buildinfo.Version)
+	workerID, err := worker.Register(m.ctx, m.client, m.habitatID, m.instanceID, name, metadata, buildinfo.Version)
 	if err != nil {
-		return fmt.Errorf("failed to register link: %w", err)
+		return fmt.Errorf("failed to register worker: %w", err)
 	}
 
-	m.linkID = linkID
+	m.workerID = workerID
 
-	linkHeartbeatCtx, cancelLinkHeartbeat := context.WithCancel(m.ctx)
-	defer cancelLinkHeartbeat()
+	workerHeartbeatCtx, cancelWorkerHeartbeat := context.WithCancel(m.ctx)
+	defer cancelWorkerHeartbeat()
 
-	linking.StartHeartbeat(linkHeartbeatCtx, m.client, m.linkID, m.currentJobID, func(err error) {
-		m.setLastError(fmt.Sprintf("Link heartbeat failed: %v", err))
+	worker.StartHeartbeat(workerHeartbeatCtx, m.client, m.workerID, m.currentJobID, func(err error) {
+		m.setLastError(fmt.Sprintf("Worker heartbeat failed: %v", err))
 	})
 
 	defer func() {
@@ -407,8 +407,8 @@ func (m *RootModel) runLinkMode() error {
 		failed := m.failed
 		m.statusMu.Unlock()
 
-		if err := linking.Deregister(m.client, m.linkID, completed, failed); err != nil {
-			m.setLastError(fmt.Sprintf("Link deregistration failed: %v", err))
+		if err := worker.Deregister(m.client, m.workerID, completed, failed); err != nil {
+			m.setLastError(fmt.Sprintf("Worker deregistration failed: %v", err))
 		}
 	}()
 

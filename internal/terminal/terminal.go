@@ -37,6 +37,11 @@ func Detect() *Info {
 	// Check NO_COLOR environment variable (https://no-color.org/)
 	_, noColor := os.LookupEnv("NO_COLOR")
 
+	// Treat TERM=dumb as no-color (terminals that don't support escape sequences)
+	if os.Getenv("TERM") == "dumb" {
+		noColor = true
+	}
+
 	return &Info{
 		IsTTY:   isTTY,
 		NoColor: noColor,

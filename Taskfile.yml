@@ -88,7 +88,7 @@ tasks:
   # ===========================================================================
 
   check:
-    desc: Run all checks (fmt + mod + lint + vuln + shell + workflows + test + install)
+    desc: Run all checks (fmt + mod + lint + vuln + shell + workflows + errorf + prompt-fd + no-exit + output-context + force-noinput + testutil-prod + test + install)
     cmds:
       - task: check:fmt
       - task: check:mod
@@ -96,6 +96,12 @@ tasks:
       - task: check:vuln
       - task: check:shell
       - task: check:workflow
+      - task: check:errorf
+      - task: check:prompt-fd
+      - task: check:no-exit
+      - task: check:output-context
+      - task: check:force-noinput
+      - task: check:testutil-prod
       - task: check:test
       - task: check:install
 
@@ -108,6 +114,12 @@ tasks:
       - task: check:vuln
       - task: check:shell
       - task: check:workflow
+      - task: check:errorf
+      - task: check:prompt-fd
+      - task: check:no-exit
+      - task: check:output-context
+      - task: check:force-noinput
+      - task: check:testutil-prod
       - task: check:test-cover
       - task: check:compile
 
@@ -203,6 +215,77 @@ tasks:
         msg: "govulncheck is required. Run 'task setup:tools' first."
     cmds:
       - govulncheck ./...
+
+  check:errorf:
+    desc: Ensure no raw fmt.Errorf in cmd/mush (use CLIError instead)
+    cmds:
+      - |
+        hits=$(grep -rn 'fmt\.Errorf' cmd/mush/*.go | grep -v '_test\.go' | grep -v 'nolint:rawerror' || true)
+        if [ -n "$hits" ]; then
+          echo "ERROR: Raw fmt.Errorf found in cmd/mush/ — use clierrors.Wrap or clierrors.New instead:"
+          echo "$hits"
+          exit 1
+        fi
+
+  check:prompt-fd:
+    desc: Ensure prompt package checks stdin fd, not stdout fd
+    cmds:
+      - |
+        hits=$(grep -rn 'os\.Stdout\.Fd()' internal/prompt/*.go || true)
+        if [ -n "$hits" ]; then
+          echo "ERROR: os.Stdout.Fd() found in internal/prompt/ — use os.Stdin.Fd() for TTY checks:"
+          echo "$hits"
+          exit 1
+        fi
+
+  check:no-exit:
+    desc: Ensure no os.Exit() in cmd/mush/ except main.go
+    cmds:
+      - |
+        hits=$(grep -rn 'os\.Exit(' cmd/mush/*.go | grep -v 'main\.go' | grep -v '_test\.go' || true)
+        if [ -n "$hits" ]; then
+          echo "ERROR: os.Exit() found outside main.go — return CLIError instead:"
+          echo "$hits"
+          exit 1
+        fi
+
+  check:output-context:
+    desc: Ensure no output.Default() in cmd/mush/ except main.go
+    cmds:
+      - |
+        hits=$(grep -rn 'output\.Default()' cmd/mush/*.go | grep -v 'main\.go' | grep -v '_test\.go' || true)
+        if [ -n "$hits" ]; then
+          echo "ERROR: output.Default() found outside main.go — use output.FromContext(cmd.Context()) instead:"
+          echo "$hits"
+          exit 1
+        fi
+
+  check:force-noinput:
+    desc: Ensure files using Confirm() also reference NoInput
+    cmds:
+      - |
+        failed=0
+        for f in $(grep -rl '\.Confirm(' cmd/mush/*.go | grep -v '_test\.go'); do
+          if ! grep -q 'NoInput' "$f"; then
+            echo "ERROR: $f uses Confirm() but does not reference NoInput"
+            failed=1
+          fi
+        done
+        if [ "$failed" -eq 1 ]; then
+          echo "Files using Confirm() must check NoInput and return a CLIError with --force hint."
+          exit 1
+        fi
+
+  check:testutil-prod:
+    desc: Ensure testutil is not imported by production code
+    cmds:
+      - |
+        hits=$(grep -rn 'musher-dev/mush/internal/testutil' --include='*.go' . | grep -v '_test\.go' || true)
+        if [ -n "$hits" ]; then
+          echo "ERROR: internal/testutil imported by production code:"
+          echo "$hits"
+          exit 1
+        fi
 
   check:test:
     desc: Run tests with race detection

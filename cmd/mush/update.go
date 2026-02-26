@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/musher-dev/mush/internal/buildinfo"
+	clierrors "github.com/musher-dev/mush/internal/errors"
 	"github.com/musher-dev/mush/internal/output"
 	"github.com/musher-dev/mush/internal/update"
 )
@@ -29,6 +30,9 @@ Downloads the new binary, verifies its checksum, and replaces the current
 executable. If the binary is not writable, sudo is requested automatically.
 
 Set MUSH_UPDATE_DISABLED=1 to disable update checks.`,
+		Example: `  mush update
+  mush update --version 1.2.3
+  mush update --force`,
 		Args: noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := output.FromContext(cmd.Context())
@@ -37,7 +41,7 @@ Set MUSH_UPDATE_DISABLED=1 to disable update checks.`,
 	}
 
 	cmd.Flags().StringVar(&targetVersion, "version", "", "Install a specific version (e.g. 1.2.3)")
-	cmd.Flags().BoolVar(&force, "force", false, "Force update even if already up to date")
+	cmd.Flags().BoolVarP(&force, "force", "f", false, "Force update even if already up to date")
 
 	return cmd
 }
@@ -63,7 +67,7 @@ func runUpdate(cmd *cobra.Command, out *output.Writer, targetVersion string, for
 
 	updater, err := update.NewUpdater()
 	if err != nil {
-		return fmt.Errorf("failed to initialize updater: %w", err)
+		return clierrors.Wrap(clierrors.ExitGeneral, "Failed to initialize updater", err)
 	}
 
 	// Specific version mode
@@ -82,20 +86,21 @@ func runUpdate(cmd *cobra.Command, out *output.Writer, targetVersion string, for
 	info, err := updater.CheckLatest(ctx, currentVersion)
 	if err != nil {
 		if spin != nil {
-			spin.StopWithFailure(fmt.Sprintf("Failed to check for updates: %v", err))
+			spin.Stop()
 		}
 
+		cliErr := clierrors.Wrap(clierrors.ExitNetwork, "Failed to check for updates", err)
 		if strings.Contains(err.Error(), "403") {
-			out.Info("Set GITHUB_TOKEN to avoid rate limits")
+			cliErr = cliErr.WithHint("Set GITHUB_TOKEN to avoid rate limits")
 		}
 
-		return fmt.Errorf("update check failed: %w", err)
+		return cliErr
 	}
 
 	// JSON output mode — print check result and exit without applying
 	if out.JSON {
 		if printErr := out.PrintJSON(info); printErr != nil {
-			return fmt.Errorf("print update info as json: %w", printErr)
+			return clierrors.Wrap(clierrors.ExitGeneral, "Failed to write JSON output", printErr)
 		}
 
 		return nil
@@ -110,8 +115,10 @@ func runUpdate(cmd *cobra.Command, out *output.Writer, targetVersion string, for
 
 	// Guard against nil Release (no matching platform assets found)
 	if info.Release == nil {
-		spin.StopWithFailure("No release found for this platform")
-		return fmt.Errorf("no release found for this platform")
+		spin.Stop()
+
+		return clierrors.New(clierrors.ExitGeneral, "No release found for this platform").
+			WithHint("Your OS/arch may not have a published binary")
 	}
 
 	if info.UpdateAvailable {
@@ -124,7 +131,7 @@ func runUpdate(cmd *cobra.Command, out *output.Writer, targetVersion string, for
 	execPath, err := selfupdate.ExecutablePath()
 	if err == nil && update.NeedsElevation(execPath) {
 		if sudoErr := update.ReExecWithSudo(); sudoErr != nil {
-			return fmt.Errorf("re-exec updater with sudo: %w", sudoErr)
+			return clierrors.Wrap(clierrors.ExitGeneral, "Failed to re-exec updater with sudo", sudoErr)
 		}
 
 		return nil
@@ -135,8 +142,10 @@ func runUpdate(cmd *cobra.Command, out *output.Writer, targetVersion string, for
 	spin.Start()
 
 	if err := updater.Apply(ctx, info.Release); err != nil {
-		spin.StopWithFailure(fmt.Sprintf("Update failed: %v", err))
-		return fmt.Errorf("update failed: %w", err)
+		spin.Stop()
+
+		return clierrors.Wrap(clierrors.ExitGeneral, "Update failed", err).
+			WithHint("Try again or download manually from GitHub Releases")
 	}
 
 	spin.StopWithSuccess(fmt.Sprintf("Updated to v%s", info.LatestVersion))
@@ -155,7 +164,7 @@ func updateToVersion(ctx context.Context, out *output.Writer, updater *update.Up
 	execPath, err := selfupdate.ExecutablePath()
 	if err == nil && update.NeedsElevation(execPath) {
 		if sudoErr := update.ReExecWithSudo(); sudoErr != nil {
-			return fmt.Errorf("re-exec updater with sudo: %w", sudoErr)
+			return clierrors.Wrap(clierrors.ExitGeneral, "Failed to re-exec updater with sudo", sudoErr)
 		}
 
 		return nil
@@ -171,14 +180,15 @@ func updateToVersion(ctx context.Context, out *output.Writer, updater *update.Up
 	release, err := updater.ApplyVersion(ctx, version)
 	if err != nil {
 		if spin != nil {
-			spin.StopWithFailure(fmt.Sprintf("Failed to install v%s: %v", version, err))
+			spin.Stop()
 		}
 
+		cliErr := clierrors.Wrap(clierrors.ExitGeneral, fmt.Sprintf("Failed to install v%s", version), err)
 		if strings.Contains(err.Error(), "not found") {
-			out.Info("Check available versions at https://github.com/musher-dev/mush/releases")
+			cliErr = cliErr.WithHint("Check available versions at https://github.com/musher-dev/mush/releases")
 		}
 
-		return fmt.Errorf("install failed: %w", err)
+		return cliErr
 	}
 
 	if spin != nil {

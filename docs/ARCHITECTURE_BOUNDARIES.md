@@ -22,6 +22,7 @@ This document defines the dependency boundaries for `mush` and how linting enfor
 - `internal/doctor`
 - `internal/prompt`
 - `internal/output`
+- `internal/bundle`
 - Responsibility: workflow orchestration, user-facing interaction behavior, diagnostics presentation.
 
 ### 3) Platform/Core Layer
@@ -30,11 +31,15 @@ This document defines the dependency boundaries for `mush` and how linting enfor
 - `internal/auth`
 - `internal/config`
 - `internal/update`
-- `internal/linking`
+- `internal/worker`
 - `internal/errors`
 - `internal/buildinfo`
 - `internal/terminal`
-- `internal/testutil` *(test helpers only — not imported by production code)*
+- `internal/paths`
+- `internal/ansi`
+- `internal/observability`
+- `internal/transcript`
+- `internal/testutil` *(test helpers only — must not be imported by production code)*
 - Responsibility: API transport, credential/config state, platform operations, shared primitives.
 
 ## Enforced Boundaries
@@ -59,12 +64,15 @@ Boundaries are enforced with `depguard` in `.golangci.yml` via scoped rules:
 - `internal_no_cmd_import`
 - `platform_no_presentation`
 - `doctor_no_output`
+- `testutil_no_production`
 
 The rules run as part of:
 
 - `task check:lint`
 - `task check`
 - CI workflow lint job (`.github/workflows/ci.yml`)
+
+Additionally, `cmd/mush/architecture_test.go` provides programmatic boundary verification using `go/packages`, complementing depguard with test-based enforcement and clear error messages when violations are introduced.
 
 ## Existing Quality Linters Relevant to Architecture
 
