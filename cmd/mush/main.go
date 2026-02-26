@@ -179,6 +179,27 @@ Get started:
 				cmd.PostRunE = wrapPostRunCleanup(cmd.PostRunE, cleanup)
 			}
 
+			// Initialize OpenTelemetry tracing (opt-in via OTEL_ENABLED).
+			telemetryCfg := &observability.TelemetryConfig{
+				Enabled: observability.IsTelemetryEnabled(),
+				Version: version,
+				Commit:  commit,
+			}
+
+			telemetryShutdown, telemetryErr := observability.SetupTelemetry(ctx, telemetryCfg)
+			if telemetryErr != nil {
+				logger.Warn("telemetry initialization failed", slog.String("error", telemetryErr.Error()))
+			}
+
+			if telemetryShutdown != nil {
+				cmd.PostRunE = wrapNamedPostRunCleanup(cmd.PostRunE, "telemetry resources", func() error {
+					shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+					defer cancel()
+
+					return telemetryShutdown(shutdownCtx)
+				})
+			}
+
 			// Launch background update check; tracked by updateWg so PostRunE
 			// can wait for the state file write before reading it.
 			if shouldBackgroundCheck(cmd, version, quiet, jsonOutput) {
@@ -245,6 +266,10 @@ Get started:
 }
 
 func wrapPostRunCleanup(postRun func(*cobra.Command, []string) error, cleanup func() error) func(*cobra.Command, []string) error {
+	return wrapNamedPostRunCleanup(postRun, "logger resources", cleanup)
+}
+
+func wrapNamedPostRunCleanup(postRun func(*cobra.Command, []string) error, name string, cleanup func() error) func(*cobra.Command, []string) error {
 	return func(cmd *cobra.Command, args []string) error {
 		if postRun != nil {
 			if err := postRun(cmd, args); err != nil {
@@ -254,7 +279,7 @@ func wrapPostRunCleanup(postRun func(*cobra.Command, []string) error, cleanup fu
 		}
 
 		if err := cleanup(); err != nil {
-			return fmt.Errorf("cleanup logger resources: %w", err) //nolint:rawerror // internal cleanup, not user-facing
+			return fmt.Errorf("cleanup %s: %w", name, err) //nolint:rawerror // internal cleanup, not user-facing
 		}
 
 		return nil

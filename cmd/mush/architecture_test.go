@@ -75,8 +75,9 @@ func internalBase(path string) string {
 
 	base := parts[0]
 
-	// Strip ".test" suffix from test package IDs.
+	// Strip ".test" suffix from test package IDs and "_test" from external test packages.
 	base = strings.TrimSuffix(base, ".test")
+	base = strings.TrimSuffix(base, "_test")
 
 	return moduleRoot + "/internal/" + base
 }

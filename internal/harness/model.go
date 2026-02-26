@@ -19,9 +19,14 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/term"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/musher-dev/mush/internal/buildinfo"
 	"github.com/musher-dev/mush/internal/client"
 	"github.com/musher-dev/mush/internal/config"
+	"github.com/musher-dev/mush/internal/observability"
 	"github.com/musher-dev/mush/internal/transcript"
 	"github.com/musher-dev/mush/internal/worker"
 )
@@ -942,7 +947,7 @@ func (m *RootModel) jobManagerLoop() {
 		if !m.isHarnessSupported(harnessType) {
 			errMsg := fmt.Sprintf("Unsupported harness type: %s", harnessType)
 			m.setLastError(errMsg)
-			m.releaseJob(job)
+			m.releaseJob(m.ctx, job)
 
 			continue
 		}
@@ -954,12 +959,24 @@ func (m *RootModel) jobManagerLoop() {
 
 // processJob handles the lifecycle of a single job using the executor.
 func (m *RootModel) processJob(job *client.Job) {
+	ctx, span := observability.Tracer("mush.harness").Start(m.ctx, "job.process",
+		trace.WithAttributes(
+			attribute.String("job.id", job.ID),
+			attribute.String("job.queue_id", job.QueueID),
+			attribute.String("job.harness_type", job.GetHarnessType()),
+			attribute.String("job.priority", job.Priority),
+			attribute.Int("job.attempt_number", job.AttemptNumber),
+		),
+	)
+	defer span.End()
+
 	harnessType := job.GetHarnessType()
 
 	executor, ok := m.executors[harnessType]
 	if !ok {
 		m.setLastError(fmt.Sprintf("No executor for harness type: %s", harnessType))
-		m.releaseJob(job)
+		span.SetStatus(codes.Error, "unsupported harness type")
+		m.releaseJob(ctx, job)
 
 		return
 	}
@@ -991,7 +1008,7 @@ func (m *RootModel) processJob(job *client.Job) {
 		m.statusMu.Unlock()
 	}()
 
-	if _, err := m.client.StartJob(m.ctx, job.ID); err != nil {
+	if _, err := m.client.StartJob(ctx, job.ID); err != nil {
 		m.setLastError(fmt.Sprintf("Start job failed: %v", err))
 	}
 
@@ -1001,11 +1018,21 @@ func (m *RootModel) processJob(job *client.Job) {
 		execTimeout = time.Duration(job.Execution.TimeoutMs) * time.Millisecond
 	}
 
-	execCtx, cancelExec := context.WithTimeout(m.ctx, execTimeout)
+	execCtx, cancelExec := context.WithTimeout(ctx, execTimeout)
 	defer cancelExec()
 
 	// Execute the job via the executor.
+	execCtx, execSpan := observability.Tracer("mush.harness").Start(execCtx, "job.execute",
+		trace.WithAttributes(
+			attribute.String("job.id", job.ID),
+			attribute.String("job.harness_type", harnessType),
+		),
+	)
+
 	result, execErr := executor.Execute(execCtx, job)
+
+	execSpan.End()
+
 	if execErr != nil {
 		reason := "execution_error"
 		msg := execErr.Error()
@@ -1018,16 +1045,20 @@ func (m *RootModel) processJob(job *client.Job) {
 			retry = ee.Retry
 		}
 
+		span.RecordError(execErr)
+		span.SetStatus(codes.Error, reason)
+
 		if retry {
-			m.failJob(job, reason, msg)
+			m.failJob(ctx, job, reason, msg)
 		} else {
-			m.failJobNoRetry(job, reason, msg)
+			m.failJobNoRetry(ctx, job, reason, msg)
 		}
 
 		return
 	}
 
-	m.completeJob(job, result.OutputData)
+	span.SetStatus(codes.Ok, "")
+	m.completeJob(ctx, job, result.OutputData)
 
 	// Reset the executor for the next job.
 	if err := executor.Reset(m.ctx); err != nil {
@@ -1064,11 +1095,11 @@ func (m *RootModel) heartbeatLoop(ctx context.Context, jobID string) {
 }
 
 // completeJob reports job completion to the API.
-func (m *RootModel) completeJob(job *client.Job, outputData map[string]any) {
-	err := m.client.CompleteJob(m.ctx, job.ID, outputData)
+func (m *RootModel) completeJob(ctx context.Context, job *client.Job, outputData map[string]any) {
+	err := m.client.CompleteJob(ctx, job.ID, outputData)
 	if err != nil {
 		m.setLastError(fmt.Sprintf("Complete failed: %v", err))
-		m.failJob(job, "completion_report_failed", err.Error())
+		m.failJob(ctx, job, "completion_report_failed", err.Error())
 
 		return
 	}
@@ -1079,15 +1110,15 @@ func (m *RootModel) completeJob(job *client.Job, outputData map[string]any) {
 }
 
 // releaseJob returns a job to the queue.
-func (m *RootModel) releaseJob(job *client.Job) {
-	if err := m.client.ReleaseJob(m.ctx, job.ID); err != nil {
+func (m *RootModel) releaseJob(ctx context.Context, job *client.Job) {
+	if err := m.client.ReleaseJob(ctx, job.ID); err != nil {
 		m.setLastError(fmt.Sprintf("Release failed: %v", err))
 	}
 }
 
 // failJob reports job failure to the API (retryable).
-func (m *RootModel) failJob(job *client.Job, reason, message string) {
-	err := m.client.FailJob(m.ctx, job.ID, reason, message, true)
+func (m *RootModel) failJob(ctx context.Context, job *client.Job, reason, message string) {
+	err := m.client.FailJob(ctx, job.ID, reason, message, true)
 	if err != nil {
 		m.setLastError(fmt.Sprintf("Fail report failed: %v", err))
 	}
@@ -1098,8 +1129,8 @@ func (m *RootModel) failJob(job *client.Job, reason, message string) {
 }
 
 // failJobNoRetry reports a permanent job failure (no retry).
-func (m *RootModel) failJobNoRetry(job *client.Job, reason, message string) {
-	err := m.client.FailJob(m.ctx, job.ID, reason, message, false)
+func (m *RootModel) failJobNoRetry(ctx context.Context, job *client.Job, reason, message string) {
+	err := m.client.FailJob(ctx, job.ID, reason, message, false)
 	if err != nil {
 		m.setLastError(fmt.Sprintf("Fail report failed: %v", err))
 	}
