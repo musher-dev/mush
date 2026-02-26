@@ -131,15 +131,15 @@ Get started:
   mush init             Setup Mush for first use
   mush auth login       Authenticate with your API key
   mush habitat list     View available habitats
-  mush link             Link to a habitat and start processing
+  mush worker start     Start the worker and process jobs
   mush doctor           Diagnose common issues`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-			// Configure output based on flags
-			out.JSON = jsonOutput
-			out.Quiet = quiet
-			out.NoInput = noInput
+			// Configure output based on flags + env vars
+			out.JSON = pickBoolFlagOrEnv(jsonOutput, "MUSH_JSON")
+			out.Quiet = pickBoolFlagOrEnv(quiet, "MUSH_QUIET")
+			out.NoInput = pickBoolFlagOrEnv(noInput, "MUSH_NO_INPUT") || pickBoolFlagOrEnv(false, "CI")
 
 			if noColor {
 				out.SetNoColor(true)
@@ -225,8 +225,7 @@ Get started:
 	})
 
 	// Primary commands
-	rootCmd.AddCommand(newLinkCmd())
-	rootCmd.AddCommand(newUnlinkCmd())
+	rootCmd.AddCommand(newWorkerCmd())
 	rootCmd.AddCommand(newHabitatCmd())
 	rootCmd.AddCommand(newBundleCmd())
 
@@ -255,11 +254,21 @@ func wrapPostRunCleanup(postRun func(*cobra.Command, []string) error, cleanup fu
 		}
 
 		if err := cleanup(); err != nil {
-			return fmt.Errorf("cleanup logger resources: %w", err)
+			return fmt.Errorf("cleanup logger resources: %w", err) //nolint:rawerror // internal cleanup, not user-facing
 		}
 
 		return nil
 	}
+}
+
+func pickBoolFlagOrEnv(flagValue bool, envKey string) bool {
+	if flagValue {
+		return true
+	}
+
+	v := strings.ToLower(strings.TrimSpace(os.Getenv(envKey)))
+
+	return v == "1" || v == "true" || v == "yes"
 }
 
 func pickFlagOrEnv(flagValue, envKey, fallback string) string {
@@ -276,7 +285,7 @@ func pickFlagOrEnv(flagValue, envKey, fallback string) string {
 }
 
 func isInteractiveCommand(path string) bool {
-	return path == "mush link" || strings.HasPrefix(path, "mush link ") ||
+	return path == "mush worker start" || strings.HasPrefix(path, "mush worker start ") ||
 		path == "mush bundle load" || strings.HasPrefix(path, "mush bundle load ")
 }
 
@@ -303,9 +312,11 @@ func noArgs(cmd *cobra.Command, args []string) error {
 
 func newVersionCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "version",
-		Short: "Show version information",
-		Args:  noArgs,
+		Use:     "version",
+		Short:   "Show version information",
+		Long:    `Display the mush binary version, git commit, and build date.`,
+		Example: `  mush version`,
+		Args:    noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := output.FromContext(cmd.Context())
 

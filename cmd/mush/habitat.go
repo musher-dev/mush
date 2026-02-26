@@ -1,8 +1,6 @@
 package main
 
 import (
-	"fmt"
-
 	"github.com/spf13/cobra"
 
 	clierrors "github.com/musher-dev/mush/internal/errors"
@@ -16,7 +14,7 @@ func newHabitatCmd() *cobra.Command {
 		Long: `Commands for listing and selecting habitats.
 
 Habitats are execution contexts within your workspace where harnesses connect
-and jobs are routed. You must select a habitat before linking to receive jobs.`,
+and jobs are routed. You must select a habitat before starting a worker to receive jobs.`,
 	}
 
 	cmd.AddCommand(newHabitatListCmd())
@@ -29,7 +27,9 @@ func newHabitatListCmd() *cobra.Command {
 		Use:   "list",
 		Short: "List available habitats",
 		Long:  `List all habitats available in your workspace.`,
-		Args:  noArgs,
+		Example: `  mush habitat list
+  mush habitat list --json`,
+		Args: noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := output.FromContext(cmd.Context())
 
@@ -45,8 +45,10 @@ func newHabitatListCmd() *cobra.Command {
 
 			habitats, err := apiClient.ListHabitats(cmd.Context())
 			if err != nil {
-				spin.StopWithFailure("Failed to fetch habitats")
-				return fmt.Errorf("list habitats: %w", err)
+				spin.Stop()
+
+				return clierrors.Wrap(clierrors.ExitNetwork, "Failed to fetch habitats", err).
+					WithHint("Check your network connection or run 'mush doctor'")
 			}
 
 			spin.StopWithSuccess("Found habitats")
@@ -56,8 +58,8 @@ func newHabitatListCmd() *cobra.Command {
 			}
 
 			if out.JSON {
-				if err := out.PrintJSON(habitats); err != nil {
-					return fmt.Errorf("print habitats json: %w", err)
+				if err := out.PrintJSON(map[string]any{"items": habitats}); err != nil {
+					return clierrors.Wrap(clierrors.ExitGeneral, "Failed to write JSON output", err)
 				}
 
 				return nil

@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/spf13/cobra"
 
@@ -20,14 +19,14 @@ func resolveHabitatID(ctx context.Context, c *client.Client, habitatFlag string,
 		// Fetch habitats to resolve slug to ID
 		habitats, err := c.ListHabitats(ctx)
 		if err != nil {
-			out.Failure("Failed to fetch habitats")
-			return "", fmt.Errorf("fetch habitats: %w", err)
+			return "", clierrors.Wrap(clierrors.ExitNetwork, "Failed to fetch habitats", err).
+				WithHint("Check your network connection and API credentials")
 		}
 
 		// Try to find by slug or ID
 		for _, h := range habitats {
 			if h.Slug == habitatFlag || h.ID == habitatFlag {
-				out.Print("Linking to habitat: %s (%s)\n", h.Name, h.Slug)
+				out.Print("Connecting to habitat: %s (%s)\n", h.Name, h.Slug)
 				return h.ID, nil
 			}
 		}
@@ -38,8 +37,8 @@ func resolveHabitatID(ctx context.Context, c *client.Client, habitatFlag string,
 	// Interactive selection
 	habitats, err := c.ListHabitats(ctx)
 	if err != nil {
-		out.Failure("Failed to fetch habitats")
-		return "", fmt.Errorf("fetch habitats: %w", err)
+		return "", clierrors.Wrap(clierrors.ExitNetwork, "Failed to fetch habitats", err).
+			WithHint("Check your network connection and API credentials")
 	}
 
 	if len(habitats) == 0 {
@@ -49,7 +48,7 @@ func resolveHabitatID(ctx context.Context, c *client.Client, habitatFlag string,
 	// Non-interactive mode: auto-select single habitat or error
 	if out.NoInput {
 		if len(habitats) == 1 {
-			out.Print("Linking to habitat: %s (%s)\n", habitats[0].Name, habitats[0].Slug)
+			out.Print("Connecting to habitat: %s (%s)\n", habitats[0].Name, habitats[0].Slug)
 			return habitats[0].ID, nil
 		}
 
@@ -59,10 +58,15 @@ func resolveHabitatID(ctx context.Context, c *client.Client, habitatFlag string,
 	// Interactive mode: always prompt
 	selected, err := prompt.SelectHabitat(habitats, out)
 	if err != nil {
-		return "", fmt.Errorf("select habitat: %w", err)
+		if prompt.IsCanceled(err) {
+			return "", clierrors.New(clierrors.ExitUsage, "Habitat selection canceled").
+				WithHint("Pass --habitat to select non-interactively")
+		}
+
+		return "", clierrors.Wrap(clierrors.ExitGeneral, "Failed to select habitat", err)
 	}
 
-	out.Print("Linking to habitat: %s (%s)\n", selected.Name, selected.Slug)
+	out.Print("Connecting to habitat: %s (%s)\n", selected.Name, selected.Slug)
 
 	return selected.ID, nil
 }
@@ -77,8 +81,8 @@ func resolveQueue(
 ) (client.QueueSummary, error) {
 	queues, err := c.ListQueues(ctx, habitatID)
 	if err != nil {
-		out.Failure("Failed to fetch queues")
-		return client.QueueSummary{}, fmt.Errorf("fetch queues: %w", err)
+		return client.QueueSummary{}, clierrors.Wrap(clierrors.ExitNetwork, "Failed to fetch queues", err).
+			WithHint("Check your network connection and API credentials")
 	}
 
 	if queueFlag != "" {
@@ -109,7 +113,12 @@ func resolveQueue(
 	// Interactive mode: always prompt
 	selected, err := prompt.SelectQueue(queues, out)
 	if err != nil {
-		return client.QueueSummary{}, fmt.Errorf("select queue: %w", err)
+		if prompt.IsCanceled(err) {
+			return client.QueueSummary{}, clierrors.New(clierrors.ExitUsage, "Queue selection canceled").
+				WithHint("Pass --queue to select non-interactively")
+		}
+
+		return client.QueueSummary{}, clierrors.Wrap(clierrors.ExitGeneral, "Failed to select queue", err)
 	}
 
 	out.Print("Filtering by queue: %s (%s)\n", selected.Name, selected.Slug)
@@ -117,20 +126,22 @@ func resolveQueue(
 	return *selected, nil
 }
 
-// LinkStatus represents link status for JSON output.
-type LinkStatus struct {
+// WorkerStatus represents worker status for JSON output.
+type WorkerStatus struct {
 	Source     string `json:"source"`
 	Credential string `json:"credential"`
 	Workspace  string `json:"workspace"`
 	Active     bool   `json:"active"`
 }
 
-func newLinkStatusCmd() *cobra.Command {
+func newWorkerStatusCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "status",
-		Short: "Show link status",
-		Long:  `Show the current link status, authenticated identity, and habitat information.`,
-		Args:  noArgs,
+		Short: "Show worker status",
+		Long:  `Show the current worker status, authenticated identity, and habitat information.`,
+		Example: `  mush worker status
+  mush worker status --json`,
+		Args: noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := output.FromContext(cmd.Context())
 
@@ -153,13 +164,13 @@ func newLinkStatusCmd() *cobra.Command {
 			spin.StopWithSuccess("Connected")
 
 			if out.JSON {
-				if err := out.PrintJSON(LinkStatus{
+				if err := out.PrintJSON(WorkerStatus{
 					Source:     string(source),
 					Credential: identity.CredentialName,
 					Workspace:  identity.WorkspaceName,
 					Active:     false,
 				}); err != nil {
-					return fmt.Errorf("print link status json: %w", err)
+					return clierrors.Wrap(clierrors.ExitGeneral, "Failed to write JSON output", err)
 				}
 
 				return nil
@@ -171,28 +182,29 @@ func newLinkStatusCmd() *cobra.Command {
 			out.Print("Workspace:  %s\n", identity.WorkspaceName)
 
 			out.Println()
-			out.Muted("Link: Not active")
-			out.Muted("Run 'mush link' to start processing jobs.")
+			out.Muted("Worker: Not active")
+			out.Muted("Run 'mush worker start' to start processing jobs.")
 
 			return nil
 		},
 	}
 }
 
-// newUnlinkCmd creates the unlink command (graceful disconnect placeholder).
-func newUnlinkCmd() *cobra.Command {
+// newWorkerStopCmd creates the worker stop command (graceful disconnect placeholder).
+func newWorkerStopCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "unlink",
+		Use:   "stop",
 		Short: "Gracefully disconnect from habitat",
 		Long: `Gracefully disconnect from the current habitat.
 
-Note: This is typically handled automatically via Ctrl+C when running 'mush link'.
+Note: This is typically handled automatically via Ctrl+C when running 'mush worker start'.
 This command is provided for programmatic disconnection.`,
-		Args: noArgs,
+		Example: `  mush worker stop`,
+		Args:    noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := output.FromContext(cmd.Context())
-			out.Info("Links are disconnected via Ctrl+C when running 'mush link'")
-			out.Muted("No active link to disconnect.")
+			out.Info("Workers are disconnected via Ctrl+C when running 'mush worker start'")
+			out.Muted("No active worker to disconnect.")
 
 			return nil
 		},

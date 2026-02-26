@@ -263,16 +263,16 @@ func TestWriter_Debug(t *testing.T) {
 }
 
 func TestWriter_Success(t *testing.T) {
-	var buf bytes.Buffer
+	var outBuf, errBuf bytes.Buffer
 
-	w := NewWriter(&buf, &buf, testTerminal())
+	w := NewWriter(&outBuf, &errBuf, testTerminal())
 
 	w.Success("Operation completed")
 
-	// Should contain checkmark and message
-	got := buf.String()
+	// Should write to stderr with checkmark and message
+	got := errBuf.String()
 	if got == "" {
-		t.Error("Success() should produce output")
+		t.Error("Success() should produce output on stderr")
 	}
 
 	if !containsString(got, CheckMark) {
@@ -281,6 +281,10 @@ func TestWriter_Success(t *testing.T) {
 
 	if !containsString(got, "Operation completed") {
 		t.Errorf("Success() should contain message, got %q", got)
+	}
+
+	if outBuf.Len() > 0 {
+		t.Errorf("Success() should not write to stdout, got %q", outBuf.String())
 	}
 }
 
@@ -307,72 +311,76 @@ func TestWriter_Failure(t *testing.T) {
 }
 
 func TestWriter_Warning(t *testing.T) {
-	var buf bytes.Buffer
+	var outBuf, errBuf bytes.Buffer
 
-	w := NewWriter(&buf, &buf, testTerminal())
+	w := NewWriter(&outBuf, &errBuf, testTerminal())
 
 	w.Warning("Be careful")
 
-	got := buf.String()
+	got := errBuf.String()
 	if got == "" {
-		t.Error("Warning() should produce output")
+		t.Error("Warning() should produce output on stderr")
 	}
 
 	if !containsString(got, WarningMark) {
 		t.Errorf("Warning() should contain warning mark, got %q", got)
 	}
+
+	if outBuf.Len() > 0 {
+		t.Errorf("Warning() should not write to stdout, got %q", outBuf.String())
+	}
 }
 
 func TestWriter_Info(t *testing.T) {
-	var buf bytes.Buffer
+	var outBuf, errBuf bytes.Buffer
 
-	w := NewWriter(&buf, &buf, testTerminal())
+	w := NewWriter(&outBuf, &errBuf, testTerminal())
 
 	w.Info("Information")
 
-	got := buf.String()
+	got := errBuf.String()
 	if got == "" {
-		t.Error("Info() should produce output")
+		t.Error("Info() should produce output on stderr")
 	}
 
 	if !containsString(got, InfoMark) {
 		t.Errorf("Info() should contain info mark, got %q", got)
 	}
+
+	if outBuf.Len() > 0 {
+		t.Errorf("Info() should not write to stdout, got %q", outBuf.String())
+	}
 }
 
 func TestWriter_Muted(t *testing.T) {
-	tests := []struct {
-		name    string
-		quiet   bool
-		wantOut bool
-	}{
-		{
-			name:    "normal mode shows muted",
-			quiet:   false,
-			wantOut: true,
-		},
-		{
-			name:    "quiet mode hides muted",
-			quiet:   true,
-			wantOut: false,
-		},
-	}
+	t.Run("normal mode writes to stderr", func(t *testing.T) {
+		var outBuf, errBuf bytes.Buffer
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			var buf bytes.Buffer
+		w := NewWriter(&outBuf, &errBuf, testTerminal())
 
-			w := NewWriter(&buf, &buf, testTerminal())
-			w.Quiet = tt.quiet
+		w.Muted("muted text")
 
-			w.Muted("muted text")
+		if errBuf.Len() == 0 {
+			t.Error("Muted() should produce output on stderr")
+		}
 
-			hasOutput := buf.Len() > 0
-			if hasOutput != tt.wantOut {
-				t.Errorf("Muted() hasOutput = %v, want %v", hasOutput, tt.wantOut)
-			}
-		})
-	}
+		if outBuf.Len() > 0 {
+			t.Errorf("Muted() should not write to stdout, got %q", outBuf.String())
+		}
+	})
+
+	t.Run("quiet mode hides muted", func(t *testing.T) {
+		var outBuf, errBuf bytes.Buffer
+
+		w := NewWriter(&outBuf, &errBuf, testTerminal())
+		w.Quiet = true
+
+		w.Muted("muted text")
+
+		if outBuf.Len() > 0 || errBuf.Len() > 0 {
+			t.Error("Muted() should produce no output in quiet mode")
+		}
+	})
 }
 
 func TestWriter_Context(t *testing.T) {
@@ -441,16 +449,17 @@ func TestSpinner_Disabled(t *testing.T) {
 }
 
 func TestSpinner_StopWithSuccess(t *testing.T) {
-	var buf bytes.Buffer
+	var outBuf, errBuf bytes.Buffer
 
-	w := NewWriter(&buf, &buf, testTerminal())
+	w := NewWriter(&outBuf, &errBuf, testTerminal())
 
 	s := w.Spinner("Loading")
 	s.Start()
 	s.StopWithSuccess("Done")
 
-	// Should contain output
-	if buf.Len() == 0 {
+	// Should contain output (spinner disabled text goes to stdout, success goes to stderr)
+	totalOutput := outBuf.Len() + errBuf.Len()
+	if totalOutput == 0 {
 		t.Error("StopWithSuccess should produce output")
 	}
 }
@@ -472,15 +481,17 @@ func TestSpinner_StopWithFailure(t *testing.T) {
 }
 
 func TestSpinner_StopWithWarning(t *testing.T) {
-	var buf bytes.Buffer
+	var outBuf, errBuf bytes.Buffer
 
-	w := NewWriter(&buf, &buf, testTerminal())
+	w := NewWriter(&outBuf, &errBuf, testTerminal())
 
 	s := w.Spinner("Loading")
 	s.Start()
 	s.StopWithWarning("Warning")
 
-	if buf.Len() == 0 {
+	// Should contain output (spinner disabled text goes to stdout, warning goes to stderr)
+	totalOutput := outBuf.Len() + errBuf.Len()
+	if totalOutput == 0 {
 		t.Error("StopWithWarning should produce output")
 	}
 }
@@ -541,14 +552,18 @@ func TestPrintJSON_Golden(t *testing.T) {
 }
 
 func TestStatusMessages_Golden(t *testing.T) {
-	var buf bytes.Buffer
+	var outBuf, errBuf bytes.Buffer
 
-	w := NewWriter(&buf, &buf, testTerminal())
+	w := NewWriter(&outBuf, &errBuf, testTerminal())
 
 	w.Success("Operation completed successfully")
 	w.Warning("This is a warning message")
 	w.Info("Information for the user")
 	w.Muted("Subtle context information")
 
-	testutil.AssertGolden(t, buf.String(), "status_messages.golden")
+	testutil.AssertGolden(t, errBuf.String(), "status_messages.golden")
+
+	if outBuf.Len() > 0 {
+		t.Errorf("Status messages should not write to stdout, got %q", outBuf.String())
+	}
 }

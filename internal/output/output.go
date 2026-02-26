@@ -175,7 +175,7 @@ func (w *Writer) Success(format string, args ...interface{}) {
 	}
 
 	msg := fmt.Sprintf(format, args...)
-	w.writeStatus(w.Out, w.successColor, CheckMark, msg)
+	w.writeStatus(w.Err, w.successColor, CheckMark, msg)
 }
 
 // Failure writes an error message with an X mark.
@@ -191,7 +191,7 @@ func (w *Writer) Warning(format string, args ...interface{}) {
 	}
 
 	msg := fmt.Sprintf(format, args...)
-	w.writeStatus(w.Out, w.warningColor, WarningMark, msg)
+	w.writeStatus(w.Err, w.warningColor, WarningMark, msg)
 }
 
 // Info writes an info message.
@@ -201,7 +201,7 @@ func (w *Writer) Info(format string, args ...interface{}) {
 	}
 
 	msg := fmt.Sprintf(format, args...)
-	w.writeStatus(w.Out, w.infoColor, InfoMark, msg)
+	w.writeStatus(w.Err, w.infoColor, InfoMark, msg)
 }
 
 // Muted writes muted/gray text.
@@ -212,9 +212,9 @@ func (w *Writer) Muted(format string, args ...interface{}) {
 
 	msg := fmt.Sprintf(format, args...)
 	if w.terminal.ColorEnabled() {
-		w.mutedColor.Fprintln(w.Out, msg)
+		w.mutedColor.Fprintln(w.Err, msg)
 	} else {
-		fmt.Fprintln(w.Out, msg)
+		fmt.Fprintln(w.Err, msg)
 	}
 }
 
@@ -234,7 +234,7 @@ func (w *Writer) Spinner(message string) *Spinner {
 	}
 
 	s := spinner.New(spinner.CharSets[14], 100*time.Millisecond)
-	s.Writer = w.Out
+	s.Writer = w.Err
 	s.Suffix = " " + message
 
 	return &Spinner{

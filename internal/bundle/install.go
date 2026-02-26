@@ -2,6 +2,7 @@ package bundle
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -64,6 +65,26 @@ func LoadInstalled(workDir string) ([]InstalledBundle, error) {
 
 	return installed, nil
 }
+
+// FindInstalled looks up a specific installed bundle by slug and harness.
+// Returns ErrNotInstalled if no matching bundle is found.
+func FindInstalled(workDir, slug, harness string) (*InstalledBundle, error) {
+	installed, err := LoadInstalled(workDir)
+	if err != nil {
+		return nil, err
+	}
+
+	for i := range installed {
+		if installed[i].Slug == slug && installed[i].Harness == harness {
+			return &installed[i], nil
+		}
+	}
+
+	return nil, ErrNotInstalled
+}
+
+// ErrNotInstalled is returned when a bundle is not found in the installed list.
+var ErrNotInstalled = errors.New("bundle not installed")
 
 // Uninstall removes installed assets for a specific bundle slug and harness.
 func Uninstall(workDir, slug, harness string) ([]string, error) {
