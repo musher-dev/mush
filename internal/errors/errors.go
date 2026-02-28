@@ -199,7 +199,7 @@ func QueueRequired() *CLIError {
 func APIKeyEmpty() *CLIError {
 	return &CLIError{
 		Message: "API key cannot be empty",
-		Hint:    "Enter a valid API key or set MUSHER_API_KEY environment variable",
+		Hint:    "Enter a valid API key or set MUSH_API_KEY environment variable",
 		Code:    ExitAuth,
 	}
 }

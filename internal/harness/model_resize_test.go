@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/musher-dev/mush/internal/client"
+	"github.com/musher-dev/mush/internal/harness/ui/layout"
 )
 
 func TestClampTerminalSize(t *testing.T) {
@@ -36,7 +37,7 @@ func TestClampTerminalSize(t *testing.T) {
 			width:      120,
 			height:     1,
 			wantWidth:  120,
-			wantHeight: StatusBarHeight + 1,
+			wantHeight: layout.TopBarHeight + 1,
 		},
 	}
 
@@ -54,7 +55,7 @@ func TestClampTerminalSize(t *testing.T) {
 func TestPTYRowsForHeight(t *testing.T) {
 	m := &RootModel{}
 
-	if got := m.ptyRowsForHeight(StatusBarHeight + 20); got != 20 {
+	if got := m.ptyRowsForHeight(layout.TopBarHeight + 20); got != 20 {
 		t.Fatalf("ptyRowsForHeight(valid) = %d, want 20", got)
 	}
 
@@ -93,9 +94,9 @@ func TestHandleResizeCallsResizable(t *testing.T) {
 		t.Fatal("expected Resize to be called on executor")
 	}
 
-	if got.cols != 120 || got.rows != 40-StatusBarHeight {
+	if got.cols != 120 || got.rows != 40-layout.TopBarHeight {
 		t.Fatalf("Resize called with cols=%d rows=%d, want cols=%d rows=%d",
-			got.cols, got.rows, 120, 40-StatusBarHeight)
+			got.cols, got.rows, 120, 40-layout.TopBarHeight)
 	}
 
 	if m.width != 120 || m.height != 40 {

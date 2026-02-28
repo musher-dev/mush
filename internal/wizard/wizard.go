@@ -79,7 +79,7 @@ func (w *Wizard) Run(ctx context.Context) error {
 		w.out.Println()
 		w.out.Info("Either:")
 		w.out.Print("  1. Run without --no-input flag\n")
-		w.out.Print("  2. Set MUSHER_API_KEY environment variable\n")
+		w.out.Print("  2. Set MUSH_API_KEY environment variable\n")
 		w.out.Print("  3. Run 'mush auth login' interactively\n")
 
 		return nil

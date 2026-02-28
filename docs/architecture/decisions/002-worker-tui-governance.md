@@ -1,4 +1,11 @@
-# Worker TUI: Preparedness & Governance
+# ADR-002: Worker TUI Governance
+
+- **Status**: Accepted
+- **Date**: 2025-02-26
+- **Context**: Evaluated whether to adopt a TUI framework (Bubble Tea) and established governance rules for bare-noun command behavior.
+- **Decision**: Keep the current ANSI-based approach; bare noun commands must show help text, not interactive prompts.
+
+---
 
 ## Current TUI Capabilities
 

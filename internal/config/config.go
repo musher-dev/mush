@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -23,10 +24,16 @@ import (
 const (
 	// DefaultAPIURL is the default Musher API endpoint.
 	DefaultAPIURL = "https://api.musher.dev"
-	// DefaultPollInterval is the default poll interval in seconds.
-	DefaultPollInterval = 30
-	// DefaultHeartbeatInterval is the default heartbeat interval in seconds.
-	DefaultHeartbeatInterval = 30
+	// DefaultPollInterval is the default poll interval as a duration string.
+	DefaultPollInterval = "30s"
+	// DefaultHeartbeatInterval is the default heartbeat interval as a duration string.
+	DefaultHeartbeatInterval = "30s"
+)
+
+const (
+	defaultPollIntervalDuration      = 30 * time.Second
+	defaultHeartbeatIntervalDuration = 30 * time.Second
+	minIntervalDuration              = 1 * time.Second
 )
 
 // Config holds the Mush configuration.
@@ -43,7 +50,7 @@ func Load() *Config {
 	v.SetDefault("worker.poll_interval", DefaultPollInterval)
 	v.SetDefault("worker.heartbeat_interval", DefaultHeartbeatInterval)
 	v.SetDefault("history.enabled", true)
-	v.SetDefault("history.lines", 10000)
+	v.SetDefault("history.scrollback_lines", 10000)
 	v.SetDefault("history.retention", (30 * 24 * time.Hour).String())
 
 	// Config file location
@@ -53,7 +60,9 @@ func Load() *Config {
 		if historyErr == nil {
 			v.SetDefault("history.dir", historyDir)
 		} else {
-			v.SetDefault("history.dir", filepath.Join(configDir, "history"))
+			if home, homeErr := os.UserHomeDir(); homeErr == nil {
+				v.SetDefault("history.dir", filepath.Join(home, ".local", "state", "mush", "history"))
+			}
 		}
 
 		v.AddConfigPath(configDir)
@@ -125,14 +134,14 @@ func (c *Config) APIURL() string {
 	return c.GetString("api.url")
 }
 
-// PollInterval returns the poll interval in seconds.
-func (c *Config) PollInterval() int {
-	return c.GetInt("worker.poll_interval")
+// PollInterval returns the poll interval as a duration.
+func (c *Config) PollInterval() time.Duration {
+	return c.parseDuration("worker.poll_interval", defaultPollIntervalDuration)
 }
 
-// HeartbeatInterval returns the heartbeat interval in seconds.
-func (c *Config) HeartbeatInterval() int {
-	return c.GetInt("worker.heartbeat_interval")
+// HeartbeatInterval returns the heartbeat interval as a duration.
+func (c *Config) HeartbeatInterval() time.Duration {
+	return c.parseDuration("worker.heartbeat_interval", defaultHeartbeatIntervalDuration)
 }
 
 // HistoryEnabled returns whether transcript history is enabled.
@@ -145,9 +154,41 @@ func (c *Config) HistoryDir() string {
 	return c.GetString("history.dir")
 }
 
-// HistoryLines returns the configured in-memory transcript ring size.
-func (c *Config) HistoryLines() int {
-	return c.GetInt("history.lines")
+// HistoryScrollbackLines returns the configured in-memory transcript ring size.
+func (c *Config) HistoryScrollbackLines() int {
+	return c.GetInt("history.scrollback_lines")
+}
+
+// parseDuration reads a config key and interprets it as a duration.
+// It first tries time.ParseDuration (e.g. "30s", "1m"). If that fails,
+// it tries parsing as a bare integer (seconds) for backward compatibility.
+// Returns fallback if the result is less than minIntervalDuration.
+func (c *Config) parseDuration(key string, fallback time.Duration) time.Duration {
+	raw := c.GetString(key)
+	if raw == "" {
+		return fallback
+	}
+
+	// Try Go duration string first (e.g. "30s", "1m30s").
+	if d, err := time.ParseDuration(raw); err == nil {
+		if d < minIntervalDuration {
+			return fallback
+		}
+
+		return d
+	}
+
+	// Backward compat: bare integer treated as seconds.
+	if secs, err := strconv.Atoi(raw); err == nil {
+		d := time.Duration(secs) * time.Second
+		if d < minIntervalDuration {
+			return fallback
+		}
+
+		return d
+	}
+
+	return fallback
 }
 
 // HistoryRetention returns the configured retention period for history pruning.

@@ -33,6 +33,7 @@ var (
 		moduleRoot + "/internal/terminal":      true,
 		moduleRoot + "/internal/paths":         true,
 		moduleRoot + "/internal/ansi":          true,
+		moduleRoot + "/internal/tui":           true,
 		moduleRoot + "/internal/observability": true,
 		moduleRoot + "/internal/transcript":    true,
 		moduleRoot + "/internal/testutil":      true,

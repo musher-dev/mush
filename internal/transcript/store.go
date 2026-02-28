@@ -14,6 +14,8 @@ import (
 	"time"
 )
 
+const eventsGzTmpPattern = "events.jsonl.gz.*.tmp"
+
 const (
 	defaultLines          = 10000
 	defaultRetentionHours = 24 * 30
@@ -46,7 +48,8 @@ type StoreOptions struct {
 	MaxLines  int
 }
 
-// Store writes transcript events to compressed and live JSONL files and keeps an in-memory ring.
+// Store writes transcript events to a live JSONL file and keeps an in-memory ring.
+// On Close, the live file is compressed to events.jsonl.gz and removed.
 type Store struct {
 	mu sync.Mutex
 
@@ -56,9 +59,6 @@ type Store struct {
 	seq       uint64
 	startedAt time.Time
 
-	file     *os.File
-	gz       *gzip.Writer
-	bw       *bufio.Writer
 	liveFile *os.File
 	liveBW   *bufio.Writer
 
@@ -99,19 +99,11 @@ func NewStore(opts StoreOptions) (*Store, error) {
 		return nil, fmt.Errorf("create transcript dir: %w", err)
 	}
 
-	f, err := os.OpenFile(filepath.Join(sessionDir, eventsFileName), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600) //nolint:gosec // sessionDir/sessionID are validated and controlled
-	if err != nil {
-		return nil, fmt.Errorf("open transcript events: %w", err)
-	}
-
 	liveFile, err := os.OpenFile(filepath.Join(sessionDir, eventsLiveFileName), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600) //nolint:gosec // sessionDir/sessionID are validated and controlled
 	if err != nil {
-		_ = f.Close()
 		return nil, fmt.Errorf("open live transcript events: %w", err)
 	}
 
-	gz := gzip.NewWriter(f)
-	bw := bufio.NewWriterSize(gz, 64*1024)
 	liveBW := bufio.NewWriterSize(liveFile, 64*1024)
 
 	s := &Store{
@@ -119,9 +111,6 @@ func NewStore(opts StoreOptions) (*Store, error) {
 		dir:       sessionDir,
 		maxLines:  maxLines,
 		startedAt: time.Now().UTC(),
-		file:      f,
-		gz:        gz,
-		bw:        bw,
 		liveFile:  liveFile,
 		liveBW:    liveBW,
 		lines:     make([]string, maxLines),
@@ -186,9 +175,6 @@ func (s *Store) Append(stream string, chunk []byte) error {
 	}
 
 	line = append(line, '\n')
-	if _, err := s.bw.Write(line); err != nil {
-		return fmt.Errorf("encode transcript event: %w", err)
-	}
 
 	if _, err := s.liveBW.Write(line); err != nil {
 		return fmt.Errorf("encode live transcript event: %w", err)
@@ -253,7 +239,8 @@ func (s *Store) SnapshotLines() []string {
 	return out
 }
 
-// Close flushes and closes the transcript.
+// Close flushes the live file, compresses it to events.jsonl.gz,
+// removes the live file, and writes final metadata.
 func (s *Store) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -264,37 +251,10 @@ func (s *Store) Close() error {
 
 	s.closed = true
 
-	now := time.Now().UTC()
-
 	var errs []error
-	if err := s.writeMeta(&Meta{
-		SessionID: s.sessionID,
-		StartedAt: s.startedAt,
-		ClosedAt:  &now,
-	}); err != nil {
-		errs = append(errs, err)
-	}
-
-	if s.bw != nil {
-		if err := s.bw.Flush(); err != nil {
-			errs = append(errs, err)
-		}
-	}
 
 	if s.liveBW != nil {
 		if err := s.liveBW.Flush(); err != nil {
-			errs = append(errs, err)
-		}
-	}
-
-	if s.gz != nil {
-		if err := s.gz.Close(); err != nil {
-			errs = append(errs, err)
-		}
-	}
-
-	if s.file != nil {
-		if err := s.file.Close(); err != nil {
 			errs = append(errs, err)
 		}
 	}
@@ -305,7 +265,80 @@ func (s *Store) Close() error {
 		}
 	}
 
+	if err := s.compressLiveFile(); err != nil {
+		errs = append(errs, err)
+	}
+
+	now := time.Now().UTC()
+	if err := s.writeMeta(&Meta{
+		SessionID: s.sessionID,
+		StartedAt: s.startedAt,
+		ClosedAt:  &now,
+	}); err != nil {
+		errs = append(errs, err)
+	}
+
 	return errors.Join(errs...)
+}
+
+// compressLiveFile reads the live JSONL file, compresses it to events.jsonl.gz,
+// and removes the live file. If the live file doesn't exist (empty session), it
+// silently returns nil.
+func (s *Store) compressLiveFile() error {
+	livePath := filepath.Join(s.dir, eventsLiveFileName)
+
+	liveData, err := os.ReadFile(livePath) //nolint:gosec // controlled path
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+
+		return fmt.Errorf("read live transcript for compression: %w", err)
+	}
+
+	if len(liveData) == 0 {
+		// Empty file — remove and skip compression.
+		_ = os.Remove(livePath)
+		return nil
+	}
+
+	tmpFile, err := os.CreateTemp(s.dir, eventsGzTmpPattern)
+	if err != nil {
+		return fmt.Errorf("create temp gz file: %w", err)
+	}
+
+	tmp := tmpFile.Name()
+
+	gz := gzip.NewWriter(tmpFile)
+	if _, writeErr := gz.Write(liveData); writeErr != nil {
+		_ = gz.Close()
+		_ = tmpFile.Close()
+		_ = os.Remove(tmp)
+
+		return fmt.Errorf("compress transcript events: %w", writeErr)
+	}
+
+	if err := gz.Close(); err != nil {
+		_ = tmpFile.Close()
+		_ = os.Remove(tmp)
+
+		return fmt.Errorf("close gzip writer: %w", err)
+	}
+
+	if err := tmpFile.Close(); err != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("close temp gz file: %w", err)
+	}
+
+	dest := filepath.Join(s.dir, eventsFileName)
+	if err := os.Rename(tmp, dest); err != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("rename compressed transcript: %w", err)
+	}
+
+	_ = os.Remove(livePath)
+
+	return nil
 }
 
 func validateSessionID(sessionID string) error {

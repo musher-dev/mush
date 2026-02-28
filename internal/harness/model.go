@@ -26,8 +26,12 @@ import (
 	"github.com/musher-dev/mush/internal/buildinfo"
 	"github.com/musher-dev/mush/internal/client"
 	"github.com/musher-dev/mush/internal/config"
+	harnessstate "github.com/musher-dev/mush/internal/harness/state"
+	"github.com/musher-dev/mush/internal/harness/ui/layout"
+	statusui "github.com/musher-dev/mush/internal/harness/ui/status"
 	"github.com/musher-dev/mush/internal/observability"
 	"github.com/musher-dev/mush/internal/transcript"
+	"github.com/musher-dev/mush/internal/tui/ansi"
 	"github.com/musher-dev/mush/internal/worker"
 )
 
@@ -65,22 +69,6 @@ const PTYPasteSettleDelay = 500 * time.Millisecond
 
 // DefaultExecutionTimeout is the fallback when no execution timeout is set on the job.
 const DefaultExecutionTimeout = 10 * time.Minute
-
-// ANSI escape sequences for terminal control.
-const (
-	escClearScreen   = "\x1b[2J"
-	escMoveTo        = "\x1b[%d;%dH" // row;col (1-indexed)
-	escSaveCursor    = "\x1b[s"
-	escRestoreCursor = "\x1b[u"
-	escSetScrollRgn  = "\x1b[%d;%dr" // top;bottom
-	escResetScroll   = "\x1b[r"
-	escReset         = "\x1b[0m"
-	escShowCursor    = "\x1b[?25h"
-	escClearLine     = "\x1b[2K"
-)
-
-// StatusBarHeight is the number of lines reserved for the status bar.
-const StatusBarHeight = 2
 
 const (
 	ctrlQ = 0x11
@@ -169,6 +157,10 @@ type RootModel struct {
 	bundleName     string
 	bundleVer      string
 	bundleDir      string
+	bundleSummary  BundleSummary
+
+	// Terminal capability flags.
+	lrMarginSupported bool
 
 	// Time and lifecycle behavior knobs (defaulted in constructor; injectable in tests).
 	now                 func() time.Time
@@ -205,11 +197,126 @@ func (m *RootModel) termWriteString(s string) {
 	m.termWrite([]byte(s))
 }
 
-func (m *RootModel) termPrintf(format string, args ...any) {
-	m.termMu.Lock()
-	defer m.termMu.Unlock()
+func (m *RootModel) statusSnapshot() harnessstate.Snapshot {
+	m.statusMu.Lock()
+	habitatID := m.habitatID
+	queueID := m.queueID
+	statusLabel := m.status.String()
+	completed := m.completed
+	failed := m.failed
+	lastHeartbeat := m.lastHeartbeat
+	lastError := m.lastError
+	lastErrorTime := m.lastErrorTime
+	bundleLoadMode := m.bundleLoadMode
+	bundleName := m.bundleName
+	bundleVer := m.bundleVer
+	bundleSummary := m.bundleSummary
+	supportedHarnesses := append([]string(nil), m.supportedHarnesses...)
+	width := m.width
+	height := m.height
+	nowFn := m.now
+	m.statusMu.Unlock()
 
-	_, _ = fmt.Fprintf(os.Stdout, format, args...)
+	m.jobMu.Lock()
+
+	jobID := ""
+	if m.currentJob != nil {
+		jobID = m.currentJob.ID
+	}
+	m.jobMu.Unlock()
+
+	if nowFn == nil {
+		nowFn = time.Now
+	}
+
+	now := nowFn()
+
+	frame := layout.ComputeFrame(width, height, m.lrMarginSupported)
+
+	return harnessstate.Snapshot{
+		Width:              width,
+		Height:             height,
+		SidebarVisible:     frame.SidebarVisible,
+		SidebarWidth:       frame.SidebarWidth,
+		PaneXStart:         frame.PaneXStart,
+		PaneWidth:          frame.PaneWidth,
+		BundleLoadMode:     bundleLoadMode,
+		BundleName:         bundleName,
+		BundleVer:          bundleVer,
+		BundleLayers:       bundleSummary.TotalLayers,
+		BundleSkills:       append([]string(nil), bundleSummary.Skills...),
+		BundleAgents:       append([]string(nil), bundleSummary.Agents...),
+		BundleTools:        append([]string(nil), bundleSummary.ToolConfigs...),
+		BundleOther:        append([]string(nil), bundleSummary.Other...),
+		HabitatID:          habitatID,
+		QueueID:            queueID,
+		SupportedHarnesses: supportedHarnesses,
+		StatusLabel:        statusLabel,
+		CopyMode:           m.isCopyMode(),
+		JobID:              jobID,
+		LastHeartbeat:      lastHeartbeat,
+		Completed:          completed,
+		Failed:             failed,
+		LastError:          lastError,
+		LastErrorTime:      lastErrorTime,
+		MCPServers:         m.snapshotMCPServers(now),
+		Now:                now,
+	}
+}
+
+func (m *RootModel) snapshotMCPServers(now time.Time) []harnessstate.MCPServerStatus {
+	m.refreshMu.Lock()
+	cfg := m.runnerConfig
+	m.refreshMu.Unlock()
+
+	if cfg == nil || len(cfg.Providers) == 0 {
+		return nil
+	}
+
+	loadedSet := map[string]bool{}
+	for _, name := range LoadedMCPProviderNames(cfg, now) {
+		loadedSet[name] = true
+	}
+
+	names := make([]string, 0, len(cfg.Providers))
+	for name, provider := range cfg.Providers {
+		if !provider.Flags.MCP || provider.MCP == nil {
+			continue
+		}
+
+		names = append(names, name)
+	}
+
+	sort.Strings(names)
+
+	statuses := make([]harnessstate.MCPServerStatus, 0, len(names))
+	for _, name := range names {
+		provider := cfg.Providers[name]
+		authenticated := false
+		expired := false
+
+		if provider.Credential != nil {
+			authenticated = provider.Credential.AccessToken != ""
+			if provider.Credential.ExpiresAt != nil && !provider.Credential.ExpiresAt.After(now) {
+				expired = true
+				authenticated = false
+			}
+		}
+
+		statuses = append(statuses, harnessstate.MCPServerStatus{
+			Name:          name,
+			Loaded:        loadedSet[name],
+			Authenticated: authenticated,
+			Expired:       expired,
+		})
+	}
+
+	return statuses
+}
+
+func (m *RootModel) drawStatusBar() {
+	snap := m.statusSnapshot()
+	m.termWriteString(statusui.Render(&snap))
 }
 
 // NewRootModel creates a new root model with the given configuration.
@@ -244,6 +351,8 @@ func NewRootModel(ctx context.Context, cfg *Config) *RootModel {
 		bundleName:          cfg.BundleName,
 		bundleVer:           cfg.BundleVer,
 		bundleDir:           cfg.BundleDir,
+		bundleSummary:       cfg.BundleSummary,
+		lrMarginSupported:   supportsLRMargins(os.Getenv("TERM")),
 		now:                 time.Now,
 		ctrlCExitWindow:     defaultCtrlCExitWindow,
 		ptyShutdownDeadline: defaultPTYShutdownDeadline,
@@ -298,7 +407,7 @@ func (m *RootModel) Run() error {
 
 		historyLines := m.transcriptLines
 		if historyLines <= 0 {
-			historyLines = m.cfg.HistoryLines()
+			historyLines = m.cfg.HistoryScrollbackLines()
 		}
 
 		sessionID := uuid.NewString()
@@ -334,7 +443,8 @@ func (m *RootModel) Run() error {
 	}
 
 	// Create executors from registry.
-	ptyRows := m.ptyRowsForHeight(m.height)
+	frame := layout.ComputeFrame(m.width, m.height, m.lrMarginSupported)
+	ptyRows := layout.PtyRowsForFrame(frame)
 	termWriter := &lockedWriter{mu: &m.termMu, w: os.Stdout}
 
 	for _, harnessType := range m.supportedHarnesses {
@@ -347,7 +457,7 @@ func (m *RootModel) Run() error {
 
 		setupOpts := SetupOptions{
 			TermWriter:     termWriter,
-			TermWidth:      m.width,
+			TermWidth:      frame.PaneWidth,
 			TermHeight:     ptyRows,
 			SignalDir:      m.signalDir,
 			RunnerConfig:   m.runnerConfig,
@@ -548,18 +658,9 @@ func (m *RootModel) isHarnessSupported(harnessType string) bool {
 
 // setupScreen initializes the terminal with scroll region.
 func (m *RootModel) setupScreen() {
-	// Clear screen
-	m.termWriteString(escClearScreen)
-
-	// Draw initial status bar
+	frame := layout.ComputeFrame(m.width, m.height, m.lrMarginSupported)
+	m.termWriteString(layout.SetupSequence(frame, m.lrMarginSupported))
 	m.drawStatusBar()
-
-	// Set scroll region (line StatusBarHeight+1 to bottom)
-	scrollStart := StatusBarHeight + 1
-	m.termPrintf(escSetScrollRgn, scrollStart, m.height)
-
-	// Move cursor to scroll region
-	m.termPrintf(escMoveTo, scrollStart, 1)
 }
 
 func (m *RootModel) shouldCaptureTranscript() bool {
@@ -634,25 +735,31 @@ func (m *RootModel) popCopyEscPending() bool {
 }
 
 func clampTerminalSize(width, height int) (clampedWidth, clampedHeight int) {
-	if width < 20 {
-		width = 20
-	}
-
-	minHeight := StatusBarHeight + 1
-	if height < minHeight {
-		height = minHeight
-	}
-
-	return width, height
+	return layout.ClampTerminalSize(width, height)
 }
 
 func (m *RootModel) ptyRowsForHeight(height int) int {
-	rows := height - StatusBarHeight
-	if rows < 1 {
-		return 1
+	return layout.PtyRowsForHeight(height)
+}
+
+func supportsLRMargins(termName string) bool {
+	t := strings.ToLower(strings.TrimSpace(termName))
+	if t == "" || t == "dumb" {
+		return false
 	}
 
-	return rows
+	switch {
+	case strings.Contains(t, "xterm"),
+		strings.Contains(t, "screen"),
+		strings.Contains(t, "tmux"),
+		strings.Contains(t, "wezterm"),
+		strings.Contains(t, "kitty"),
+		strings.Contains(t, "ghostty"),
+		strings.Contains(t, "alacritty"):
+		return true
+	default:
+		return false
+	}
 }
 
 func (m *RootModel) readTerminalSize() (width, height int, err error) {
@@ -710,23 +817,60 @@ func (m *RootModel) handleResize(width, height int) {
 		return
 	}
 
+	oldFrame := layout.ComputeFrame(m.width, m.height, m.lrMarginSupported)
 	m.width = width
 	m.height = height
-	scrollStart := StatusBarHeight + 1
-	_, _ = fmt.Fprintf(os.Stdout, escSetScrollRgn, scrollStart, m.height)
-	_, _ = fmt.Fprintf(os.Stdout, escMoveTo, scrollStart, 1)
+	newFrame := layout.ComputeFrame(m.width, m.height, m.lrMarginSupported)
+	_, _ = fmt.Fprint(os.Stdout, layout.ResizeSequence(newFrame, m.lrMarginSupported))
 	m.termMu.Unlock()
 
-	rows := m.ptyRowsForHeight(height)
+	if oldFrame.SidebarVisible && !newFrame.SidebarVisible {
+		m.clearSidebarArea(oldFrame.SidebarWidth+1, height)
+	} else if oldFrame.SidebarVisible && newFrame.SidebarVisible && oldFrame.SidebarWidth != newFrame.SidebarWidth {
+		clearWidth := oldFrame.SidebarWidth
+		if newFrame.SidebarWidth > clearWidth {
+			clearWidth = newFrame.SidebarWidth
+		}
+
+		m.clearSidebarArea(clearWidth+1, height)
+	}
+
+	rows := layout.PtyRowsForFrame(newFrame)
 
 	// Resize all Resizable executors.
 	for _, executor := range m.executors {
 		if r, ok := executor.(Resizable); ok {
-			r.Resize(rows, width)
+			r.Resize(rows, newFrame.PaneWidth)
 		}
 	}
 
 	m.drawStatusBar()
+}
+
+func (m *RootModel) clearSidebarArea(columns, height int) {
+	if columns <= 0 {
+		return
+	}
+
+	if columns > m.width {
+		columns = m.width
+	}
+
+	rows := height - layout.TopBarHeight
+	if rows < 1 {
+		return
+	}
+
+	var b strings.Builder
+
+	blank := strings.Repeat(" ", columns)
+
+	for i := 0; i < rows; i++ {
+		b.WriteString(ansi.Move(layout.TopBarHeight+1+i, 1))
+		b.WriteString(blank)
+	}
+
+	m.termWriteString(b.String())
 }
 
 // copyInput copies stdin to active executor with quit key handling.
@@ -904,9 +1048,6 @@ func (m *RootModel) jobManagerLoop() {
 	m.statusMu.Unlock()
 
 	pollInterval := m.cfg.PollInterval()
-	if pollInterval <= 0 {
-		pollInterval = config.DefaultPollInterval
-	}
 
 	for {
 		select {
@@ -926,7 +1067,7 @@ func (m *RootModel) jobManagerLoop() {
 		}
 
 		// Poll for a job.
-		job, err := m.client.ClaimJob(m.ctx, m.habitatID, m.queueID, pollInterval)
+		job, err := m.client.ClaimJob(m.ctx, m.habitatID, m.queueID, int(pollInterval.Seconds()))
 		if err != nil {
 			if m.ctx.Err() != nil {
 				return // Context canceled
@@ -944,6 +1085,13 @@ func (m *RootModel) jobManagerLoop() {
 
 		// Map execution.harnessType to local harness selection.
 		harnessType := job.GetHarnessType()
+		if harnessType == "" {
+			m.setLastError("Missing harness type in job execution config")
+			m.releaseJob(m.ctx, job)
+
+			continue
+		}
+
 		if !m.isHarnessSupported(harnessType) {
 			errMsg := fmt.Sprintf("Unsupported harness type: %s", harnessType)
 			m.setLastError(errMsg)
@@ -1069,11 +1217,8 @@ func (m *RootModel) processJob(job *client.Job) {
 // heartbeatLoop sends periodic heartbeats for the current job.
 func (m *RootModel) heartbeatLoop(ctx context.Context, jobID string) {
 	interval := m.cfg.HeartbeatInterval()
-	if interval <= 0 {
-		interval = config.DefaultHeartbeatInterval
-	}
 
-	ticker := time.NewTicker(time.Duration(interval) * time.Second)
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
 	for {
@@ -1270,16 +1415,17 @@ func sameStringSlice(expected, compared []string) bool {
 // restore restores the terminal to its original state.
 func (m *RootModel) restore() {
 	// Reset scroll region
-	m.termWriteString(escResetScroll)
+	m.termWriteString(ansi.ResetScroll)
+	m.termWriteString(ansi.DisableLRMode)
 
 	// Show cursor
-	m.termWriteString(escShowCursor)
+	m.termWriteString(ansi.ShowCursor)
 
 	// Reset colors
-	m.termWriteString(escReset)
+	m.termWriteString(ansi.Reset)
 
 	// Move cursor to bottom
-	m.termPrintf(escMoveTo, m.height, 1)
+	m.termWriteString(ansi.Move(m.height, 1))
 	m.termWriteString("\n")
 
 	// Restore terminal state

@@ -7,8 +7,8 @@ import (
 )
 
 func TestNewLogger_DefaultFileFallbackForInteractiveAuto(t *testing.T) {
-	cfgRoot := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", cfgRoot)
+	stateRoot := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", stateRoot)
 
 	cfg := &Config{
 		Level:          "info",
@@ -35,7 +35,7 @@ func TestNewLogger_DefaultFileFallbackForInteractiveAuto(t *testing.T) {
 		}
 	}
 
-	logPath := filepath.Join(cfgRoot, "mush", "logs", "mush.log")
+	logPath := filepath.Join(stateRoot, "mush", "logs", "mush.log")
 
 	data, err := os.ReadFile(logPath)
 	if err != nil {

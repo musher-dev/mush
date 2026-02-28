@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"testing"
+	"time"
 )
 
 // unsetEnvForTest unsets an environment variable and registers cleanup to
@@ -44,14 +45,14 @@ func TestLoad_Defaults(t *testing.T) {
 			accessor: func(c *Config) interface{} {
 				return c.PollInterval()
 			},
-			want: DefaultPollInterval,
+			want: 30 * time.Second,
 		},
 		{
 			name: "default heartbeat interval",
 			accessor: func(c *Config) interface{} {
 				return c.HeartbeatInterval()
 			},
-			want: DefaultHeartbeatInterval,
+			want: 30 * time.Second,
 		},
 	}
 
@@ -207,7 +208,7 @@ func TestConfig_APIURL(t *testing.T) {
 	}
 }
 
-func runIntConfigCase(t *testing.T, envKey, envValue string, getter func(*Config) int) int {
+func runDurationConfigCase(t *testing.T, envKey, envValue string, getter func(*Config) time.Duration) time.Duration {
 	t.Helper()
 
 	tmpDir := t.TempDir()
@@ -228,28 +229,33 @@ func TestConfig_PollInterval(t *testing.T) {
 	tests := []struct {
 		name   string
 		envVal string
-		want   int
+		want   time.Duration
 	}{
 		{
 			name:   "default",
 			envVal: "",
-			want:   DefaultPollInterval,
+			want:   30 * time.Second,
 		},
 		{
-			name:   "from env",
-			envVal: "45",
-			want:   45,
+			name:   "duration string from env",
+			envVal: "45s",
+			want:   45 * time.Second,
+		},
+		{
+			name:   "bare integer from env (backward compat)",
+			envVal: "60",
+			want:   60 * time.Second,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := runIntConfigCase(t, "MUSH_WORKER_POLL_INTERVAL", tt.envVal, func(cfg *Config) int {
+			got := runDurationConfigCase(t, "MUSH_WORKER_POLL_INTERVAL", tt.envVal, func(cfg *Config) time.Duration {
 				return cfg.PollInterval()
 			})
 
 			if got != tt.want {
-				t.Errorf("PollInterval() = %d, want %d", got, tt.want)
+				t.Errorf("PollInterval() = %v, want %v", got, tt.want)
 			}
 		})
 	}
@@ -259,28 +265,33 @@ func TestConfig_HeartbeatInterval(t *testing.T) {
 	tests := []struct {
 		name   string
 		envVal string
-		want   int
+		want   time.Duration
 	}{
 		{
 			name:   "default",
 			envVal: "",
-			want:   DefaultHeartbeatInterval,
+			want:   30 * time.Second,
 		},
 		{
-			name:   "from env",
-			envVal: "20",
-			want:   20,
+			name:   "duration string from env",
+			envVal: "20s",
+			want:   20 * time.Second,
+		},
+		{
+			name:   "bare integer from env (backward compat)",
+			envVal: "15",
+			want:   15 * time.Second,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := runIntConfigCase(t, "MUSH_WORKER_HEARTBEAT_INTERVAL", tt.envVal, func(cfg *Config) int {
+			got := runDurationConfigCase(t, "MUSH_WORKER_HEARTBEAT_INTERVAL", tt.envVal, func(cfg *Config) time.Duration {
 				return cfg.HeartbeatInterval()
 			})
 
 			if got != tt.want {
-				t.Errorf("HeartbeatInterval() = %d, want %d", got, tt.want)
+				t.Errorf("HeartbeatInterval() = %v, want %v", got, tt.want)
 			}
 		})
 	}

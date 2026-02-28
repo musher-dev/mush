@@ -3,8 +3,10 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -113,6 +115,7 @@ func newRootCmd() *cobra.Command {
 		logFormat  string
 		logFile    string
 		logStderr  string
+		apiURL     string
 	)
 
 	out := output.Default()
@@ -132,10 +135,40 @@ Get started:
   mush auth login       Authenticate with your API key
   mush habitat list     View available habitats
   mush worker start     Start the worker and process jobs
-  mush doctor           Diagnose common issues`,
+  mush doctor           Diagnose common issues
+
+Global API endpoint override:
+  mush --api-url https://api.staging.musher.dev worker start --dry-run
+  mush --api-url http://localhost:8080 doctor
+
+API key note:
+  --api-key is command-scoped on 'mush auth login'
+  Prefer MUSH_API_KEY for non-interactive auth`,
+		Example: `  mush init
+  mush worker start
+  mush --api-url https://api.staging.musher.dev worker start --dry-run`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			if strings.TrimSpace(apiURL) != "" {
+				validatedURL, err := validateAPIURL(apiURL)
+				if err != nil {
+					return &clierrors.CLIError{
+						Message: fmt.Sprintf("Invalid API URL: %v", err),
+						Hint:    "Use --api-url with a valid absolute URL, e.g. https://api.musher.dev",
+						Code:    clierrors.ExitUsage,
+					}
+				}
+
+				if setErr := os.Setenv("MUSH_API_URL", validatedURL); setErr != nil {
+					return &clierrors.CLIError{
+						Message: fmt.Sprintf("Failed to apply API URL override: %v", setErr),
+						Hint:    "Check your shell environment and try again",
+						Code:    clierrors.ExitUsage,
+					}
+				}
+			}
+
 			// Configure output based on flags + env vars
 			out.JSON = pickBoolFlagOrEnv(jsonOutput, "MUSH_JSON")
 			out.Quiet = pickBoolFlagOrEnv(quiet, "MUSH_QUIET")
@@ -232,6 +265,7 @@ Get started:
 	rootCmd.PersistentFlags().StringVar(&logFormat, "log-format", "", "Log format: json, text")
 	rootCmd.PersistentFlags().StringVar(&logFile, "log-file", "", "Optional structured log file path")
 	rootCmd.PersistentFlags().StringVar(&logStderr, "log-stderr", "", "Structured logging to stderr: auto, on, off")
+	rootCmd.PersistentFlags().StringVar(&apiURL, "api-url", "", "Override Musher API URL for this command")
 
 	// Enable typo suggestions for unknown commands
 	rootCmd.SuggestionsMinimumDistance = 2
@@ -259,6 +293,7 @@ Get started:
 	rootCmd.AddCommand(newInitCmd())
 	rootCmd.AddCommand(newDoctorCmd())
 	rootCmd.AddCommand(newUpdateCmd())
+	rootCmd.AddCommand(newPathsCmd())
 	rootCmd.AddCommand(newVersionCmd())
 	rootCmd.AddCommand(newCompletionCmd())
 
@@ -307,6 +342,28 @@ func pickFlagOrEnv(flagValue, envKey, fallback string) string {
 	}
 
 	return fallback
+}
+
+func validateAPIURL(raw string) (string, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return "", errors.New("value cannot be empty") //nolint:rawerror // validation helper
+	}
+
+	parsed, err := url.Parse(trimmed)
+	if err != nil {
+		return "", fmt.Errorf("parse URL: %w", err) //nolint:rawerror // wraps stdlib error
+	}
+
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return "", errors.New("scheme must be http or https") //nolint:rawerror // validation helper
+	}
+
+	if parsed.Host == "" {
+		return "", errors.New("host is required") //nolint:rawerror // validation helper
+	}
+
+	return parsed.String(), nil
 }
 
 func isInteractiveCommand(path string) bool {

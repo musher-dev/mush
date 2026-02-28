@@ -38,20 +38,7 @@ func TestStoreAppendReadAndList(t *testing.T) {
 		t.Fatalf("SnapshotLines = %#v, want [b c d]", lines)
 	}
 
-	err = s.Close()
-	if err != nil {
-		t.Fatalf("Close() error = %v", err)
-	}
-
-	evs, err := ReadEvents(tmp, "s-1")
-	if err != nil {
-		t.Fatalf("ReadEvents() error = %v", err)
-	}
-
-	if len(evs) != 2 {
-		t.Fatalf("ReadEvents len = %d, want 2", len(evs))
-	}
-
+	// Read live events BEFORE close (live file is removed after close).
 	live, nextOffset, err := ReadLiveEventsFrom(tmp, "s-1", 0)
 	if err != nil {
 		t.Fatalf("ReadLiveEventsFrom() error = %v", err)
@@ -63,6 +50,30 @@ func TestStoreAppendReadAndList(t *testing.T) {
 
 	if nextOffset <= 0 {
 		t.Fatalf("ReadLiveEventsFrom nextOffset = %d, want > 0", nextOffset)
+	}
+
+	err = s.Close()
+	if err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+
+	// After close, live file is removed — ReadLiveEventsFrom returns empty.
+	liveAfter, _, err := ReadLiveEventsFrom(tmp, "s-1", 0)
+	if err != nil {
+		t.Fatalf("ReadLiveEventsFrom after close error = %v", err)
+	}
+
+	if len(liveAfter) != 0 {
+		t.Fatalf("ReadLiveEventsFrom after close len = %d, want 0", len(liveAfter))
+	}
+
+	evs, err := ReadEvents(tmp, "s-1")
+	if err != nil {
+		t.Fatalf("ReadEvents() error = %v", err)
+	}
+
+	if len(evs) != 2 {
+		t.Fatalf("ReadEvents len = %d, want 2", len(evs))
 	}
 
 	list, err := ListSessions(tmp)
@@ -120,9 +131,14 @@ func TestPruneOlderThan(t *testing.T) {
 		t.Fatalf("PruneOlderThan removed = %d, want 2", removed)
 	}
 
-	if _, err = ReadEvents(tmp, "old"); err == nil {
-		// best effort sanity: folder should be gone.
-		t.Fatalf("expected old session to be removed")
+	// best effort sanity: folder should be gone — no events returned.
+	evs, err := ReadEvents(tmp, "old")
+	if err != nil {
+		t.Fatalf("ReadEvents old after prune error = %v", err)
+	}
+
+	if len(evs) != 0 {
+		t.Fatalf("ReadEvents old after prune len = %d, want 0", len(evs))
 	}
 }
 
@@ -209,5 +225,92 @@ func TestReadLiveEventsFromMissingFileReturnsEmpty(t *testing.T) {
 
 	if offset != 0 {
 		t.Fatalf("offset = %d, want 0", offset)
+	}
+}
+
+func TestReadEventsFromCrashedSession(t *testing.T) {
+	tmp := t.TempDir()
+
+	s, err := NewStore(StoreOptions{SessionID: "crashed", Dir: tmp})
+	if err != nil {
+		t.Fatalf("NewStore() error = %v", err)
+	}
+
+	err = s.Append("pty", []byte("hello\n"))
+	if err != nil {
+		t.Fatalf("Append() error = %v", err)
+	}
+
+	err = s.Append("pty", []byte("world\n"))
+	if err != nil {
+		t.Fatalf("Append() error = %v", err)
+	}
+
+	// Simulate crash: flush live writer but do NOT call Close().
+	// This leaves events.live.jsonl but no events.jsonl.gz.
+	s.mu.Lock()
+	_ = s.liveBW.Flush()
+	_ = s.liveFile.Close()
+	s.mu.Unlock()
+
+	// ReadEvents should fall back to the live file.
+	evs, err := ReadEvents(tmp, "crashed")
+	if err != nil {
+		t.Fatalf("ReadEvents() error = %v", err)
+	}
+
+	if len(evs) != 2 {
+		t.Fatalf("ReadEvents len = %d, want 2", len(evs))
+	}
+
+	if evs[0].Text != "hello\n" {
+		t.Fatalf("evs[0].Text = %q, want %q", evs[0].Text, "hello\n")
+	}
+}
+
+func TestCloseCompressesAndRemovesLiveFile(t *testing.T) {
+	tmp := t.TempDir()
+
+	s, err := NewStore(StoreOptions{SessionID: "compress", Dir: tmp})
+	if err != nil {
+		t.Fatalf("NewStore() error = %v", err)
+	}
+
+	err = s.Append("pty", []byte("data\n"))
+	if err != nil {
+		t.Fatalf("Append() error = %v", err)
+	}
+
+	err = s.Close()
+	if err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+
+	sessionDir := filepath.Join(tmp, "compress")
+
+	// events.jsonl.gz should exist.
+	gzPath := filepath.Join(sessionDir, "events.jsonl.gz")
+	if _, statErr := os.Stat(gzPath); statErr != nil {
+		t.Fatalf("events.jsonl.gz missing after close: %v", statErr)
+	}
+
+	// events.live.jsonl should NOT exist.
+	livePath := filepath.Join(sessionDir, "events.live.jsonl")
+	if _, statErr := os.Stat(livePath); !os.IsNotExist(statErr) {
+		t.Fatalf("events.live.jsonl still exists after close (err=%v)", statErr)
+	}
+
+	// ReadEvents should work from the compressed file.
+	evs, err := ReadEvents(tmp, "compress")
+	if err != nil {
+		t.Fatalf("ReadEvents() error = %v", err)
+	}
+
+	if len(evs) != 1 {
+		t.Fatalf("ReadEvents len = %d, want 1", len(evs))
+	}
+
+	if evs[0].Text != "data\n" {
+		t.Fatalf("evs[0].Text = %q, want %q", evs[0].Text, "data\n")
 	}
 }

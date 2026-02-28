@@ -1,3 +1,3 @@
 api = map[url:https://api.musher.dev]
-history = map[dir:/tmp/mush-history enabled:true lines:10000 retention:720h0m0s]
-worker = map[heartbeat_interval:30 poll_interval:30]
+history = map[dir:/tmp/mush-history enabled:true retention:720h0m0s scrollback_lines:10000]
+worker = map[heartbeat_interval:30s poll_interval:30s]
