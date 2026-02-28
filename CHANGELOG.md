@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.1.0](https://github.com/musher-dev/mush/compare/v3.0.0...v3.1.0) (2026-02-28)
+
+
+### Features
+
+* **cli:** improve root help text with grouped commands and global --api-key flag ([#68](https://github.com/musher-dev/mush/issues/68)) ([1240a18](https://github.com/musher-dev/mush/commit/1240a18f48ea96233c71e0be8cba1829c2d7a49b))
+
 ## [3.0.0](https://github.com/musher-dev/mush/compare/v2.8.3...v3.0.0) (2026-02-26)
 
 
