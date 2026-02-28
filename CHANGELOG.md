@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.2.0](https://github.com/musher-dev/mush/compare/v3.1.0...v3.2.0) (2026-02-28)
+
+
+### Features
+
+* **harness:** improve scroll-region rendering, ANSI parsing, and terminal resilience ([#70](https://github.com/musher-dev/mush/issues/70)) ([0271b1d](https://github.com/musher-dev/mush/commit/0271b1d4579ec83245d8aba434312a7572de3eab))
+
 ## [3.1.0](https://github.com/musher-dev/mush/compare/v3.0.0...v3.1.0) (2026-02-28)
 
 
