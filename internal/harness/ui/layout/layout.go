@@ -101,6 +101,8 @@ func SetupSequence(frame Frame, useLRMargins bool) string {
 func ResizeSequence(frame Frame, useLRMargins bool) string {
 	seq := ansi.DisableLRMode
 	if useLRMargins && frame.SidebarVisible {
+		// DECSLRM moves the cursor to (1,1) and resets pending wrap state (per VT510 spec).
+		// The explicit Move() at the end of this sequence neutralizes that side effect.
 		seq = ansi.EnableLRMode + ansi.LRMargins(frame.PaneXStart, frame.Width)
 	}
 

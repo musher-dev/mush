@@ -5,7 +5,8 @@ import (
 	"sort"
 	"strings"
 	"time"
-	"unicode/utf8"
+
+	"github.com/mattn/go-runewidth"
 
 	"github.com/musher-dev/mush/internal/harness/state"
 	"github.com/musher-dev/mush/internal/tui/ansi"
@@ -36,19 +37,27 @@ func Render(s *state.Snapshot) string {
 	return b.String()
 }
 
+const (
+	barBG    = "\x1b[48;5;236m"              // bar background
+	barFG    = "\x1b[38;5;252m"              // bar foreground
+	barReset = "\x1b[22;39m" + barBG + barFG // clear bold, reset FG, re-apply BG+FG
+)
+
 func topBarLine(s *state.Snapshot) string {
+	sep := " \x1b[90m|" + barReset + " "
+
 	parts := []string{
-		"\x1b[1mMUSH\x1b[0m",
+		"\x1b[1mMUSH" + barReset,
 		fmt.Sprintf("Status: %s", styleStatus(s.StatusLabel)),
 	}
 	if s.CopyMode {
-		parts = append(parts, "Mode: \x1b[33mCOPY\x1b[0m")
+		parts = append(parts, "Mode: \x1b[33mCOPY"+barReset)
 	} else {
-		parts = append(parts, "Mode: \x1b[32mLIVE\x1b[0m")
+		parts = append(parts, "Mode: \x1b[32mLIVE"+barReset)
 	}
 
-	line := strings.Join(parts, " \x1b[90m|\x1b[0m ")
-	line = "\x1b[48;5;236m\x1b[38;5;252m " + line
+	line := strings.Join(parts, sep)
+	line = barBG + barFG + " " + line
 	line = render.PadRightVisible(line, s.Width-1)
 
 	return line + " \x1b[0m"
@@ -145,8 +154,8 @@ func sidebarLines(s *state.Snapshot, rows int) []string {
 
 	if s.LastError != "" && s.Now.Sub(s.LastErrorTime) < 30*time.Second {
 		msg := s.LastError
-		if utf8.RuneCountInString(msg) > 30 {
-			msg = truncatePlain(msg, 27) + "..."
+		if runewidth.StringWidth(msg) > 30 {
+			msg = runewidth.Truncate(msg, 30, "...")
 		}
 
 		lines = append(lines, "  err: "+msg)
@@ -169,7 +178,7 @@ func sidebarRow(content string, sidebarWidth int) string {
 		maxContent = 0
 	}
 
-	content = truncatePlain(content, maxContent)
+	content = runewidth.Truncate(content, maxContent, "")
 
 	body := " " + content
 	body = render.PadRightVisible(body, sidebarWidth)
@@ -177,40 +186,18 @@ func sidebarRow(content string, sidebarWidth int) string {
 	return "\x1b[48;5;238m\x1b[38;5;252m" + body + "\x1b[48;5;236m\x1b[38;5;244m│\x1b[0m"
 }
 
-func truncatePlain(s string, maxRunes int) string {
-	if maxRunes <= 0 {
-		return ""
-	}
-
-	if utf8.RuneCountInString(s) <= maxRunes {
-		return s
-	}
-
-	out := make([]rune, 0, maxRunes)
-
-	for _, r := range s {
-		if len(out) >= maxRunes {
-			break
-		}
-
-		out = append(out, r)
-	}
-
-	return string(out)
-}
-
 func styleStatus(label string) string {
 	switch label {
 	case "Starting...":
-		return "\x1b[33m\x1b[1mStarting\x1b[0m"
+		return "\x1b[33m\x1b[1mStarting" + barReset
 	case "Ready":
-		return "\x1b[32m\x1b[1mReady\x1b[0m"
+		return "\x1b[32m\x1b[1mReady" + barReset
 	case "Connected":
-		return "\x1b[32m\x1b[1mConnected\x1b[0m"
+		return "\x1b[32m\x1b[1mConnected" + barReset
 	case "Processing":
-		return "\x1b[33m\x1b[1mProcessing\x1b[0m"
+		return "\x1b[33m\x1b[1mProcessing" + barReset
 	case "Error":
-		return "\x1b[31m\x1b[1mError\x1b[0m"
+		return "\x1b[31m\x1b[1mError" + barReset
 	default:
 		return label
 	}

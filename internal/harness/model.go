@@ -3,6 +3,7 @@
 package harness
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -10,13 +11,16 @@ import (
 	"os"
 	"os/signal"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
 	"github.com/creack/pty"
 	"github.com/google/uuid"
+	"golang.org/x/sys/unix"
 	"golang.org/x/term"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -80,6 +84,19 @@ const (
 const (
 	defaultCtrlCExitWindow     = 2 * time.Second
 	defaultPTYShutdownDeadline = 3 * time.Second
+	lrMarginProbeTimeout       = 250 * time.Millisecond
+	maxTermSeqTailBytes        = 16
+)
+
+type terminalEvent uint8
+
+const (
+	terminalEventReset terminalEvent = iota
+	terminalEventSoftReset
+	terminalEventScrollReset
+	terminalEventDisableLR
+	terminalEventAltEnter
+	terminalEventAltExit
 )
 
 // RootModel manages the harness state with scroll region approach.
@@ -161,24 +178,37 @@ type RootModel struct {
 
 	// Terminal capability flags.
 	lrMarginSupported bool
+	sidebarForcedOff  atomic.Bool
+	altScreenActive   atomic.Bool
+	termSeqTail       []byte
+	termSeqMu         sync.Mutex
+	sidebarDisableMu  sync.Mutex
 
 	// Time and lifecycle behavior knobs (defaulted in constructor; injectable in tests).
 	now                 func() time.Time
 	ctrlCExitWindow     time.Duration
 	ptyShutdownDeadline time.Duration
 	killProcess         func(int, syscall.Signal) error
+
+	// Ensures restore() is safe to call from both defer and signal handler.
+	restoreOnce sync.Once
 }
 
 type lockedWriter struct {
-	mu *sync.Mutex
-	w  io.Writer
+	mu      *sync.Mutex
+	w       io.Writer
+	onWrite func([]byte)
 }
 
 func (lw *lockedWriter) Write(p []byte) (int, error) {
 	lw.mu.Lock()
-	defer lw.mu.Unlock()
-
 	written, err := lw.w.Write(p)
+	lw.mu.Unlock()
+
+	if lw.onWrite != nil && len(p) > 0 {
+		lw.onWrite(p)
+	}
+
 	if err != nil {
 		return written, fmt.Errorf("write to locked writer: %w", err)
 	}
@@ -198,6 +228,12 @@ func (m *RootModel) termWriteString(s string) {
 }
 
 func (m *RootModel) statusSnapshot() harnessstate.Snapshot {
+	// Read terminal dimensions under termMu (where they are written).
+	m.termMu.Lock()
+	width := m.width
+	height := m.height
+	m.termMu.Unlock()
+
 	m.statusMu.Lock()
 	habitatID := m.habitatID
 	queueID := m.queueID
@@ -212,8 +248,6 @@ func (m *RootModel) statusSnapshot() harnessstate.Snapshot {
 	bundleVer := m.bundleVer
 	bundleSummary := m.bundleSummary
 	supportedHarnesses := append([]string(nil), m.supportedHarnesses...)
-	width := m.width
-	height := m.height
 	nowFn := m.now
 	m.statusMu.Unlock()
 
@@ -231,7 +265,7 @@ func (m *RootModel) statusSnapshot() harnessstate.Snapshot {
 
 	now := nowFn()
 
-	frame := layout.ComputeFrame(width, height, m.lrMarginSupported)
+	frame := layout.ComputeFrame(width, height, m.sidebarEnabled())
 
 	return harnessstate.Snapshot{
 		Width:              width,
@@ -315,6 +349,10 @@ func (m *RootModel) snapshotMCPServers(now time.Time) []harnessstate.MCPServerSt
 }
 
 func (m *RootModel) drawStatusBar() {
+	if m.altScreenActive.Load() {
+		return
+	}
+
 	snap := m.statusSnapshot()
 	m.termWriteString(statusui.Render(&snap))
 }
@@ -352,7 +390,6 @@ func NewRootModel(ctx context.Context, cfg *Config) *RootModel {
 		bundleVer:           cfg.BundleVer,
 		bundleDir:           cfg.BundleDir,
 		bundleSummary:       cfg.BundleSummary,
-		lrMarginSupported:   supportsLRMargins(os.Getenv("TERM")),
 		now:                 time.Now,
 		ctrlCExitWindow:     defaultCtrlCExitWindow,
 		ptyShutdownDeadline: defaultPTYShutdownDeadline,
@@ -390,6 +427,8 @@ func (m *RootModel) Run() error {
 
 	m.oldState = oldState
 	defer m.restore()
+
+	m.lrMarginSupported = m.detectLRMarginSupport()
 
 	// Clear screen and set up scroll region
 	m.setupScreen()
@@ -443,9 +482,13 @@ func (m *RootModel) Run() error {
 	}
 
 	// Create executors from registry.
-	frame := layout.ComputeFrame(m.width, m.height, m.lrMarginSupported)
+	frame := layout.ComputeFrame(m.width, m.height, m.sidebarEnabled())
 	ptyRows := layout.PtyRowsForFrame(frame)
-	termWriter := &lockedWriter{mu: &m.termMu, w: os.Stdout}
+	termWriter := &lockedWriter{
+		mu:      &m.termMu,
+		w:       os.Stdout,
+		onWrite: m.inspectTerminalControlSequences,
+	}
 
 	for _, harnessType := range m.supportedHarnesses {
 		info, ok := Lookup(harnessType)
@@ -590,7 +633,15 @@ func (m *RootModel) runWorkerMode() error {
 	<-m.done
 
 	m.cancel()
-	wg.Wait()
+
+	waitDone := make(chan struct{})
+
+	go func() { wg.Wait(); close(waitDone) }()
+
+	select {
+	case <-waitDone:
+	case <-time.After(m.ptyShutdownDeadline):
+	}
 
 	return nil
 }
@@ -640,7 +691,15 @@ func (m *RootModel) runBundleLoadMode() error {
 	<-m.done
 
 	m.cancel()
-	wg.Wait()
+
+	waitDone := make(chan struct{})
+
+	go func() { wg.Wait(); close(waitDone) }()
+
+	select {
+	case <-waitDone:
+	case <-time.After(m.ptyShutdownDeadline):
+	}
 
 	return nil
 }
@@ -658,8 +717,8 @@ func (m *RootModel) isHarnessSupported(harnessType string) bool {
 
 // setupScreen initializes the terminal with scroll region.
 func (m *RootModel) setupScreen() {
-	frame := layout.ComputeFrame(m.width, m.height, m.lrMarginSupported)
-	m.termWriteString(layout.SetupSequence(frame, m.lrMarginSupported))
+	frame := layout.ComputeFrame(m.width, m.height, m.sidebarEnabled())
+	m.termWriteString(layout.SetupSequence(frame, m.sidebarEnabled()))
 	m.drawStatusBar()
 }
 
@@ -742,6 +801,158 @@ func (m *RootModel) ptyRowsForHeight(height int) int {
 	return layout.PtyRowsForHeight(height)
 }
 
+func (m *RootModel) sidebarEnabled() bool {
+	return m.lrMarginSupported && !m.sidebarForcedOff.Load()
+}
+
+func (m *RootModel) detectLRMarginSupport() bool {
+	if !supportsLRMargins(os.Getenv("TERM")) {
+		return false
+	}
+
+	return probeLRMarginSupport(os.Stdin, os.Stdout, lrMarginProbeTimeout)
+}
+
+func probeLRMarginSupport(stdin, stdout *os.File, timeout time.Duration) bool {
+	if stdin == nil || stdout == nil {
+		return false
+	}
+
+	// Probe reads stdin in non-blocking mode for up to `timeout` (typically 250ms).
+	// Any keystrokes typed during this window will be consumed and discarded.
+	// This is acceptable because the probe runs once at startup before any executor
+	// is active, and the terminal is already in raw mode with no prompt shown.
+
+	// Save cursor, probe support and behavior, then restore state.
+	if _, err := stdout.WriteString("\x1b7"); err != nil {
+		return false
+	}
+
+	defer func() {
+		_, _ = stdout.WriteString("\x1b8\x1b[?69l")
+	}()
+
+	if _, err := stdout.WriteString("\x1b[?69$p\x1b[?69h\x1b[5;20s\x1b[1;20H\r\x1b[6n"); err != nil {
+		return false
+	}
+
+	stdinFd := int(stdin.Fd())
+
+	flags, err := unix.FcntlInt(uintptr(stdinFd), unix.F_GETFL, 0)
+	if err != nil {
+		return false
+	}
+
+	if err := unix.SetNonblock(stdinFd, true); err != nil {
+		return false
+	}
+
+	defer func() {
+		_ = unix.SetNonblock(stdinFd, flags&unix.O_NONBLOCK != 0)
+	}()
+
+	deadline := time.Now().Add(timeout)
+	accum := make([]byte, 0, 128)
+	readBuf := make([]byte, 256)
+	modeSupported := false
+	modeDecided := false
+
+	for time.Now().Before(deadline) {
+		n, readErr := stdin.Read(readBuf)
+		if n > 0 {
+			accum = append(accum, readBuf[:n]...)
+			if len(accum) > 512 {
+				accum = accum[len(accum)-512:]
+			}
+
+			if !modeDecided {
+				if supported, decided := parseDECRQM69Response(accum); decided {
+					modeSupported = supported
+					modeDecided = true
+
+					if !modeSupported {
+						return false
+					}
+				}
+			}
+
+			if col, ok := parseCPRColumn(accum); ok {
+				// Behavioral check: with margins set to 5..20, carriage return should
+				// land at the left margin (column 5), not absolute column 1.
+				return modeSupported && modeDecided && col == 5
+			}
+		}
+
+		if readErr != nil {
+			if errors.Is(readErr, unix.EAGAIN) || errors.Is(readErr, unix.EWOULDBLOCK) {
+				time.Sleep(10 * time.Millisecond)
+				continue
+			}
+
+			return false
+		}
+	}
+
+	return false
+}
+
+func parseDECRQM69Response(data []byte) (supported, decided bool) {
+	switch {
+	case bytes.Contains(data, []byte("?69;1$y")),
+		bytes.Contains(data, []byte("?69;2$y")),
+		bytes.Contains(data, []byte("?69;3$y")):
+		return true, true
+	case bytes.Contains(data, []byte("?69;0$y")),
+		bytes.Contains(data, []byte("?69;4$y")):
+		return false, true
+	default:
+		return false, false
+	}
+}
+
+func parseCPRColumn(data []byte) (col int, ok bool) {
+	// Parse the most recent CSI row;colR response.
+	for i := len(data) - 1; i >= 0; i-- {
+		if data[i] != 'R' {
+			continue
+		}
+
+		start := -1
+
+		for j := i - 1; j >= 0; j-- {
+			if data[j] == 0x1b && j+1 < len(data) && data[j+1] == '[' {
+				start = j
+				break
+			}
+
+			// Bound scan for safety.
+			if i-j > 20 {
+				break
+			}
+		}
+
+		if start == -1 || start+2 >= i {
+			continue
+		}
+
+		payload := string(data[start+2 : i]) // row;col
+
+		parts := strings.Split(payload, ";")
+		if len(parts) != 2 {
+			continue
+		}
+
+		c, err := strconv.Atoi(parts[1])
+		if err != nil {
+			continue
+		}
+
+		return c, true
+	}
+
+	return 0, false
+}
+
 func supportsLRMargins(termName string) bool {
 	t := strings.ToLower(strings.TrimSpace(termName))
 	if t == "" || t == "dumb" {
@@ -754,12 +965,170 @@ func supportsLRMargins(termName string) bool {
 		strings.Contains(t, "tmux"),
 		strings.Contains(t, "wezterm"),
 		strings.Contains(t, "kitty"),
-		strings.Contains(t, "ghostty"),
-		strings.Contains(t, "alacritty"):
+		strings.Contains(t, "ghostty"):
 		return true
 	default:
 		return false
 	}
+}
+
+func parseTerminalEvents(tail, chunk []byte) (events []terminalEvent, newTail []byte) {
+	combined := make([]byte, 0, len(tail)+len(chunk))
+	combined = append(combined, tail...)
+	combined = append(combined, chunk...)
+
+	i := 0
+
+	for i < len(combined) {
+		if combined[i] != 0x1b {
+			i++
+			continue
+		}
+
+		if i+1 >= len(combined) {
+			break
+		}
+
+		next := combined[i+1]
+		if next == 'c' {
+			events = append(events, terminalEventReset)
+			i += 2
+
+			continue
+		}
+
+		if next != '[' {
+			i += 2
+			continue
+		}
+
+		j := i + 2
+		for ; j < len(combined); j++ {
+			if combined[j] >= 0x40 && combined[j] <= 0x7e {
+				break
+			}
+		}
+
+		if j >= len(combined) {
+			break
+		}
+
+		params := string(combined[i+2 : j])
+		final := combined[j]
+
+		if ev, ok := terminalEventFromCSI(params, final); ok {
+			events = append(events, ev)
+		}
+
+		i = j + 1
+	}
+
+	rem := combined[i:]
+	if len(rem) > maxTermSeqTailBytes {
+		rem = rem[len(rem)-maxTermSeqTailBytes:]
+	}
+
+	newTail = make([]byte, len(rem))
+	copy(newTail, rem)
+
+	return events, newTail
+}
+
+func terminalEventFromCSI(params string, final byte) (terminalEvent, bool) {
+	switch {
+	case final == 'p' && params == "!":
+		return terminalEventSoftReset, true
+	case final == 'r' && params == "":
+		return terminalEventScrollReset, true
+	case final == 'l' && params == "?69":
+		return terminalEventDisableLR, true
+	case (final == 'h' || final == 'l') && strings.HasPrefix(params, "?"):
+		mode := strings.TrimPrefix(params, "?")
+		switch mode {
+		case "47", "1047", "1049":
+			if final == 'h' {
+				return terminalEventAltEnter, true
+			}
+
+			return terminalEventAltExit, true
+		}
+	}
+
+	return 0, false
+}
+
+func (m *RootModel) inspectTerminalControlSequences(p []byte) {
+	if len(p) == 0 {
+		return
+	}
+
+	m.termSeqMu.Lock()
+	events, tail := parseTerminalEvents(m.termSeqTail, p)
+	m.termSeqTail = tail
+	m.termSeqMu.Unlock()
+
+	for _, ev := range events {
+		m.handleTerminalEvent(ev)
+	}
+}
+
+func (m *RootModel) handleTerminalEvent(ev terminalEvent) {
+	switch ev {
+	case terminalEventAltEnter:
+		m.altScreenActive.Store(true)
+	case terminalEventAltExit:
+		wasActive := m.altScreenActive.Swap(false)
+		if wasActive {
+			m.restoreLayoutAfterAltScreen()
+		}
+	case terminalEventReset, terminalEventSoftReset, terminalEventScrollReset, terminalEventDisableLR:
+		m.disableSidebar()
+	}
+}
+
+func (m *RootModel) restoreLayoutAfterAltScreen() {
+	m.termMu.Lock()
+	frame := layout.ComputeFrame(m.width, m.height, m.sidebarEnabled())
+	_, _ = fmt.Fprint(os.Stdout, layout.ResizeSequence(frame, m.sidebarEnabled()))
+	m.termMu.Unlock()
+
+	m.drawStatusBar()
+}
+
+func (m *RootModel) disableSidebar() {
+	m.sidebarDisableMu.Lock()
+	if !m.sidebarEnabled() {
+		m.sidebarDisableMu.Unlock()
+		return
+	}
+
+	m.termMu.Lock()
+	termWidth := m.width
+	oldFrame := layout.ComputeFrame(m.width, m.height, m.sidebarEnabled())
+	m.sidebarForcedOff.Store(true)
+	newFrame := layout.ComputeFrame(m.width, m.height, m.sidebarEnabled())
+
+	if oldFrame.SidebarVisible {
+		_, _ = fmt.Fprint(os.Stdout, layout.ResizeSequence(newFrame, m.sidebarEnabled()))
+	}
+	m.termMu.Unlock()
+	m.sidebarDisableMu.Unlock()
+
+	if !oldFrame.SidebarVisible {
+		return
+	}
+
+	m.clearSidebarArea(oldFrame.SidebarWidth+1, oldFrame.Height, termWidth)
+
+	rows := layout.PtyRowsForFrame(newFrame)
+
+	for _, executor := range m.executors {
+		if r, ok := executor.(Resizable); ok {
+			r.Resize(rows, newFrame.PaneWidth)
+		}
+	}
+
+	m.drawStatusBar()
 }
 
 func (m *RootModel) readTerminalSize() (width, height int, err error) {
@@ -811,28 +1180,46 @@ func (m *RootModel) refreshTerminalSize() {
 func (m *RootModel) handleResize(width, height int) {
 	width, height = clampTerminalSize(width, height)
 
+	if m.altScreenActive.Load() {
+		m.termMu.Lock()
+		m.width = width
+		m.height = height
+		m.termMu.Unlock()
+
+		frame := layout.ComputeFrame(width, height, false)
+		rows := layout.PtyRowsForFrame(frame)
+
+		for _, executor := range m.executors {
+			if r, ok := executor.(Resizable); ok {
+				r.Resize(rows, frame.PaneWidth)
+			}
+		}
+
+		return
+	}
+
 	m.termMu.Lock()
 	if width == m.width && height == m.height {
 		m.termMu.Unlock()
 		return
 	}
 
-	oldFrame := layout.ComputeFrame(m.width, m.height, m.lrMarginSupported)
+	oldFrame := layout.ComputeFrame(m.width, m.height, m.sidebarEnabled())
 	m.width = width
 	m.height = height
-	newFrame := layout.ComputeFrame(m.width, m.height, m.lrMarginSupported)
-	_, _ = fmt.Fprint(os.Stdout, layout.ResizeSequence(newFrame, m.lrMarginSupported))
+	newFrame := layout.ComputeFrame(m.width, m.height, m.sidebarEnabled())
+	_, _ = fmt.Fprint(os.Stdout, layout.ResizeSequence(newFrame, m.sidebarEnabled()))
 	m.termMu.Unlock()
 
 	if oldFrame.SidebarVisible && !newFrame.SidebarVisible {
-		m.clearSidebarArea(oldFrame.SidebarWidth+1, height)
+		m.clearSidebarArea(oldFrame.SidebarWidth+1, height, width)
 	} else if oldFrame.SidebarVisible && newFrame.SidebarVisible && oldFrame.SidebarWidth != newFrame.SidebarWidth {
 		clearWidth := oldFrame.SidebarWidth
 		if newFrame.SidebarWidth > clearWidth {
 			clearWidth = newFrame.SidebarWidth
 		}
 
-		m.clearSidebarArea(clearWidth+1, height)
+		m.clearSidebarArea(clearWidth+1, height, width)
 	}
 
 	rows := layout.PtyRowsForFrame(newFrame)
@@ -847,13 +1234,13 @@ func (m *RootModel) handleResize(width, height int) {
 	m.drawStatusBar()
 }
 
-func (m *RootModel) clearSidebarArea(columns, height int) {
+func (m *RootModel) clearSidebarArea(columns, height, termWidth int) {
 	if columns <= 0 {
 		return
 	}
 
-	if columns > m.width {
-		columns = m.width
+	if columns > termWidth {
+		columns = termWidth
 	}
 
 	rows := height - layout.TopBarHeight
@@ -875,7 +1262,10 @@ func (m *RootModel) clearSidebarArea(columns, height int) {
 
 // copyInput copies stdin to active executor with quit key handling.
 // Uses Ctrl+Q (0x11) as quit key to avoid escape sequence ambiguity.
+// Uses unix.Poll with a 100ms timeout so that blocking stdin reads
+// can be interrupted when the context is canceled.
 func (m *RootModel) copyInput() {
+	stdinFD := int(os.Stdin.Fd())
 	buf := make([]byte, 256)
 
 	for {
@@ -883,6 +1273,24 @@ func (m *RootModel) copyInput() {
 		case <-m.ctx.Done():
 			return
 		default:
+		}
+
+		// Poll stdin with a short timeout so we can check ctx.Done()
+		// periodically. os.Stdin.Read blocks indefinitely and is not
+		// responsive to context cancellation (Go issue #7990).
+		fds := []unix.PollFd{{Fd: int32(stdinFD), Events: unix.POLLIN}}
+
+		n, err := unix.Poll(fds, 100) // 100ms timeout
+		if err != nil {
+			if errors.Is(err, unix.EINTR) {
+				continue
+			}
+
+			return
+		}
+
+		if n == 0 {
+			continue // timeout — loop back to check ctx
 		}
 
 		bytesRead, err := os.Stdin.Read(buf)
@@ -1025,7 +1433,7 @@ func (m *RootModel) hasActiveClaudeJob() bool {
 
 // updateStatusLoop periodically updates the status bar.
 func (m *RootModel) updateStatusLoop() {
-	ticker := time.NewTicker(time.Second)
+	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 
 	for {
@@ -1226,7 +1634,7 @@ func (m *RootModel) heartbeatLoop(ctx context.Context, jobID string) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			_, err := m.client.HeartbeatJob(m.ctx, jobID)
+			_, err := m.client.HeartbeatJob(ctx, jobID)
 			if err != nil {
 				m.setLastError(fmt.Sprintf("Heartbeat failed: %v", err))
 				continue
@@ -1413,25 +1821,19 @@ func sameStringSlice(expected, compared []string) bool {
 }
 
 // restore restores the terminal to its original state.
+// Safe to call multiple times (from both defer and signal handler).
 func (m *RootModel) restore() {
-	// Reset scroll region
-	m.termWriteString(ansi.ResetScroll)
-	m.termWriteString(ansi.DisableLRMode)
+	m.restoreOnce.Do(func() {
+		m.termMu.Lock()
+		h := m.height
+		seq := ansi.ResetScroll + ansi.DisableLRMode + ansi.ShowCursor + ansi.Reset + ansi.Move(h, 1) + "\n"
+		_, _ = os.Stdout.WriteString(seq)
+		m.termMu.Unlock()
 
-	// Show cursor
-	m.termWriteString(ansi.ShowCursor)
-
-	// Reset colors
-	m.termWriteString(ansi.Reset)
-
-	// Move cursor to bottom
-	m.termWriteString(ansi.Move(m.height, 1))
-	m.termWriteString("\n")
-
-	// Restore terminal state
-	if m.oldState != nil {
-		_ = term.Restore(int(os.Stdin.Fd()), m.oldState)
-	}
+		if m.oldState != nil {
+			_ = term.Restore(int(os.Stdin.Fd()), m.oldState)
+		}
+	})
 }
 
 func annotateStartPTYError(err error, binaryPath string) error {

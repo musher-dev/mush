@@ -388,6 +388,9 @@ func (e *ClaudeExecutor) startPTY(ctx context.Context) error {
 		"MUSH_SIGNAL_DIR="+e.signalDir,
 	)
 
+	// NOTE: cmd.Stdin/Stdout/Stderr must remain nil here.
+	// creack/pty.StartWithSize assigns the PTY tty to all three;
+	// pre-setting Stdin to a non-tty would break Setctty (fd 0 must be the tty).
 	startWithSize := e.startPTYWithSize
 	if startWithSize == nil {
 		startWithSize = pty.StartWithSize

@@ -210,6 +210,9 @@ func (e *CodexExecutor) startInteractive(ctx context.Context, opts *SetupOptions
 
 	cmd.Env = append(os.Environ(), "TERM=xterm-256color", "FORCE_COLOR=1")
 
+	// NOTE: cmd.Stdin/Stdout/Stderr must remain nil here.
+	// creack/pty.StartWithSize assigns the PTY tty to all three;
+	// pre-setting Stdin to a non-tty would break Setctty (fd 0 must be the tty).
 	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{
 		Rows: uint16(opts.TermHeight),
 		Cols: uint16(opts.TermWidth),

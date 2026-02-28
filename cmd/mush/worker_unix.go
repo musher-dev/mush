@@ -252,7 +252,7 @@ Press Ctrl+S to toggle copy mode (Esc to return to live input).`,
 			}
 
 			// Setup graceful shutdown.
-			ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
+			ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
 			defer stop()
 
 			out.Println()

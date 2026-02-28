@@ -1,30 +1,17 @@
 package render
 
-import "strings"
+import (
+	"strings"
 
-// VisibleLength returns the visible length of a string, excluding ANSI codes.
+	"github.com/mattn/go-runewidth"
+
+	"github.com/musher-dev/mush/internal/ansi"
+)
+
+// VisibleLength returns the visible cell width of a string, excluding ANSI
+// escape sequences and accounting for wide (CJK) and zero-width characters.
 func VisibleLength(value string) int {
-	length := 0
-	inEscape := false
-
-	for _, r := range value {
-		if r == '\x1b' {
-			inEscape = true
-			continue
-		}
-
-		if inEscape {
-			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
-				inEscape = false
-			}
-
-			continue
-		}
-
-		length++
-	}
-
-	return length
+	return runewidth.StringWidth(ansi.Strip(value))
 }
 
 // PadRightVisible appends spaces until the string reaches width visible cells.
