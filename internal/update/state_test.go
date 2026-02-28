@@ -13,6 +13,7 @@ func setTestHome(t *testing.T, dir string) {
 	t.Helper()
 	t.Setenv("HOME", dir)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, ".config"))
+	t.Setenv("XDG_STATE_HOME", filepath.Join(dir, ".local", "state"))
 
 	if runtime.GOOS == "windows" {
 		t.Setenv("USERPROFILE", dir)
@@ -54,7 +55,7 @@ func TestSaveAndLoadState(t *testing.T) {
 	}
 
 	// Verify the file exists
-	stateFile := filepath.Join(tmp, ".config", "mush", stateFileName)
+	stateFile := filepath.Join(tmp, ".local", "state", "mush", stateFileName)
 	if _, err := os.Stat(stateFile); os.IsNotExist(err) {
 		t.Fatal("state file was not created")
 	}
@@ -195,7 +196,7 @@ func TestLoadState_CorruptedFile(t *testing.T) {
 	tmp := t.TempDir()
 	setTestHome(t, tmp)
 
-	dir := filepath.Join(tmp, ".config", "mush")
+	dir := filepath.Join(tmp, ".local", "state", "mush")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}

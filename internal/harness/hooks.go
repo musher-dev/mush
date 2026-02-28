@@ -116,29 +116,19 @@ func installStopHook(signalDir string) (func() error, error) {
 	alreadyPresent := false
 
 	for _, item := range stopHooks {
-		// Normalize legacy hook entries:
-		// {"matcher":"*","command":"..."} -> {"hooks":[{"type":"command","command":"..."}]}
 		if item.Command != "" {
-			item = hookEntry{
-				Hooks: []hookCommand{
-					{
-						Type:    "command",
-						Command: item.Command,
-					},
-				},
-			}
-		} else {
-			// Stop hooks in current Claude schema do not require matcher.
-			// If matcher is malformed (e.g. object), drop it to avoid schema errors.
-			if item.Matcher != nil {
-				if _, isString := item.Matcher.(string); !isString {
-					item.Matcher = nil
-				}
-			}
+			return nil, fmt.Errorf("unsupported legacy Stop hook entry format: use hooks[] commands")
+		}
 
-			if item.Hooks == nil {
-				item.Hooks = []hookCommand{}
+		// Stop hooks in current Claude schema do not require matcher, but if present it must be a string.
+		if item.Matcher != nil {
+			if _, isString := item.Matcher.(string); !isString {
+				return nil, fmt.Errorf("invalid Stop hook matcher type: expected string")
 			}
+		}
+
+		if item.Hooks == nil {
+			item.Hooks = []hookCommand{}
 		}
 
 		for _, hook := range item.Hooks {
@@ -163,7 +153,7 @@ func installStopHook(signalDir string) (func() error, error) {
 
 	settings.Hooks["Stop"] = normalizedStopHooks
 
-	if mkdirErr := os.MkdirAll(filepath.Dir(settingsPath), 0o755); mkdirErr != nil { //nolint:gosec // G301: .claude dir needs 0o755 for compatibility
+	if mkdirErr := os.MkdirAll(filepath.Dir(settingsPath), 0o755); mkdirErr != nil { //nolint:gosec // G301: .claude dir needs 0o755
 		return nil, fmt.Errorf("failed to create .claude directory: %w", mkdirErr)
 	}
 

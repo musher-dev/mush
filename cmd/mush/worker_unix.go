@@ -193,10 +193,14 @@ Press Ctrl+S to toggle copy mode (Esc to return to live input).`,
 			}
 
 			queueID := queue.ID
+			bundleSummary := harness.BundleSummary{}
 
 			// Install bundle assets if --bundle flag is set.
 			if bundleRef != "" {
-				if bundleErr := resolveBundle(cmd.Context(), c, identity.WorkspaceID, bundleRef, supportedHarnesses, out); bundleErr != nil {
+				var bundleErr error
+
+				bundleSummary, bundleErr = resolveBundle(cmd.Context(), c, identity.WorkspaceID, bundleRef, supportedHarnesses, out)
+				if bundleErr != nil {
 					return bundleErr
 				}
 			}
@@ -253,7 +257,7 @@ Press Ctrl+S to toggle copy mode (Esc to return to live input).`,
 
 			out.Println()
 
-			err = runWatch(ctx, c, habitatID, queueID, supportedHarnesses, runnerConfig)
+			err = runWatch(ctx, c, habitatID, queueID, supportedHarnesses, runnerConfig, &bundleSummary)
 			if err != nil {
 				logger.Error("worker watch runtime failed", slog.String("event.type", "worker.error"), slog.String("error", err.Error()))
 				return err
@@ -285,6 +289,7 @@ func runWatch(
 	habitatID, queueID string,
 	supportedHarnesses []string,
 	runnerConfig *client.RunnerConfigResponse,
+	bundleSummary *harness.BundleSummary,
 ) error {
 	localCfg := config.Load()
 	cfg := &harness.Config{
@@ -295,7 +300,10 @@ func runWatch(
 		RunnerConfig:       runnerConfig,
 		TranscriptEnabled:  localCfg.HistoryEnabled(),
 		TranscriptDir:      localCfg.HistoryDir(),
-		TranscriptLines:    localCfg.HistoryLines(),
+		TranscriptLines:    localCfg.HistoryScrollbackLines(),
+		BundleName:         bundleSummary.Name,
+		BundleVer:          bundleSummary.Version,
+		BundleSummary:      *bundleSummary,
 	}
 
 	if err := harness.Run(ctx, cfg); err != nil {
@@ -327,7 +335,8 @@ func resolveBundle(
 	bundleFlag string,
 	supportedHarnesses []string,
 	out *output.Writer,
-) error {
+) (harness.BundleSummary, error) {
+	emptySummary := harness.BundleSummary{}
 	logger := observability.FromContext(ctx).With(
 		slog.String("component", "worker"),
 		slog.String("event.type", "worker.bundle"),
@@ -335,7 +344,7 @@ func resolveBundle(
 
 	ref, err := bundle.ParseRef(bundleFlag)
 	if err != nil {
-		return &clierrors.CLIError{
+		return emptySummary, &clierrors.CLIError{
 			Message: err.Error(),
 			Hint:    "Use format: <slug> or <slug>:<version>",
 			Code:    clierrors.ExitUsage,
@@ -346,7 +355,7 @@ func resolveBundle(
 
 	// Determine harness type for asset mapping — use first supported harness.
 	if len(supportedHarnesses) == 0 {
-		return &clierrors.CLIError{
+		return emptySummary, &clierrors.CLIError{
 			Message: "No supported harnesses available for bundle install",
 			Hint:    "Specify a harness with --harness or ensure at least one harness is available",
 			Code:    clierrors.ExitUsage,
@@ -357,7 +366,7 @@ func resolveBundle(
 
 	mapper := mapperForHarness(harnessType)
 	if mapper == nil {
-		return &clierrors.CLIError{
+		return emptySummary, &clierrors.CLIError{
 			Message: fmt.Sprintf("No asset mapper for harness type: %s", harnessType),
 			Hint:    "This harness type does not support bundle assets",
 			Code:    clierrors.ExitUsage,
@@ -373,7 +382,7 @@ func resolveBundle(
 		spin.StopWithFailure(fmt.Sprintf("Failed to pull bundle %s", ref.Slug))
 		logger.Error("bundle pull failed", slog.String("event.type", "worker.bundle.error"), slog.String("error", err.Error()))
 
-		return clierrors.Wrap(clierrors.ExitNetwork, "Failed to pull bundle", err).
+		return emptySummary, clierrors.Wrap(clierrors.ExitNetwork, "Failed to pull bundle", err).
 			WithHint("Check your network connection and bundle slug")
 	}
 
@@ -382,7 +391,7 @@ func resolveBundle(
 	// Install assets into the working directory.
 	workDir, err := os.Getwd()
 	if err != nil {
-		return clierrors.Wrap(clierrors.ExitGeneral, "Failed to get working directory", err)
+		return emptySummary, clierrors.Wrap(clierrors.ExitGeneral, "Failed to get working directory", err)
 	}
 
 	installedPaths, installErr := bundle.InstallFromCache(workDir, cachePath, &resolved.Manifest, mapper, true)
@@ -390,12 +399,12 @@ func resolveBundle(
 		var conflict *bundle.InstallConflictError
 		if errors.As(installErr, &conflict) {
 			logger.Warn("bundle install conflict", slog.String("event.type", "worker.bundle.conflict"), slog.String("error", installErr.Error()))
-			return clierrors.InstallConflict(conflict.Path)
+			return emptySummary, clierrors.InstallConflict(conflict.Path)
 		}
 
 		logger.Error("bundle install failed", slog.String("event.type", "worker.bundle.error"), slog.String("error", installErr.Error()))
 
-		return clierrors.Wrap(clierrors.ExitGeneral, "Failed to install bundle assets", installErr)
+		return emptySummary, clierrors.Wrap(clierrors.ExitGeneral, "Failed to install bundle assets", installErr)
 	}
 
 	for _, relPath := range installedPaths {
@@ -423,5 +432,9 @@ func resolveBundle(
 		slog.Int("bundle.asset_count", len(installedPaths)),
 	)
 
-	return nil
+	summary := harness.SummarizeBundleManifest(&resolved.Manifest)
+	summary.Name = ref.Slug
+	summary.Version = resolved.Version
+
+	return summary, nil
 }

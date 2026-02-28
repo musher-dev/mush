@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	stateFileName = "update-check"
+	stateFileName = "update-check.json"
 	checkInterval = 24 * time.Hour
 )
 

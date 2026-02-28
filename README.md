@@ -119,39 +119,34 @@ When running `mush worker start` in watch mode:
 
 Mush looks for configuration in this order (highest priority first):
 
-1. **Environment variables**
+1. **CLI flags** (`--api-url`, global)
+2. **Environment variables** (`MUSH_API_KEY`, `MUSH_API_URL`, `MUSH_*`)
+3. **OS Keyring** (credentials only)
+4. **Config file** (`<user config dir>/mush/config.yaml`)
+5. **Built-in defaults**
 
-   | Variable | Purpose |
-   |----------|---------|
-   | `MUSHER_API_KEY` | API key for authentication |
-   | `MUSH_API_URL` | Platform API URL override |
+```yaml
+api:
+  url: https://api.musher.dev
+worker:
+  poll_interval: 30
+  heartbeat_interval: 30
+```
 
-2. **OS Keyring** (credentials only)
+See [Configuration and Data Storage](docs/configuration.md) for all config keys, environment variables, file locations, credential storage details, and global flags.
 
-3. **Config file** (`<user config dir>/mush/config.yaml`)
+### Global flags
 
-   ```yaml
-   api:
-     url: https://api.musher.dev
-   worker:
-     poll_interval: 30
-     heartbeat_interval: 30
-   ```
+Use `--api-url` to override the platform API endpoint for a single command invocation:
 
-4. **Built-in defaults**
+```bash
+mush --api-url https://api.staging.musher.dev worker start --dry-run
+mush --api-url http://localhost:8080 doctor
+```
 
-### Global Flags
+`--api-url` takes precedence over `MUSH_API_URL` and `api.url` from config for that process.
 
-| Flag | Purpose |
-|------|---------|
-| `--json` | Output in JSON format |
-| `--quiet` | Minimal output (for CI) |
-| `--no-color` | Disable colored output |
-| `--no-input` | Disable interactive prompts |
-| `--log-level` | Structured log level (`error`, `warn`, `info`, `debug`) |
-| `--log-format` | Structured log format (`json`, `text`) |
-| `--log-file` | Optional log file path (JSONL/text append). If no sink is configured, Mush defaults to `<user config dir>/mush/logs/mush.log` |
-| `--log-stderr` | Structured stderr mode (`auto`, `on`, `off`) |
+`--api-key` is not a global flag. It is available as `mush auth login --api-key ...`, and `MUSH_API_KEY` is preferred for non-interactive usage.
 
 ## How It Works
 

@@ -279,7 +279,7 @@ func TestErrorMessages_Golden(t *testing.T) {
 		{"NotAuthenticated", NotAuthenticated()},
 		{"AuthFailed", AuthFailed(nil)},
 		{"CredentialsInvalid", CredentialsInvalid(nil)},
-		{"CannotPrompt", CannotPrompt("MUSHER_API_KEY")},
+		{"CannotPrompt", CannotPrompt("MUSH_API_KEY")},
 		{"HabitatNotFound", HabitatNotFound("prod-habitat")},
 		{"NoHabitats", NoHabitats()},
 		{"QueueNotFound", QueueNotFound("queue-123")},

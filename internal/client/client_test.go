@@ -104,10 +104,12 @@ func TestClientClaimJob(t *testing.T) {
 		statusCode int
 		body       string
 		wantJob    bool
+		wantErr    bool
 	}{
 		{name: "job available", statusCode: http.StatusOK, body: `{"job":{"id":"job-123","queueId":"queue-123","priority":"normal","status":"queued","attemptNumber":1,"maxAttempts":3}}`, wantJob: true},
 		{name: "no content", statusCode: http.StatusNoContent, body: "", wantJob: false},
-		{name: "null response", statusCode: http.StatusOK, body: "null", wantJob: false},
+		{name: "null response rejected", statusCode: http.StatusOK, body: "null", wantJob: false, wantErr: true},
+		{name: "empty body rejected", statusCode: http.StatusOK, body: "", wantJob: false, wantErr: true},
 	}
 
 	for _, tt := range tests {
@@ -125,8 +127,16 @@ func TestClientClaimJob(t *testing.T) {
 			})
 
 			job, err := c.ClaimJob(t.Context(), "habitat-123", "", 30)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("ClaimJob() error = nil, want error")
+				}
+
+				return
+			}
+
 			if err != nil {
-				t.Fatalf("ClaimJob() error = %v", err)
+				t.Fatalf("ClaimJob() unexpected error = %v", err)
 			}
 
 			if tt.wantJob && job == nil {
@@ -292,6 +302,11 @@ func TestJobFieldsAndHelpers(t *testing.T) {
 
 	if got := job.GetDisplayName(); got != "Fix bug" {
 		t.Fatalf("GetDisplayName = %q, want %q", got, "Fix bug")
+	}
+
+	job.Execution = nil
+	if got := job.GetHarnessType(); got != "" {
+		t.Fatalf("GetHarnessType() without execution = %q, want empty", got)
 	}
 }
 

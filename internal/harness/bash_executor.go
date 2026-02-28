@@ -157,6 +157,10 @@ func getBashCommandFromJob(job *client.Job) (string, error) {
 		return "", fmt.Errorf("job is nil")
 	}
 
+	if job.Execution == nil {
+		return "", fmt.Errorf("missing execution config for job")
+	}
+
 	if rendered := job.GetRenderedInstruction(); rendered != "" {
 		return rendered, nil
 	}
@@ -165,17 +169,7 @@ func getBashCommandFromJob(job *client.Job) (string, error) {
 		return "", fmt.Errorf("server execution error: %s", job.ExecutionError)
 	}
 
-	if job.InputData != nil {
-		if cmd, ok := job.InputData["command"].(string); ok && cmd != "" {
-			return cmd, nil
-		}
-
-		if script, ok := job.InputData["script"].(string); ok && script != "" {
-			return script, nil
-		}
-	}
-
-	return "", fmt.Errorf("no bash command found for job")
+	return "", fmt.Errorf("missing execution.renderedInstruction for job")
 }
 
 // Ensure BashExecutor satisfies the Executor interface.

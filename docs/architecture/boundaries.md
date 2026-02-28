@@ -37,6 +37,7 @@ This document defines the dependency boundaries for `mush` and how linting enfor
 - `internal/terminal`
 - `internal/paths`
 - `internal/ansi`
+- `internal/tui`
 - `internal/observability`
 - `internal/transcript`
 - `internal/testutil` *(test helpers only — must not be imported by production code)*

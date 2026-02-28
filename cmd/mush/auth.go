@@ -39,7 +39,7 @@ func newAuthLoginCmd() *cobra.Command {
 Your API key will be stored securely in your system's keyring
 (macOS Keychain, Windows Credential Manager, or Linux Secret Service).
 
-You can also set the MUSHER_API_KEY environment variable.`,
+You can also set the MUSH_API_KEY environment variable.`,
 		Example: `  mush auth login
   mush auth login --api-key sk-...`,
 		Args: noArgs,
@@ -48,8 +48,8 @@ You can also set the MUSHER_API_KEY environment variable.`,
 			prompter := prompt.New(out)
 
 			// Check if already authenticated via env var
-			if key := os.Getenv("MUSHER_API_KEY"); key != "" {
-				out.Info("MUSHER_API_KEY environment variable is set")
+			if key := os.Getenv("MUSH_API_KEY"); key != "" {
+				out.Info("MUSH_API_KEY environment variable is set")
 				out.Muted("Environment variable takes precedence over stored credentials")
 				out.Println()
 			}
@@ -60,7 +60,7 @@ You can also set the MUSHER_API_KEY environment variable.`,
 			} else {
 				// Interactive flow: prompt for API key
 				if !prompter.CanPrompt() {
-					return clierrors.CannotPrompt("MUSHER_API_KEY")
+					return clierrors.CannotPrompt("MUSH_API_KEY")
 				}
 
 				var err error
@@ -101,7 +101,7 @@ You can also set the MUSHER_API_KEY environment variable.`,
 		},
 	}
 
-	cmd.Flags().StringVar(&apiKeyFlag, "api-key", "", "API key for non-interactive login (prefer MUSHER_API_KEY env var to avoid shell history exposure)")
+	cmd.Flags().StringVar(&apiKeyFlag, "api-key", "", "API key for non-interactive login (prefer MUSH_API_KEY env var to avoid shell history exposure)")
 
 	return cmd
 }
@@ -166,7 +166,7 @@ func newAuthLogoutCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:     "logout",
 		Short:   "Clear stored credentials",
-		Long:    `Remove stored API credentials from the system keyring. Does not affect the MUSHER_API_KEY environment variable.`,
+		Long:    `Remove stored API credentials from the system keyring. Does not affect the MUSH_API_KEY environment variable.`,
 		Example: `  mush auth logout`,
 		Args:    noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -184,9 +184,9 @@ func newAuthLogoutCmd() *cobra.Command {
 
 			out.Success("Logged out successfully")
 
-			if os.Getenv("MUSHER_API_KEY") != "" {
+			if os.Getenv("MUSH_API_KEY") != "" {
 				out.Println()
-				out.Warning("MUSHER_API_KEY environment variable is still set")
+				out.Warning("MUSH_API_KEY environment variable is still set")
 			}
 
 			return nil

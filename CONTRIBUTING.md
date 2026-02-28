@@ -72,7 +72,7 @@ task run -- link --dry-run
 - **Commands**: Follow the noun-verb pattern (`mush <resource> <verb>`)
 - **Errors**: Return errors with context (`fmt.Errorf("context: %w", err)`), never panic
 
-See [CLAUDE.md](./CLAUDE.md) for detailed architecture and patterns.
+See [CLAUDE.md](./.claude/CLAUDE.md) for detailed architecture and patterns.
 
 ## Tooling and Task Policy
 

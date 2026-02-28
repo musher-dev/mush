@@ -7,11 +7,10 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
-func TestInstallStopHook_MigratesLegacyAndRestores(t *testing.T) {
+func TestInstallStopHook_RejectsLegacyEntryAndDoesNotMutate(t *testing.T) {
 	tmp := t.TempDir()
 
 	settingsPath := filepath.Join(tmp, ".claude", "settings.local.json")
@@ -35,9 +34,56 @@ func TestInstallStopHook_MigratesLegacyAndRestores(t *testing.T) {
 
 	t.Chdir(tmp)
 
-	restore, err := installStopHook("/tmp/mush-test-signals")
+	_, err := installStopHook("/tmp/mush-test-signals")
+	if err == nil {
+		t.Fatal("expected error for legacy Stop hook entry")
+	}
+
+	after, err := os.ReadFile(settingsPath)
 	if err != nil {
-		t.Fatalf("installStopHook failed: %v", err)
+		t.Fatalf("read settings failed: %v", err)
+	}
+
+	if !bytes.Equal(after, original) {
+		t.Fatalf("settings should remain unchanged on error")
+	}
+}
+
+func TestInstallStopHook_RejectsInvalidMatcherTypeAndDoesNotMutate(t *testing.T) {
+	tmp := t.TempDir()
+
+	settingsPath := filepath.Join(tmp, ".claude", "settings.local.json")
+	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o755); err != nil {
+		t.Fatalf("mkdir failed: %v", err)
+	}
+
+	original := map[string]interface{}{
+		"hooks": map[string]interface{}{
+			"Stop": []interface{}{
+				map[string]interface{}{
+					"matcher": map[string]interface{}{},
+					"hooks": []interface{}{
+						map[string]interface{}{"type": "command", "command": "echo ok"},
+					},
+				},
+			},
+		},
+	}
+
+	originalBytes, err := json.Marshal(original)
+	if err != nil {
+		t.Fatalf("marshal failed: %v", err)
+	}
+
+	if writeErr := os.WriteFile(settingsPath, originalBytes, 0o600); writeErr != nil {
+		t.Fatalf("write failed: %v", writeErr)
+	}
+
+	t.Chdir(tmp)
+
+	_, err = installStopHook("/tmp/mush-test-signals")
+	if err == nil {
+		t.Fatal("expected error for invalid matcher object type")
 	}
 
 	data, err := os.ReadFile(settingsPath)
@@ -45,49 +91,8 @@ func TestInstallStopHook_MigratesLegacyAndRestores(t *testing.T) {
 		t.Fatalf("read settings failed: %v", err)
 	}
 
-	var parsed map[string]interface{}
-
-	unmarshalErr := json.Unmarshal(data, &parsed)
-	if unmarshalErr != nil {
-		t.Fatalf("parse settings failed: %v", unmarshalErr)
-	}
-
-	hooks := parsed["hooks"].(map[string]interface{})
-	stop := hooks["Stop"].([]interface{})
-	foundMushCommand := false
-
-	for _, item := range stop {
-		entry := item.(map[string]interface{})
-		if _, ok := entry["hooks"].([]interface{}); !ok {
-			t.Fatalf("expected hooks array entry, got: %#v", entry)
-		}
-
-		for _, rawHook := range entry["hooks"].([]interface{}) {
-			hook := rawHook.(map[string]interface{})
-
-			cmd, _ := hook["command"].(string)
-			if strings.Contains(cmd, SignalFileName) {
-				foundMushCommand = true
-			}
-		}
-	}
-
-	if !foundMushCommand {
-		t.Fatalf("expected mush stop hook command to be present")
-	}
-
-	restoreErr := restore()
-	if restoreErr != nil {
-		t.Fatalf("restore failed: %v", restoreErr)
-	}
-
-	restored, err := os.ReadFile(settingsPath)
-	if err != nil {
-		t.Fatalf("read restored settings failed: %v", err)
-	}
-
-	if !bytes.Equal(restored, original) {
-		t.Fatalf("settings were not restored to original content")
+	if !bytes.Equal(data, originalBytes) {
+		t.Fatalf("settings should remain unchanged on error")
 	}
 }
 
@@ -100,12 +105,11 @@ func TestInstallStopHook_DoesNotDuplicateExistingMushHook(t *testing.T) {
 	}
 
 	mushCommand := `sh -c "if [ -n \"$MUSH_SIGNAL_DIR\" ]; then touch \"$MUSH_SIGNAL_DIR/` + SignalFileName + `\"; fi"`
-
 	seed := map[string]interface{}{
 		"hooks": map[string]interface{}{
 			"Stop": []interface{}{
 				map[string]interface{}{
-					"matcher": map[string]interface{}{},
+					"matcher": "*",
 					"hooks": []interface{}{
 						map[string]interface{}{
 							"type":    "command",
@@ -122,8 +126,7 @@ func TestInstallStopHook_DoesNotDuplicateExistingMushHook(t *testing.T) {
 		t.Fatalf("marshal failed: %v", err)
 	}
 
-	writeErr := os.WriteFile(settingsPath, seedBytes, 0o600)
-	if writeErr != nil {
+	if writeErr := os.WriteFile(settingsPath, seedBytes, 0o600); writeErr != nil {
 		t.Fatalf("write failed: %v", writeErr)
 	}
 
@@ -152,11 +155,6 @@ func TestInstallStopHook_DoesNotDuplicateExistingMushHook(t *testing.T) {
 
 	for _, item := range stop {
 		entry := item.(map[string]interface{})
-		if matcher, ok := entry["matcher"]; ok {
-			if _, isObject := matcher.(map[string]interface{}); isObject {
-				t.Fatalf("expected stop matcher object to be removed, got %#v", matcher)
-			}
-		}
 
 		rawHooks, _ := entry["hooks"].([]interface{})
 		for _, rawHook := range rawHooks {

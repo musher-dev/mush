@@ -220,6 +220,13 @@ into a temporary directory. The session is interactive — exit the harness
 				slog.Int("bundle.asset_count", len(resolved.Manifest.Layers)),
 			)
 
+			var runnerConfig *client.RunnerConfigResponse
+
+			runnerConfig, err = c.GetRunnerConfig(cmd.Context())
+			if err != nil {
+				out.Warning("Runner config unavailable, continuing without MCP provisioning: %v", err)
+			}
+
 			// Setup graceful shutdown.
 			ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
 			defer stop()
@@ -231,6 +238,8 @@ into a temporary directory. The session is interactive — exit the harness
 				BundleName:         ref.Slug,
 				BundleVer:          resolved.Version,
 				BundleDir:          tmpDir,
+				RunnerConfig:       runnerConfig,
+				BundleSummary:      harness.SummarizeBundleManifest(&resolved.Manifest),
 			}
 
 			if err := harness.Run(ctx, cfg); err != nil {

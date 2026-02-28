@@ -834,6 +834,10 @@ func getPromptFromJob(job *client.Job) (string, error) {
 		return "", fmt.Errorf("job is nil")
 	}
 
+	if job.Execution == nil {
+		return "", fmt.Errorf("missing execution config for job")
+	}
+
 	if rendered := job.GetRenderedInstruction(); rendered != "" {
 		return rendered, nil
 	}
@@ -842,25 +846,7 @@ func getPromptFromJob(job *client.Job) (string, error) {
 		return "", fmt.Errorf("server execution error: %s", job.ExecutionError)
 	}
 
-	if job.InputData != nil {
-		if instruction, ok := job.InputData["instruction"].(string); ok && instruction != "" {
-			return instruction, nil
-		}
-
-		if title, ok := job.InputData["title"].(string); ok && title != "" {
-			if desc, ok := job.InputData["description"].(string); ok && desc != "" {
-				return title + "\n\n" + desc, nil
-			}
-
-			return title, nil
-		}
-
-		if prompt, ok := job.InputData["prompt"].(string); ok && prompt != "" {
-			return prompt, nil
-		}
-	}
-
-	return "", fmt.Errorf("no prompt found for job")
+	return "", fmt.Errorf("missing execution.renderedInstruction for job")
 }
 
 // Ensure ClaudeExecutor satisfies all interfaces.

@@ -3,7 +3,6 @@ package client
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -48,7 +47,6 @@ func (c *Client) ClaimJob(ctx context.Context, habitatID, queueID string, waitTi
 		return nil, nil //nolint:nilnil // no job available is represented as nil job + nil error
 	}
 
-	// 200 with null body = no jobs available.
 	if resp.StatusCode == http.StatusOK {
 		respBody, err := io.ReadAll(resp.Body)
 		if err != nil {
@@ -56,12 +54,12 @@ func (c *Client) ClaimJob(ctx context.Context, habitatID, queueID string, waitTi
 		}
 
 		trimmed := bytes.TrimSpace(respBody)
-		if string(trimmed) == "null" || len(trimmed) == 0 {
-			return nil, nil //nolint:nilnil // no job available is represented as nil job + nil error
+		if len(trimmed) == 0 || string(trimmed) == "null" {
+			return nil, fmt.Errorf("failed to parse job: empty or null claim response body")
 		}
 
 		var response JobClaimResponse
-		if err := json.Unmarshal(respBody, &response); err != nil {
+		if err := decodeJSON(bytes.NewReader(respBody), &response, "failed to parse job"); err != nil {
 			return nil, fmt.Errorf("failed to parse job: %w", err)
 		}
 

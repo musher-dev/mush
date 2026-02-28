@@ -1,9 +1,9 @@
 // Package auth handles credential storage and retrieval for Mush.
 //
 // Credentials are sourced in the following priority order:
-//  1. Environment variable: MUSHER_API_KEY
+//  1. Environment variable: MUSH_API_KEY
 //  2. OS Keyring (macOS Keychain, Windows Credential Manager, Linux Secret Service)
-//  3. Config file fallback: <user config dir>/mush/credentials (for non-interactive environments)
+//  3. Config file fallback: <user config dir>/mush/api-key (for non-interactive environments)
 package auth
 
 import (
@@ -18,11 +18,11 @@ import (
 
 const (
 	// keyringService is the service name used in OS keyring storage.
-	keyringService = "mush"
+	keyringService = "dev.musher.mush"
 	// keyringUser is the user/account name used in OS keyring storage.
 	keyringUser = "api-key"
 	// envVarName is the environment variable for the API key.
-	envVarName = "MUSHER_API_KEY"
+	envVarName = "MUSH_API_KEY"
 )
 
 // CredentialSource indicates where credentials were found.

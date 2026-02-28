@@ -95,10 +95,15 @@ func ReadEvents(rootDir, sessionID string) (events []Event, err error) {
 		}
 	}
 
-	path := filepath.Join(rootDir, sessionID, eventsFileName)
+	gzPath := filepath.Join(rootDir, sessionID, eventsFileName)
 
-	file, err := os.Open(path) //nolint:gosec // controlled path
+	file, err := os.Open(gzPath) //nolint:gosec // controlled path
 	if err != nil {
+		if os.IsNotExist(err) {
+			// Compressed file missing — fall back to live file (crashed session).
+			return readEventsFromLiveFile(rootDir, sessionID)
+		}
+
 		return nil, fmt.Errorf("open transcript events: %w", err)
 	}
 
@@ -134,6 +139,52 @@ func ReadEvents(rootDir, sessionID string) (events []Event, err error) {
 
 	if err := scanner.Err(); err != nil && !errors.Is(err, io.EOF) {
 		return nil, fmt.Errorf("scan transcript events: %w", err)
+	}
+
+	return events, nil
+}
+
+// readEventsFromLiveFile reads events from the plain JSONL live file.
+// This is used as a fallback when the compressed file doesn't exist
+// (e.g., a crashed session where Close() never ran).
+func readEventsFromLiveFile(rootDir, sessionID string) (events []Event, err error) {
+	livePath := filepath.Join(rootDir, sessionID, eventsLiveFileName)
+
+	file, err := os.Open(livePath) //nolint:gosec // controlled path
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+
+		return nil, fmt.Errorf("open live transcript events for recovery: %w", err)
+	}
+
+	defer func() {
+		if closeErr := file.Close(); closeErr != nil && err == nil {
+			err = closeErr
+		}
+	}()
+
+	scanner := bufio.NewScanner(file)
+	buf := make([]byte, 0, 64*1024)
+	scanner.Buffer(buf, 1024*1024)
+
+	for scanner.Scan() {
+		trimmed := bytes.TrimSpace(scanner.Bytes())
+		if len(trimmed) == 0 {
+			continue
+		}
+
+		var event Event
+		if err := json.Unmarshal(trimmed, &event); err != nil {
+			continue
+		}
+
+		events = append(events, event)
+	}
+
+	if err := scanner.Err(); err != nil && !errors.Is(err, io.EOF) {
+		return nil, fmt.Errorf("scan live transcript events: %w", err)
 	}
 
 	return events, nil

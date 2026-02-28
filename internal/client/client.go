@@ -312,17 +312,15 @@ type JobClaimResponse struct {
 	ExecutionError string             `json:"executionError,omitempty"`
 }
 
-// GetHarnessType returns the harness type for this job, checking multiple sources.
+// GetHarnessType returns the harness type for this job.
 func (j *Job) GetHarnessType() string {
-	// Prefer ExecutionConfig
 	if j.Execution != nil {
 		if harnessType := j.Execution.GetHarnessType(); harnessType != "" {
 			return harnessType
 		}
 	}
 
-	// Default to Claude
-	return "claude"
+	return ""
 }
 
 // GetRenderedInstruction returns the rendered instruction for execution.

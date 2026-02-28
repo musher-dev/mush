@@ -144,8 +144,39 @@ func saveInstalled(workDir string, installed []InstalledBundle) error {
 		return fmt.Errorf("marshal installed bundles: %w", err)
 	}
 
-	if err := os.WriteFile(filepath.Join(mushDir, installedFileName), data, 0o644); err != nil { //nolint:gosec // G306: project file
-		return fmt.Errorf("write installed bundles: %w", err)
+	dest := filepath.Join(mushDir, installedFileName)
+
+	// Atomic write: temp file in same dir + rename.
+	tmpFile, err := os.CreateTemp(mushDir, installedFileName+".*.tmp")
+	if err != nil {
+		return fmt.Errorf("create temp installed file: %w", err)
+	}
+
+	tmp := tmpFile.Name()
+
+	if _, writeErr := tmpFile.Write(data); writeErr != nil {
+		_ = tmpFile.Close()
+		_ = os.Remove(tmp)
+
+		return fmt.Errorf("write temp installed file: %w", writeErr)
+	}
+
+	if closeErr := tmpFile.Close(); closeErr != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("close temp installed file: %w", closeErr)
+	}
+
+	if err := os.Rename(tmp, dest); err != nil {
+		// Fallback for Windows: remove dest then retry rename.
+		if removeErr := os.Remove(dest); removeErr != nil && !os.IsNotExist(removeErr) {
+			_ = os.Remove(tmp)
+			return fmt.Errorf("remove existing installed file: %w", removeErr)
+		}
+
+		if retryErr := os.Rename(tmp, dest); retryErr != nil {
+			_ = os.Remove(tmp)
+			return fmt.Errorf("replace installed file: %w", retryErr)
+		}
 	}
 
 	return nil

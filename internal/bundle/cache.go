@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/musher-dev/mush/internal/client"
 	"github.com/musher-dev/mush/internal/observability"
@@ -20,10 +21,10 @@ func CacheDir() string {
 	if err != nil {
 		home, homeErr := os.UserHomeDir()
 		if homeErr != nil {
-			return filepath.Join(os.TempDir(), "mush", "cache")
+			return filepath.Join(os.TempDir(), "mush", "bundles")
 		}
 
-		return filepath.Join(home, ".cache", "mush", "cache")
+		return filepath.Join(home, ".cache", "mush", "bundles")
 	}
 
 	return cacheDir
@@ -40,6 +41,25 @@ func IsCached(workspace, slug, version string) bool {
 	_, err := os.Stat(manifestPath)
 
 	return err == nil
+}
+
+// cleanStalePartials removes leftover staging directories from interrupted downloads.
+func cleanStalePartials(cachePath string) {
+	parent := filepath.Dir(cachePath)
+	base := filepath.Base(cachePath)
+
+	entries, err := os.ReadDir(parent)
+	if err != nil {
+		return
+	}
+
+	prefix := base + ".partial."
+
+	for _, e := range entries {
+		if e.IsDir() && strings.HasPrefix(e.Name(), prefix) {
+			_ = os.RemoveAll(filepath.Join(parent, e.Name()))
+		}
+	}
 }
 
 // Pull resolves, downloads, and caches a bundle version.
@@ -87,13 +107,36 @@ func Pull(ctx context.Context, c *client.Client, workspace, slug, version string
 
 	logger.Info("bundle cache miss", slog.String("event.type", "bundle.cache.miss"), slog.Bool("bundle.cache_hit", false))
 
-	// 3. Download assets.
-	assetsDir := filepath.Join(cachePath, "assets")
-	if err := os.MkdirAll(assetsDir, 0o755); err != nil { //nolint:gosec // G301: cache dir needs 0o755 for accessibility
-		return nil, "", fmt.Errorf("create cache directory: %w", err)
+	// 3. Download assets into a staging directory, then atomically rename.
+	// Clean up any stale partial directories from interrupted downloads.
+	cleanStalePartials(cachePath)
+
+	// Ensure parent directory exists.
+	if mkdirErr := os.MkdirAll(filepath.Dir(cachePath), 0o700); mkdirErr != nil {
+		return nil, "", fmt.Errorf("create cache parent: %w", mkdirErr)
+	}
+
+	stagingDir, err := os.MkdirTemp(filepath.Dir(cachePath), filepath.Base(cachePath)+".partial.")
+	if err != nil {
+		return nil, "", fmt.Errorf("create staging directory: %w", err)
+	}
+
+	stagingFailed := true
+
+	defer func() {
+		if stagingFailed {
+			_ = os.RemoveAll(stagingDir)
+		}
+	}()
+
+	assetsDir := filepath.Join(stagingDir, "assets")
+	if err := os.MkdirAll(assetsDir, 0o755); err != nil { //nolint:gosec // G301: subdirs inside private cache root
+		return nil, "", fmt.Errorf("create staging assets directory: %w", err)
 	}
 
 	// Try OCI pull first if oci_ref is present.
+	ociOK := false
+
 	if resolved.OCIRef != "" {
 		logger.Info("starting OCI pull", slog.String("event.type", "bundle.pull.oci.start"))
 
@@ -113,79 +156,92 @@ func Pull(ctx context.Context, c *client.Client, workspace, slug, version string
 
 			spin.StopWithSuccess("Pulled from OCI registry")
 			logger.Info("OCI pull completed", slog.String("event.type", "bundle.pull.oci.ok"))
-			// Write manifest.
-			if err := writeManifest(cachePath, resolved); err != nil {
-				return nil, "", err
+
+			ociOK = true
+		} else {
+			// OCI pull failed, fall back to API.
+			spin.StopWithFailure("OCI pull failed, falling back to API")
+			logger.Warn("OCI pull failed, using API fallback", slog.String("event.type", "bundle.pull.oci.fallback"), slog.String("error", ociErr.Error()))
+		}
+	}
+
+	if !ociOK {
+		if len(resolved.Manifest.Layers) == 0 {
+			return nil, "", fmt.Errorf(
+				"bundle resolution did not include OCI reference or asset manifest metadata; unable to download bundle contents",
+			)
+		}
+
+		// Per-asset API download.
+		spin = out.Spinner(fmt.Sprintf("Downloading %d assets", len(resolved.Manifest.Layers)))
+		spin.Start()
+		logger.Info("bundle asset download started", slog.String("event.type", "bundle.download.start"), slog.Int("bundle.asset_count", len(resolved.Manifest.Layers)))
+
+		for _, layer := range resolved.Manifest.Layers {
+			if err := ValidateLogicalPath(layer.LogicalPath); err != nil {
+				spin.StopWithFailure("Path validation failed")
+				logger.Error("bundle asset path validation failed", slog.String("event.type", "bundle.download.asset.error"), slog.String("bundle.asset.logical_path", layer.LogicalPath), slog.String("error", err.Error()))
+
+				return nil, "", fmt.Errorf("invalid logical path: %w", err)
 			}
+
+			if layer.AssetID == "" {
+				spin.StopWithFailure("Asset metadata missing")
+				logger.Error("bundle asset metadata missing", slog.String("event.type", "bundle.download.asset.error"), slog.String("bundle.asset.logical_path", layer.LogicalPath))
+
+				return nil, "", fmt.Errorf("asset %s is missing asset ID for API download", layer.LogicalPath)
+			}
+
+			data, fetchErr := c.FetchBundleAsset(ctx, layer.AssetID)
+			if fetchErr != nil {
+				spin.StopWithFailure("Asset download failed")
+				logger.Error("bundle asset download failed", slog.String("event.type", "bundle.download.asset.error"), slog.String("bundle.asset.logical_path", layer.LogicalPath), slog.String("error", fetchErr.Error()))
+
+				return nil, "", fmt.Errorf("fetch asset %s: %w", layer.AssetID, fetchErr)
+			}
+
+			// Verify SHA256.
+			if err := verifySHA256(data, layer.ContentSHA256); err != nil {
+				spin.StopWithFailure("Integrity check failed")
+				logger.Error("bundle asset integrity check failed", slog.String("event.type", "bundle.download.asset.error"), slog.String("bundle.asset.logical_path", layer.LogicalPath), slog.String("error", err.Error()))
+
+				return nil, "", fmt.Errorf("asset %s: %w", layer.LogicalPath, err)
+			}
+
+			// Write to staging cache.
+			destPath := filepath.Join(assetsDir, layer.LogicalPath)
+			if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil { //nolint:gosec // G301: cache subdirs
+				return nil, "", fmt.Errorf("create asset directory: %w", err)
+			}
+
+			if err := os.WriteFile(destPath, data, 0o644); err != nil { //nolint:gosec // G306: cache files are readable
+				return nil, "", fmt.Errorf("write asset %s: %w", layer.LogicalPath, err)
+			}
+		}
+
+		spin.StopWithSuccess(fmt.Sprintf("Downloaded %d assets", len(resolved.Manifest.Layers)))
+		logger.Info("bundle asset download completed", slog.String("event.type", "bundle.download.complete"), slog.Int("bundle.asset_count", len(resolved.Manifest.Layers)))
+	}
+
+	// Write manifest into staging dir (written last — serves as cache-hit marker).
+	if err := writeManifest(stagingDir, resolved); err != nil {
+		return nil, "", err
+	}
+
+	// Atomically promote staging dir to final cache path.
+	if err := os.Rename(stagingDir, cachePath); err != nil {
+		// Another process may have won the race — if cache is valid, use it.
+		if IsCached(workspace, slug, resolved.Version) {
+			_ = os.RemoveAll(stagingDir)
+			stagingFailed = false
 
 			return resolved, cachePath, nil
 		}
 
-		// OCI pull failed, fall back to API.
-		spin.StopWithFailure("OCI pull failed, falling back to API")
-		logger.Warn("OCI pull failed, using API fallback", slog.String("event.type", "bundle.pull.oci.fallback"), slog.String("error", ociErr.Error()))
+		return nil, "", fmt.Errorf("promote staging cache: %w", err)
 	}
 
-	if len(resolved.Manifest.Layers) == 0 {
-		return nil, "", fmt.Errorf(
-			"bundle resolution did not include OCI reference or asset manifest metadata; unable to download bundle contents",
-		)
-	}
-
-	// Per-asset API download.
-	spin = out.Spinner(fmt.Sprintf("Downloading %d assets", len(resolved.Manifest.Layers)))
-	spin.Start()
-	logger.Info("bundle asset download started", slog.String("event.type", "bundle.download.start"), slog.Int("bundle.asset_count", len(resolved.Manifest.Layers)))
-
-	for _, layer := range resolved.Manifest.Layers {
-		if err := ValidateLogicalPath(layer.LogicalPath); err != nil {
-			spin.StopWithFailure("Path validation failed")
-			logger.Error("bundle asset path validation failed", slog.String("event.type", "bundle.download.asset.error"), slog.String("bundle.asset.logical_path", layer.LogicalPath), slog.String("error", err.Error()))
-
-			return nil, "", fmt.Errorf("invalid logical path: %w", err)
-		}
-
-		if layer.AssetID == "" {
-			spin.StopWithFailure("Asset metadata missing")
-			logger.Error("bundle asset metadata missing", slog.String("event.type", "bundle.download.asset.error"), slog.String("bundle.asset.logical_path", layer.LogicalPath))
-
-			return nil, "", fmt.Errorf("asset %s is missing asset ID for API download", layer.LogicalPath)
-		}
-
-		data, fetchErr := c.FetchBundleAsset(ctx, layer.AssetID)
-		if fetchErr != nil {
-			spin.StopWithFailure("Asset download failed")
-			logger.Error("bundle asset download failed", slog.String("event.type", "bundle.download.asset.error"), slog.String("bundle.asset.logical_path", layer.LogicalPath), slog.String("error", fetchErr.Error()))
-
-			return nil, "", fmt.Errorf("fetch asset %s: %w", layer.AssetID, fetchErr)
-		}
-
-		// Verify SHA256.
-		if err := verifySHA256(data, layer.ContentSHA256); err != nil {
-			spin.StopWithFailure("Integrity check failed")
-			logger.Error("bundle asset integrity check failed", slog.String("event.type", "bundle.download.asset.error"), slog.String("bundle.asset.logical_path", layer.LogicalPath), slog.String("error", err.Error()))
-
-			return nil, "", fmt.Errorf("asset %s: %w", layer.LogicalPath, err)
-		}
-
-		// Write to cache.
-		destPath := filepath.Join(assetsDir, layer.LogicalPath)
-		if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil { //nolint:gosec // G301: cache subdirs
-			return nil, "", fmt.Errorf("create asset directory: %w", err)
-		}
-
-		if err := os.WriteFile(destPath, data, 0o644); err != nil { //nolint:gosec // G306: cache files are readable
-			return nil, "", fmt.Errorf("write asset %s: %w", layer.LogicalPath, err)
-		}
-	}
-
-	spin.StopWithSuccess(fmt.Sprintf("Downloaded %d assets", len(resolved.Manifest.Layers)))
-	logger.Info("bundle asset download completed", slog.String("event.type", "bundle.download.complete"), slog.Int("bundle.asset_count", len(resolved.Manifest.Layers)))
-
-	// Write manifest.
-	if err := writeManifest(cachePath, resolved); err != nil {
-		return nil, "", err
-	}
+	stagingFailed = false
 
 	return resolved, cachePath, nil
 }

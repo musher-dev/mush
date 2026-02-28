@@ -1,4 +1,11 @@
-# Mush Harness Rendering Options
+# ADR-001: Scroll Region Rendering for Watch UI
+
+- **Status**: Accepted
+- **Date**: 2025-02-10
+- **Context**: The watch harness needs a live status bar while Claude Code runs in a PTY. Several rendering approaches were evaluated.
+- **Decision**: Use ANSI scroll regions (DECSTBM) with raw PTY passthrough for full-fidelity rendering and real-time status updates.
+
+---
 
 ## Current State
 

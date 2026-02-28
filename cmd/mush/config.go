@@ -47,16 +47,16 @@ func newConfigListCmd() *cobra.Command {
 				out.Println()
 				out.Println("Available settings:")
 
-				historyDir := "<user config dir>/mush/history"
+				historyDir := "<user state dir>/mush/history"
 				if resolved, err := paths.HistoryDir(); err == nil {
 					historyDir = resolved
 				}
 
 				out.Print("  api.url       Platform API URL (default: %s)\n", config.DefaultAPIURL)
-				out.Print("  worker.poll_interval   Poll interval in seconds (default: %d)\n", config.DefaultPollInterval)
+				out.Print("  worker.poll_interval   Poll interval (default: %s)\n", config.DefaultPollInterval)
 				out.Print("  history.enabled   Enable PTY transcript capture (default: true)\n")
 				out.Print("  history.dir       Transcript storage directory (default: %s)\n", historyDir)
-				out.Print("  history.lines     In-memory transcript lines per session (default: 10000)\n")
+				out.Print("  history.scrollback_lines  In-memory scrollback lines per session (default: 10000)\n")
 				out.Print("  history.retention Default prune window (default: 720h)\n")
 
 				return nil
