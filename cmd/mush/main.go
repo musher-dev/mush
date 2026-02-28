@@ -116,37 +116,19 @@ func newRootCmd() *cobra.Command {
 		logFile    string
 		logStderr  string
 		apiURL     string
+		apiKey     string
 	)
 
 	out := output.Default()
 
 	rootCmd := &cobra.Command{
 		Use:   "mush",
-		Short: "Mush - Local worker runtime for Musher",
-		Long: `Mush is a local worker runtime that connects your machine to the
-Musher job stream. It claims jobs, runs handlers locally
-(with access to your dev environment), and posts results back.
+		Short: "Local worker runtime for the Musher platform",
+		Long: `Claim and execute jobs from the Musher job stream using
+your local agent runtime, with full access to your dev
+environment.
 
-The golden path:
-  Linear Issue → Musher Queue → Mush (local) → Claude Code → Result
-
-Get started:
-  mush init             Setup Mush for first use
-  mush auth login       Authenticate with your API key
-  mush habitat list     View available habitats
-  mush worker start     Start the worker and process jobs
-  mush doctor           Diagnose common issues
-
-Global API endpoint override:
-  mush --api-url https://api.staging.musher.dev worker start --dry-run
-  mush --api-url http://localhost:8080 doctor
-
-API key note:
-  --api-key is command-scoped on 'mush auth login'
-  Prefer MUSH_API_KEY for non-interactive auth`,
-		Example: `  mush init
-  mush worker start
-  mush --api-url https://api.staging.musher.dev worker start --dry-run`,
+Get started:  mush init`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
@@ -163,6 +145,16 @@ API key note:
 				if setErr := os.Setenv("MUSH_API_URL", validatedURL); setErr != nil {
 					return &clierrors.CLIError{
 						Message: fmt.Sprintf("Failed to apply API URL override: %v", setErr),
+						Hint:    "Check your shell environment and try again",
+						Code:    clierrors.ExitUsage,
+					}
+				}
+			}
+
+			if strings.TrimSpace(apiKey) != "" {
+				if setErr := os.Setenv("MUSH_API_KEY", apiKey); setErr != nil {
+					return &clierrors.CLIError{
+						Message: fmt.Sprintf("Failed to apply API key override: %v", setErr),
 						Hint:    "Check your shell environment and try again",
 						Code:    clierrors.ExitUsage,
 					}
@@ -266,6 +258,13 @@ API key note:
 	rootCmd.PersistentFlags().StringVar(&logFile, "log-file", "", "Optional structured log file path")
 	rootCmd.PersistentFlags().StringVar(&logStderr, "log-stderr", "", "Structured logging to stderr: auto, on, off")
 	rootCmd.PersistentFlags().StringVar(&apiURL, "api-url", "", "Override Musher API URL for this command")
+	rootCmd.PersistentFlags().StringVar(&apiKey, "api-key", "", "API key override (prefer MUSH_API_KEY env var)")
+
+	// Hide logging flags from default help — still functional via MUSH_LOG_* env vars
+	_ = rootCmd.PersistentFlags().MarkHidden("log-level")
+	_ = rootCmd.PersistentFlags().MarkHidden("log-format")
+	_ = rootCmd.PersistentFlags().MarkHidden("log-file")
+	_ = rootCmd.PersistentFlags().MarkHidden("log-stderr")
 
 	// Enable typo suggestions for unknown commands
 	rootCmd.SuggestionsMinimumDistance = 2
@@ -279,23 +278,63 @@ API key note:
 		}
 	})
 
-	// Primary commands
-	rootCmd.AddCommand(newWorkerCmd())
-	rootCmd.AddCommand(newHabitatCmd())
-	rootCmd.AddCommand(newBundleCmd())
+	// Command groups for organized help output
+	rootCmd.AddGroup(
+		&cobra.Group{ID: "core", Title: "Core Commands:"},
+		&cobra.Group{ID: "account", Title: "Account & Configuration:"},
+		&cobra.Group{ID: "setup", Title: "Setup & Diagnostics:"},
+	)
 
-	// Resource commands (noun-first)
-	rootCmd.AddCommand(newAuthCmd())
-	rootCmd.AddCommand(newConfigCmd())
-	rootCmd.AddCommand(newHistoryCmd())
+	// Core commands
+	workerCmd := newWorkerCmd()
+	workerCmd.GroupID = "core"
+	rootCmd.AddCommand(workerCmd)
 
-	// Utility commands
-	rootCmd.AddCommand(newInitCmd())
-	rootCmd.AddCommand(newDoctorCmd())
-	rootCmd.AddCommand(newUpdateCmd())
-	rootCmd.AddCommand(newPathsCmd())
-	rootCmd.AddCommand(newVersionCmd())
-	rootCmd.AddCommand(newCompletionCmd())
+	bundleCmd := newBundleCmd()
+	bundleCmd.GroupID = "core"
+	rootCmd.AddCommand(bundleCmd)
+
+	habitatCmd := newHabitatCmd()
+	habitatCmd.GroupID = "core"
+	rootCmd.AddCommand(habitatCmd)
+
+	// Account & Configuration commands
+	authCmd := newAuthCmd()
+	authCmd.GroupID = "account"
+	rootCmd.AddCommand(authCmd)
+
+	configCmd := newConfigCmd()
+	configCmd.GroupID = "account"
+	rootCmd.AddCommand(configCmd)
+
+	historyCmd := newHistoryCmd()
+	historyCmd.GroupID = "account"
+	rootCmd.AddCommand(historyCmd)
+
+	// Setup & Diagnostics commands
+	initCmd := newInitCmd()
+	initCmd.GroupID = "setup"
+	rootCmd.AddCommand(initCmd)
+
+	doctorCmd := newDoctorCmd()
+	doctorCmd.GroupID = "setup"
+	rootCmd.AddCommand(doctorCmd)
+
+	updateCmd := newUpdateCmd()
+	updateCmd.GroupID = "setup"
+	rootCmd.AddCommand(updateCmd)
+
+	pathsCmd := newPathsCmd()
+	pathsCmd.GroupID = "setup"
+	rootCmd.AddCommand(pathsCmd)
+
+	versionCmd := newVersionCmd()
+	versionCmd.GroupID = "setup"
+	rootCmd.AddCommand(versionCmd)
+
+	completionCmd := newCompletionCmd()
+	completionCmd.GroupID = "setup"
+	rootCmd.AddCommand(completionCmd)
 
 	return rootCmd
 }
