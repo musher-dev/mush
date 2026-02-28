@@ -206,6 +206,22 @@ If scroll regions cause issues (flicker, compatibility), fall back to **Option 2
 
 ---
 
+## Known Limitations
+
+### Single Cursor Save/Restore Slot (DECSC/DECRC)
+
+Terminals maintain a **single saved-cursor slot** for DECSC (`ESC 7`) / DECRC (`ESC 8`). The harness status bar renderer uses `SaveCursor`/`RestoreCursor` on every render tick to update the top bar without disturbing the child's cursor position. If the child program also uses DECSC/DECRC, the harness and child can clobber each other's saved cursor position.
+
+The `termMu` mutex serializes writes but does not prevent interleaving of save/restore pairs — between two child writes, the status bar tick can fire and overwrite the child's saved cursor.
+
+**Practical impact:** Low in current usage. Claude Code doesn't heavily use DECSC/DECRC during normal operation, and the 5-second ticker makes collisions infrequent.
+
+**Potential mitigations** (if needed in the future):
+1. Reduce status bar updates to event-driven only (eliminates most collision windows)
+2. Detect child DECSC/DECRC usage and temporarily defer status updates
+
+---
+
 ## References
 
 - [ANSI Escape Codes](https://gist.github.com/fnky/458719343aabd01cfb17a3a4f7296797)

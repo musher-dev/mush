@@ -228,7 +228,7 @@ into a temporary directory. The session is interactive — exit the harness
 			}
 
 			// Setup graceful shutdown.
-			ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
+			ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
 			defer stop()
 
 			// Run TUI in load mode.
