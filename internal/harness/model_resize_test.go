@@ -184,7 +184,9 @@ func captureStdout(t *testing.T, fn func()) string {
 
 	_ = w.Close()
 	os.Stdout = orig
+
+	output := <-done
 	_ = r.Close()
 
-	return <-done
+	return output
 }
