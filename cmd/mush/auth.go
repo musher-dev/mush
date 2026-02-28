@@ -29,8 +29,6 @@ func newAuthCmd() *cobra.Command {
 }
 
 func newAuthLoginCmd() *cobra.Command {
-	var apiKeyFlag string
-
 	cmd := &cobra.Command{
 		Use:   "login",
 		Short: "Authenticate with your API key",
@@ -41,22 +39,18 @@ Your API key will be stored securely in your system's keyring
 
 You can also set the MUSH_API_KEY environment variable.`,
 		Example: `  mush auth login
-  mush auth login --api-key sk-...`,
+  mush --api-key sk-... auth login`,
 		Args: noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := output.FromContext(cmd.Context())
 			prompter := prompt.New(out)
 
-			// Check if already authenticated via env var
-			if key := os.Getenv("MUSH_API_KEY"); key != "" {
-				out.Info("MUSH_API_KEY environment variable is set")
-				out.Muted("Environment variable takes precedence over stored credentials")
-				out.Println()
-			}
+			// Check for API key provided via global --api-key flag (injected as env var)
+			envKey := os.Getenv("MUSH_API_KEY")
 
 			var apiKey string
-			if apiKeyFlag != "" {
-				apiKey = apiKeyFlag
+			if envKey != "" {
+				apiKey = envKey
 			} else {
 				// Interactive flow: prompt for API key
 				if !prompter.CanPrompt() {
@@ -100,8 +94,6 @@ You can also set the MUSH_API_KEY environment variable.`,
 			return nil
 		},
 	}
-
-	cmd.Flags().StringVar(&apiKeyFlag, "api-key", "", "API key for non-interactive login (prefer MUSH_API_KEY env var to avoid shell history exposure)")
 
 	return cmd
 }
