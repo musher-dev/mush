@@ -42,8 +42,13 @@ func TestTopBarLineBackgroundPersists(t *testing.T) {
 			}
 			line := topBarLine(&s)
 
-			interior := line[:len(line)-len(" \x1b[0m")]
-			if strings.Contains(interior, "\x1b[0m") {
+			const fullReset = "\x1b[0m"
+			if !strings.HasSuffix(line, " "+fullReset) {
+				t.Fatalf("topBarLine(%q) should end with %q, got suffix %q", label, " "+fullReset, line[max(0, len(line)-20):])
+			}
+
+			interior := line[:len(line)-len(" "+fullReset)]
+			if strings.Contains(interior, fullReset) {
 				t.Fatalf("topBarLine(%q) interior has bare \\x1b[0m;\nline = %q", label, line)
 			}
 		})

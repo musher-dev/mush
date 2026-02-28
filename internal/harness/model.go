@@ -205,8 +205,8 @@ func (lw *lockedWriter) Write(p []byte) (int, error) {
 	written, err := lw.w.Write(p)
 	lw.mu.Unlock()
 
-	if lw.onWrite != nil && len(p) > 0 {
-		lw.onWrite(p)
+	if lw.onWrite != nil && written > 0 {
+		lw.onWrite(p[:written])
 	}
 
 	if err != nil {
@@ -965,7 +965,8 @@ func supportsLRMargins(termName string) bool {
 		strings.Contains(t, "tmux"),
 		strings.Contains(t, "wezterm"),
 		strings.Contains(t, "kitty"),
-		strings.Contains(t, "ghostty"):
+		strings.Contains(t, "ghostty"),
+		strings.Contains(t, "alacritty"):
 		return true
 	default:
 		return false

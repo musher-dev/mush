@@ -61,7 +61,7 @@ func TestParseCPRColumn(t *testing.T) {
 	}
 }
 
-func TestLockedWriterOnWriteAfterWrite(t *testing.T) {
+func TestLockedWriterCallsOnWriteAfterUnderlyingWrite(t *testing.T) {
 	var buf bytes.Buffer
 
 	var mu sync.Mutex

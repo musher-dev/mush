@@ -214,7 +214,7 @@ Terminals maintain a **single saved-cursor slot** for DECSC (`ESC 7`) / DECRC (`
 
 The `termMu` mutex serializes writes but does not prevent interleaving of save/restore pairs — between two child writes, the status bar tick can fire and overwrite the child's saved cursor.
 
-**Practical impact:** Low in current usage. Claude Code doesn't heavily use DECSC/DECRC during normal operation, and the 1-second ticker makes collisions infrequent.
+**Practical impact:** Low in current usage. Claude Code doesn't heavily use DECSC/DECRC during normal operation, and the 5-second ticker makes collisions infrequent.
 
 **Potential mitigations** (if needed in the future):
 1. Reduce status bar updates to event-driven only (eliminates most collision windows)
