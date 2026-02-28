@@ -8,6 +8,48 @@ import (
 	"testing"
 )
 
+func TestSupportsLRMargins(t *testing.T) {
+	tests := []struct {
+		name string
+		term string
+		want bool
+	}{
+		// Allowed terminals.
+		{name: "xterm-256color", term: "xterm-256color", want: true},
+		{name: "xterm", term: "xterm", want: true},
+		{name: "tmux-256color", term: "tmux-256color", want: true},
+		{name: "tmux", term: "tmux", want: true},
+		{name: "screen", term: "screen", want: true},
+		{name: "screen-256color", term: "screen-256color", want: true},
+		{name: "wezterm", term: "wezterm", want: true},
+		{name: "ghostty", term: "ghostty", want: true},
+
+		// Rejected terminals (no DECLRMM/DECSLRM support).
+		{name: "alacritty", term: "alacritty", want: false},
+		{name: "kitty", term: "kitty", want: false},
+		{name: "kitty-direct", term: "xterm-kitty", want: true}, // contains "xterm"
+		{name: "dumb", term: "dumb", want: false},
+		{name: "empty", term: "", want: false},
+		{name: "foot", term: "foot", want: false},
+		{name: "unknown", term: "unknown", want: false},
+
+		// Edge cases.
+		{name: "case insensitive upper", term: "XTERM-256COLOR", want: true},
+		{name: "case insensitive mixed", term: "Ghostty", want: true},
+		{name: "whitespace trimmed", term: "  xterm  ", want: true},
+		{name: "whitespace only", term: "   ", want: false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := supportsLRMargins(tc.term)
+			if got != tc.want {
+				t.Fatalf("supportsLRMargins(%q) = %v, want %v", tc.term, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestParseDECRQM69Response(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -103,6 +145,38 @@ func TestLockedWriterCallsOnWriteAfterUnderlyingWrite(t *testing.T) {
 type writerFunc func([]byte) (int, error)
 
 func (f writerFunc) Write(p []byte) (int, error) { return f(p) }
+
+func TestSidebarEnabledCombinations(t *testing.T) {
+	tests := []struct {
+		name            string
+		lrMarginSupport bool
+		forcedOff       bool
+		userOff         bool
+		want            bool
+	}{
+		{"all enabled", true, false, false, true},
+		{"no LR margin support", false, false, false, false},
+		{"forced off", true, true, false, false},
+		{"user off", true, false, true, false},
+		{"forced and user off", true, true, true, false},
+		{"no LR and user off", false, false, true, false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			m := &RootModel{
+				lrMarginSupported: tc.lrMarginSupport,
+			}
+			m.sidebarForcedOff.Store(tc.forcedOff)
+			m.sidebarUserOff.Store(tc.userOff)
+
+			got := m.sidebarEnabled()
+			if got != tc.want {
+				t.Fatalf("sidebarEnabled() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
 
 func TestParseTerminalEvents(t *testing.T) {
 	tests := []struct {

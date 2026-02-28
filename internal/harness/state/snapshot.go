@@ -15,10 +15,11 @@ type Snapshot struct {
 	Width  int
 	Height int
 
-	SidebarVisible bool
-	SidebarWidth   int
-	PaneXStart     int
-	PaneWidth      int
+	SidebarVisible   bool
+	SidebarAvailable bool // LR margins supported and not force-disabled (controls ^G hint)
+	SidebarWidth     int
+	PaneXStart       int
+	PaneWidth        int
 
 	BundleLoadMode bool
 	BundleName     string

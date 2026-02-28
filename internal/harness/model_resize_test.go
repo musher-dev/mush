@@ -4,10 +4,14 @@ package harness
 
 import (
 	"context"
+	"io"
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/musher-dev/mush/internal/client"
 	"github.com/musher-dev/mush/internal/harness/ui/layout"
+	"github.com/musher-dev/mush/internal/tui/ansi"
 )
 
 func TestClampTerminalSize(t *testing.T) {
@@ -104,6 +108,43 @@ func TestHandleResizeCallsResizable(t *testing.T) {
 	}
 }
 
+func TestHandleResizeDoesNotForcePaneCursor(t *testing.T) {
+	m := &RootModel{
+		width:  80,
+		height: 24,
+	}
+
+	output := captureStdout(t, func() {
+		m.handleResize(100, 30)
+	})
+
+	frame := layout.ComputeFrame(100, 30, false)
+
+	paneMove := ansi.Move(frame.ContentTop, frame.PaneXStart)
+	if strings.Contains(output, paneMove) {
+		t.Fatalf("handleResize output should not include pane move %q", paneMove)
+	}
+}
+
+func TestRestoreLayoutAfterAltScreenDoesNotForcePaneCursor(t *testing.T) {
+	m := &RootModel{
+		width:             140,
+		height:            40,
+		lrMarginSupported: true,
+	}
+
+	output := captureStdout(t, func() {
+		m.restoreLayoutAfterAltScreen()
+	})
+
+	frame := layout.ComputeFrame(140, 40, true)
+
+	paneMove := ansi.Move(frame.ContentTop, frame.PaneXStart)
+	if strings.Contains(output, paneMove) {
+		t.Fatalf("restoreLayoutAfterAltScreen output should not include pane move %q", paneMove)
+	}
+}
+
 // mockResizable is a test double implementing Executor + Resizable.
 type mockResizable struct {
 	onResize func(rows, cols int)
@@ -119,4 +160,31 @@ func (m *mockResizable) Resize(rows, cols int) {
 	if m.onResize != nil {
 		m.onResize(rows, cols)
 	}
+}
+
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+
+	orig := os.Stdout
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe() error = %v", err)
+	}
+
+	os.Stdout = w
+	done := make(chan string, 1)
+
+	go func() {
+		data, _ := io.ReadAll(r)
+		done <- string(data)
+	}()
+
+	fn()
+
+	_ = w.Close()
+	os.Stdout = orig
+	_ = r.Close()
+
+	return <-done
 }

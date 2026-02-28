@@ -75,9 +75,10 @@ const PTYPasteSettleDelay = 500 * time.Millisecond
 const DefaultExecutionTimeout = 10 * time.Minute
 
 const (
+	ctrlC = 0x03
+	ctrlG = 0x07
 	ctrlQ = 0x11
 	ctrlS = 0x13
-	ctrlC = 0x03
 	esc   = 0x1b
 )
 
@@ -85,6 +86,7 @@ const (
 	defaultCtrlCExitWindow     = 2 * time.Second
 	defaultPTYShutdownDeadline = 3 * time.Second
 	lrMarginProbeTimeout       = 250 * time.Millisecond
+	lrMarginDrainTimeout       = 30 * time.Millisecond
 	maxTermSeqTailBytes        = 16
 )
 
@@ -179,6 +181,7 @@ type RootModel struct {
 	// Terminal capability flags.
 	lrMarginSupported bool
 	sidebarForcedOff  atomic.Bool
+	sidebarUserOff    atomic.Bool
 	altScreenActive   atomic.Bool
 	termSeqTail       []byte
 	termSeqMu         sync.Mutex
@@ -271,6 +274,7 @@ func (m *RootModel) statusSnapshot() harnessstate.Snapshot {
 		Width:              width,
 		Height:             height,
 		SidebarVisible:     frame.SidebarVisible,
+		SidebarAvailable:   m.lrMarginSupported && !m.sidebarForcedOff.Load(),
 		SidebarWidth:       frame.SidebarWidth,
 		PaneXStart:         frame.PaneXStart,
 		PaneWidth:          frame.PaneWidth,
@@ -802,7 +806,7 @@ func (m *RootModel) ptyRowsForHeight(height int) int {
 }
 
 func (m *RootModel) sidebarEnabled() bool {
-	return m.lrMarginSupported && !m.sidebarForcedOff.Load()
+	return m.lrMarginSupported && !m.sidebarForcedOff.Load() && !m.sidebarUserOff.Load()
 }
 
 func (m *RootModel) detectLRMarginSupport() bool {
@@ -810,10 +814,10 @@ func (m *RootModel) detectLRMarginSupport() bool {
 		return false
 	}
 
-	return probeLRMarginSupport(os.Stdin, os.Stdout, lrMarginProbeTimeout)
+	return probeLRMarginSupport(os.Stdin, os.Stdout, lrMarginProbeTimeout, m.width)
 }
 
-func probeLRMarginSupport(stdin, stdout *os.File, timeout time.Duration) bool {
+func probeLRMarginSupport(stdin, stdout *os.File, timeout time.Duration, termWidth int) bool {
 	if stdin == nil || stdout == nil {
 		return false
 	}
@@ -822,6 +826,12 @@ func probeLRMarginSupport(stdin, stdout *os.File, timeout time.Duration) bool {
 	// Any keystrokes typed during this window will be consumed and discarded.
 	// This is acceptable because the probe runs once at startup before any executor
 	// is active, and the terminal is already in raw mode with no prompt shown.
+
+	// Compute probe margins dynamically based on terminal width.
+	// Ghostty requires at least 2 columns between margins.
+	// ClampTerminalSize guarantees termWidth >= 20.
+	probeLeft := max(2, termWidth/4)
+	probeRight := max(probeLeft+2, termWidth/2)
 
 	// Save cursor, probe support and behavior, then restore state.
 	if _, err := stdout.WriteString("\x1b7"); err != nil {
@@ -832,7 +842,8 @@ func probeLRMarginSupport(stdin, stdout *os.File, timeout time.Duration) bool {
 		_, _ = stdout.WriteString("\x1b8\x1b[?69l")
 	}()
 
-	if _, err := stdout.WriteString("\x1b[?69$p\x1b[?69h\x1b[5;20s\x1b[1;20H\r\x1b[6n"); err != nil {
+	probeSeq := fmt.Sprintf("\x1b[?69$p\x1b[?69h\x1b[%d;%ds\x1b[1;%dH\r\x1b[6n", probeLeft, probeRight, probeRight)
+	if _, err := stdout.WriteString(probeSeq); err != nil {
 		return false
 	}
 
@@ -856,6 +867,7 @@ func probeLRMarginSupport(stdin, stdout *os.File, timeout time.Duration) bool {
 	readBuf := make([]byte, 256)
 	modeSupported := false
 	modeDecided := false
+	result := false
 
 	for time.Now().Before(deadline) {
 		n, readErr := stdin.Read(readBuf)
@@ -871,15 +883,17 @@ func probeLRMarginSupport(stdin, stdout *os.File, timeout time.Duration) bool {
 					modeDecided = true
 
 					if !modeSupported {
-						return false
+						break
 					}
 				}
 			}
 
 			if col, ok := parseCPRColumn(accum); ok {
-				// Behavioral check: with margins set to 5..20, carriage return should
-				// land at the left margin (column 5), not absolute column 1.
-				return modeSupported && modeDecided && col == 5
+				// Behavioral check: with margins set, carriage return should
+				// land at the left margin, not absolute column 1.
+				result = col == probeLeft && (modeSupported || !modeDecided)
+
+				break
 			}
 		}
 
@@ -889,11 +903,21 @@ func probeLRMarginSupport(stdin, stdout *os.File, timeout time.Duration) bool {
 				continue
 			}
 
-			return false
+			break
 		}
 	}
 
-	return false
+	// Drain any late-arriving terminal responses so they don't leak into the
+	// child process's stdin as garbage (e.g. a delayed DECRQM reply).
+	drainDeadline := time.Now().Add(lrMarginDrainTimeout)
+	for time.Now().Before(drainDeadline) {
+		n, err := stdin.Read(readBuf)
+		if n == 0 && err != nil {
+			break
+		}
+	}
+
+	return result
 }
 
 func parseDECRQM69Response(data []byte) (supported, decided bool) {
@@ -964,9 +988,7 @@ func supportsLRMargins(termName string) bool {
 		strings.Contains(t, "screen"),
 		strings.Contains(t, "tmux"),
 		strings.Contains(t, "wezterm"),
-		strings.Contains(t, "kitty"),
-		strings.Contains(t, "ghostty"),
-		strings.Contains(t, "alacritty"):
+		strings.Contains(t, "ghostty"):
 		return true
 	default:
 		return false
@@ -1090,7 +1112,7 @@ func (m *RootModel) handleTerminalEvent(ev terminalEvent) {
 func (m *RootModel) restoreLayoutAfterAltScreen() {
 	m.termMu.Lock()
 	frame := layout.ComputeFrame(m.width, m.height, m.sidebarEnabled())
-	_, _ = fmt.Fprint(os.Stdout, layout.ResizeSequence(frame, m.sidebarEnabled()))
+	_, _ = fmt.Fprint(os.Stdout, layout.ResizeSequenceWithCursor(frame, m.sidebarEnabled(), false))
 	m.termMu.Unlock()
 
 	m.drawStatusBar()
@@ -1110,7 +1132,7 @@ func (m *RootModel) disableSidebar() {
 	newFrame := layout.ComputeFrame(m.width, m.height, m.sidebarEnabled())
 
 	if oldFrame.SidebarVisible {
-		_, _ = fmt.Fprint(os.Stdout, layout.ResizeSequence(newFrame, m.sidebarEnabled()))
+		_, _ = fmt.Fprint(os.Stdout, layout.ResizeSequenceWithCursor(newFrame, m.sidebarEnabled(), false))
 	}
 	m.termMu.Unlock()
 	m.sidebarDisableMu.Unlock()
@@ -1120,6 +1142,39 @@ func (m *RootModel) disableSidebar() {
 	}
 
 	m.clearSidebarArea(oldFrame.SidebarWidth+1, oldFrame.Height, termWidth)
+
+	rows := layout.PtyRowsForFrame(newFrame)
+
+	for _, executor := range m.executors {
+		if r, ok := executor.(Resizable); ok {
+			r.Resize(rows, newFrame.PaneWidth)
+		}
+	}
+
+	m.drawStatusBar()
+}
+
+func (m *RootModel) toggleSidebar() {
+	if !m.lrMarginSupported || m.sidebarForcedOff.Load() || m.altScreenActive.Load() {
+		return
+	}
+
+	m.sidebarDisableMu.Lock()
+
+	m.termMu.Lock()
+	oldFrame := layout.ComputeFrame(m.width, m.height, m.sidebarEnabled())
+	termWidth := m.width
+
+	m.sidebarUserOff.Store(!m.sidebarUserOff.Load())
+
+	newFrame := layout.ComputeFrame(m.width, m.height, m.sidebarEnabled())
+	_, _ = fmt.Fprint(os.Stdout, layout.ResizeSequence(newFrame, m.sidebarEnabled()))
+	m.termMu.Unlock()
+	m.sidebarDisableMu.Unlock()
+
+	if oldFrame.SidebarVisible && !newFrame.SidebarVisible {
+		m.clearSidebarArea(oldFrame.SidebarWidth+1, oldFrame.Height, termWidth)
+	}
 
 	rows := layout.PtyRowsForFrame(newFrame)
 
@@ -1209,7 +1264,7 @@ func (m *RootModel) handleResize(width, height int) {
 	m.width = width
 	m.height = height
 	newFrame := layout.ComputeFrame(m.width, m.height, m.sidebarEnabled())
-	_, _ = fmt.Fprint(os.Stdout, layout.ResizeSequence(newFrame, m.sidebarEnabled()))
+	_, _ = fmt.Fprint(os.Stdout, layout.ResizeSequenceWithCursor(newFrame, m.sidebarEnabled(), false))
 	m.termMu.Unlock()
 
 	if oldFrame.SidebarVisible && !newFrame.SidebarVisible {
@@ -1319,6 +1374,14 @@ func (m *RootModel) copyInput() {
 				if m.handleCtrlC() {
 					return
 				}
+
+				buf[i] = 0
+
+				continue
+			}
+
+			if buf[i] == ctrlG {
+				m.toggleSidebar()
 
 				buf[i] = 0
 

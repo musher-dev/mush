@@ -94,11 +94,17 @@ func PtyRowsForFrame(frame Frame) int {
 
 // SetupSequence returns the ANSI escape sequence for initial terminal setup.
 func SetupSequence(frame Frame, useLRMargins bool) string {
-	return ansi.ClearScreen + ResizeSequence(frame, useLRMargins)
+	return ansi.ClearScreen + ResizeSequenceWithCursor(frame, useLRMargins, true)
 }
 
 // ResizeSequence returns the ANSI escape sequence for terminal resize.
 func ResizeSequence(frame Frame, useLRMargins bool) string {
+	return ResizeSequenceWithCursor(frame, useLRMargins, true)
+}
+
+// ResizeSequenceWithCursor returns the ANSI escape sequence for terminal resize.
+// When moveCursor is false, pane constraints are applied without forcing cursor position.
+func ResizeSequenceWithCursor(frame Frame, useLRMargins, moveCursor bool) string {
 	seq := ansi.DisableLRMode
 	if useLRMargins && frame.SidebarVisible {
 		// DECSLRM moves the cursor to (1,1) and resets pending wrap state (per VT510 spec).
@@ -106,5 +112,10 @@ func ResizeSequence(frame Frame, useLRMargins bool) string {
 		seq = ansi.EnableLRMode + ansi.LRMargins(frame.PaneXStart, frame.Width)
 	}
 
-	return seq + ansi.ScrollRegion(frame.ContentTop, frame.Height) + ansi.Move(frame.ContentTop, frame.PaneXStart)
+	seq += ansi.ScrollRegion(frame.ContentTop, frame.Height)
+	if moveCursor {
+		seq += ansi.Move(frame.ContentTop, frame.PaneXStart)
+	}
+
+	return seq
 }

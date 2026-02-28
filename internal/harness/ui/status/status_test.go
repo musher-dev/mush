@@ -98,6 +98,52 @@ func TestRenderSidebarIncludesBundleAndMCP(t *testing.T) {
 	}
 }
 
+func TestTopBarShowsKeyboardHints(t *testing.T) {
+	s := state.Snapshot{
+		Width:       120,
+		Height:      30,
+		StatusLabel: "Ready",
+	}
+
+	line := topBarLine(&s)
+
+	for _, hint := range []string{"^C Int", "^S Copy", "^Q Quit"} {
+		if !strings.Contains(line, hint) {
+			t.Fatalf("topBarLine missing hint %q in: %q", hint, line)
+		}
+	}
+}
+
+func TestTopBarShowsSidebarHintWhenAvailable(t *testing.T) {
+	s := state.Snapshot{
+		Width:            120,
+		Height:           30,
+		StatusLabel:      "Ready",
+		SidebarAvailable: true,
+	}
+
+	line := topBarLine(&s)
+
+	if !strings.Contains(line, "^G Sidebar") {
+		t.Fatalf("topBarLine should contain ^G Sidebar when SidebarAvailable=true, got: %q", line)
+	}
+}
+
+func TestTopBarHidesSidebarHintWhenUnavailable(t *testing.T) {
+	s := state.Snapshot{
+		Width:            120,
+		Height:           30,
+		StatusLabel:      "Ready",
+		SidebarAvailable: false,
+	}
+
+	line := topBarLine(&s)
+
+	if strings.Contains(line, "^G Sidebar") {
+		t.Fatalf("topBarLine should not contain ^G Sidebar when SidebarAvailable=false, got: %q", line)
+	}
+}
+
 func TestSidebarRowTruncatesCJKByCellWidth(t *testing.T) {
 	// "你好世界测试" = 6 runes but 12 cells (each CJK char is 2 cells wide).
 	// With sidebarWidth=10, maxContent=8. Truncating by cell width should
