@@ -623,6 +623,38 @@ func TestTerminalEventFromCSI_DECSLRM(t *testing.T) {
 			t.Fatal("expected ok=false for bare CSI s")
 		}
 	})
+
+	t.Run("single number is valid DECSLRM", func(t *testing.T) {
+		ev, ok := terminalEventFromCSI("10", 's')
+		if !ok {
+			t.Fatal("expected ok=true")
+		}
+
+		if ev != terminalEventDisableLR {
+			t.Fatalf("event = %v, want terminalEventDisableLR", ev)
+		}
+	})
+
+	t.Run("private mode prefix rejected", func(t *testing.T) {
+		_, ok := terminalEventFromCSI("?1", 's')
+		if ok {
+			t.Fatal("expected ok=false for CSI ?1 s (XTSAVE)")
+		}
+	})
+
+	t.Run("multiple semicolons rejected", func(t *testing.T) {
+		_, ok := terminalEventFromCSI("1;2;3", 's')
+		if ok {
+			t.Fatal("expected ok=false for multiple semicolons")
+		}
+	})
+
+	t.Run("non-digit characters rejected", func(t *testing.T) {
+		_, ok := terminalEventFromCSI("1a;40", 's')
+		if ok {
+			t.Fatal("expected ok=false for non-digit characters")
+		}
+	})
 }
 
 func TestLockedWriterFilter(t *testing.T) {

@@ -61,6 +61,7 @@ type TerminalController struct {
 	// Callbacks wired by RootModel.
 	drawStatusBar func()
 	setLastError  func(string)
+	ptyActive     func() bool // true when any executor PTY is running (unsafe to probe)
 }
 
 // cursorRewriter is a stream filter that rewrites bare CSI s (SCOSC) → ESC 7
@@ -374,7 +375,7 @@ func (tc *TerminalController) reprobeAndEnableSidebar() {
 	// stdin and writes escape sequences that would corrupt the child process.
 	// This covers both worker mode (job PTY running) and bundle-load mode
 	// (interactive Claude PTY alive but no job loop).
-	if len(tc.executors) > 0 {
+	if tc.ptyActive != nil && tc.ptyActive() {
 		return
 	}
 
@@ -664,7 +665,7 @@ func terminalEventFromCSI(params string, final byte) (terminalEvent, bool) {
 		return terminalEventScrollReset, true
 	case final == 'l' && params == "?69":
 		return terminalEventDisableLR, true
-	case final == 's' && params != "":
+	case final == 's' && isDECSLRMParams(params):
 		// Parameterized CSI <digits>;<digits> s is DECSLRM — the child is
 		// taking over left/right margin control. Disable the sidebar.
 		return terminalEventDisableLR, true
@@ -681,4 +682,30 @@ func terminalEventFromCSI(params string, final byte) (terminalEvent, bool) {
 	}
 
 	return 0, false
+}
+
+// isDECSLRMParams reports whether params matches the DECSLRM grammar:
+// one or two groups of digits separated by a semicolon (e.g. "1;40", "5;",
+// ";80", "10"). No private-mode prefix (?) or other non-digit characters.
+func isDECSLRMParams(params string) bool {
+	if params == "" {
+		return false
+	}
+
+	semi := false
+
+	for i := 0; i < len(params); i++ {
+		c := params[i]
+
+		switch {
+		case c >= '0' && c <= '9':
+			// digit — ok
+		case c == ';' && !semi:
+			semi = true
+		default:
+			return false
+		}
+	}
+
+	return true
 }
