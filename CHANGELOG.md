@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.4.0](https://github.com/musher-dev/mush/compare/v3.3.0...v3.4.0) (2026-03-01)
+
+
+### Features
+
+* **harness:** add cursor-rewrite filter to avoid SCOSC/DECSLRM conflict in sidebar mode ([#74](https://github.com/musher-dev/mush/issues/74)) ([68f8017](https://github.com/musher-dev/mush/commit/68f8017dfa5d6c2d4e422c3c2152067ae12e7748))
+
 ## [3.3.0](https://github.com/musher-dev/mush/compare/v3.2.0...v3.3.0) (2026-03-01)
 
 
