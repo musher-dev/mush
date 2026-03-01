@@ -3,18 +3,13 @@
 package harness
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os"
-	"os/signal"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -23,19 +18,12 @@ import (
 	"golang.org/x/sys/unix"
 	"golang.org/x/term"
 
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/trace"
-
 	"github.com/musher-dev/mush/internal/buildinfo"
-	"github.com/musher-dev/mush/internal/client"
 	"github.com/musher-dev/mush/internal/config"
 	harnessstate "github.com/musher-dev/mush/internal/harness/state"
 	"github.com/musher-dev/mush/internal/harness/ui/layout"
 	statusui "github.com/musher-dev/mush/internal/harness/ui/status"
-	"github.com/musher-dev/mush/internal/observability"
 	"github.com/musher-dev/mush/internal/transcript"
-	"github.com/musher-dev/mush/internal/tui/ansi"
 	"github.com/musher-dev/mush/internal/worker"
 )
 
@@ -85,38 +73,20 @@ const (
 const (
 	defaultCtrlCExitWindow     = 2 * time.Second
 	defaultPTYShutdownDeadline = 3 * time.Second
-	lrMarginProbeTimeout       = 250 * time.Millisecond
-	lrMarginDrainTimeout       = 30 * time.Millisecond
-	maxTermSeqTailBytes        = 16
-)
-
-type terminalEvent uint8
-
-const (
-	terminalEventReset terminalEvent = iota
-	terminalEventSoftReset
-	terminalEventScrollReset
-	terminalEventDisableLR
-	terminalEventAltEnter
-	terminalEventAltExit
 )
 
 // RootModel manages the harness state with scroll region approach.
+// It composes TerminalController and JobLoop as focused sub-components.
 type RootModel struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	// Serializes all writes to the terminal (stdout/stderr) to avoid cursor-control
-	// sequences interleaving with job output.
-	termMu sync.Mutex
-
-	// Terminal dimensions
-	width  int
-	height int
+	term *TerminalController
+	jobs *JobLoop
 
 	// Executor registry: harness type → executor instance.
 	// Populated once during Run() setup and never modified after.
-	// Safe for concurrent read access without a mutex.
+	// Shared by reference with term and jobs.
 	executors map[string]Executor
 
 	// setPTYSize is injectable for tests; defaults to pty.Setsize.
@@ -132,180 +102,454 @@ type RootModel struct {
 	copyEscPending bool
 	lastCtrlCAt    time.Time
 
-	// Status bar state
-	statusMu      sync.Mutex
-	status        ConnectionStatus
-	lastHeartbeat time.Time
-	completed     int
-	failed        int
-
-	// Configuration
-	client             *client.Client
+	// Immutable configuration.
 	cfg                *config.Config
+	supportedHarnesses []string
 	habitatID          string
 	queueID            string
-	supportedHarnesses []string
-	instanceID         string
-	workerID           string
-	signalDir          string
-	runnerConfig       *client.RunnerConfigResponse
 	transcriptEnabled  bool
 	transcriptDir      string
 	transcriptLines    int
 
-	refreshMu       sync.Mutex
-	refreshInterval time.Duration
-
-	// Original terminal state for restoration
-	oldState *term.State
-
-	// Control channels
-	done      chan struct{}
-	closeOnce sync.Once // Ensures done channel is closed only once
-
-	// Job lifecycle management
-	jobMu           sync.Mutex
-	currentJob      *client.Job // Currently executing job
-	lastError       string      // Last error message
-	lastErrorTime   time.Time   // Time of the last error
-	heartbeatCtx    context.Context
-	heartbeatCancel context.CancelFunc
-
-	// Load mode fields
+	// Bundle load mode (immutable).
 	bundleLoadMode bool
 	bundleName     string
 	bundleVer      string
 	bundleDir      string
 	bundleSummary  BundleSummary
 
-	// Terminal capability flags.
-	lrMarginSupported bool
-	sidebarForcedOff  atomic.Bool
-	sidebarUserOff    atomic.Bool
-	altScreenActive   atomic.Bool
-	termSeqTail       []byte
-	termSeqMu         sync.Mutex
-	sidebarDisableMu  sync.Mutex
+	// Control channels.
+	done      chan struct{}
+	closeOnce sync.Once
 
 	// Time and lifecycle behavior knobs (defaulted in constructor; injectable in tests).
 	now                 func() time.Time
 	ctrlCExitWindow     time.Duration
 	ptyShutdownDeadline time.Duration
 	killProcess         func(int, syscall.Signal) error
-
-	// Ensures restore() is safe to call from both defer and signal handler.
-	restoreOnce sync.Once
 }
 
-type lockedWriter struct {
-	mu      *sync.Mutex
-	w       io.Writer
-	onWrite func([]byte)
-}
+// NewRootModel creates a new root model with the given configuration.
+func NewRootModel(ctx context.Context, cfg *Config) *RootModel {
+	ctx, cancel := context.WithCancel(ctx)
 
-func (lw *lockedWriter) Write(p []byte) (int, error) {
-	lw.mu.Lock()
-	written, err := lw.w.Write(p)
-	lw.mu.Unlock()
-
-	if lw.onWrite != nil && written > 0 {
-		lw.onWrite(p[:written])
+	initialStatus := StatusConnecting
+	if cfg.BundleLoadMode {
+		initialStatus = StatusStarting
 	}
 
+	executors := make(map[string]Executor)
+	loadedCfg := config.Load()
+
+	model := &RootModel{
+		ctx:    ctx,
+		cancel: cancel,
+		term: &TerminalController{
+			executors:          executors,
+			supportedHarnesses: cfg.SupportedHarnesses,
+			forceSidebar:       cfg.ForceSidebar,
+		},
+		jobs: &JobLoop{
+			client:             cfg.Client,
+			cfg:                loadedCfg,
+			habitatID:          cfg.HabitatID,
+			queueID:            cfg.QueueID,
+			instanceID:         cfg.InstanceID,
+			executors:          executors,
+			supportedHarnesses: cfg.SupportedHarnesses,
+			status:             initialStatus,
+			lastHeartbeat:      time.Now(),
+			runnerConfig:       cfg.RunnerConfig,
+			refreshInterval:    normalizeRefreshInterval(0),
+		},
+		executors:           executors,
+		cfg:                 loadedCfg,
+		supportedHarnesses:  cfg.SupportedHarnesses,
+		habitatID:           cfg.HabitatID,
+		queueID:             cfg.QueueID,
+		done:                make(chan struct{}),
+		setPTYSize:          pty.Setsize,
+		transcriptEnabled:   cfg.TranscriptEnabled,
+		transcriptDir:       cfg.TranscriptDir,
+		transcriptLines:     cfg.TranscriptLines,
+		bundleLoadMode:      cfg.BundleLoadMode,
+		bundleName:          cfg.BundleName,
+		bundleVer:           cfg.BundleVer,
+		bundleDir:           cfg.BundleDir,
+		bundleSummary:       cfg.BundleSummary,
+		now:                 time.Now,
+		ctrlCExitWindow:     defaultCtrlCExitWindow,
+		ptyShutdownDeadline: defaultPTYShutdownDeadline,
+		killProcess:         syscall.Kill,
+	}
+
+	// Wire callbacks.
+	model.term.drawStatusBar = model.drawStatusBar
+	model.term.setLastError = model.setLastError
+	model.jobs.drawStatusBar = model.drawStatusBar
+	model.jobs.infof = model.infof
+	model.jobs.signalDone = model.signalDone
+	model.jobs.now = model.now
+
+	return model
+}
+
+// signalDone safely closes the done channel exactly once.
+func (m *RootModel) signalDone() {
+	m.closeOnce.Do(func() {
+		close(m.done)
+	})
+}
+
+// Run starts the harness with scroll region approach.
+func (m *RootModel) Run() error {
+	if m.jobs.client == nil && !m.bundleLoadMode {
+		return fmt.Errorf("missing client in harness config")
+	}
+
+	// Get terminal size
+	width, height, err := m.term.readTerminalSize()
 	if err != nil {
-		return written, fmt.Errorf("write to locked writer: %w", err)
+		return fmt.Errorf("failed to get terminal size: %w", err)
 	}
 
-	return written, nil
+	m.term.width = width
+	m.term.height = height
+
+	// Set terminal to raw mode
+	oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
+	if err != nil {
+		return fmt.Errorf("failed to set raw mode: %w", err)
+	}
+
+	m.term.oldState = oldState
+	defer m.term.restore()
+
+	if m.term.forceSidebar {
+		m.term.lrMarginSupported.Store(true)
+	} else {
+		m.term.lrMarginSupported.Store(m.term.detectLRMarginSupport())
+	}
+
+	// Clear screen and set up scroll region
+	m.term.setupScreen()
+
+	historyEnabled := m.transcriptEnabled
+	if !historyEnabled {
+		historyEnabled = m.cfg.HistoryEnabled()
+	}
+
+	if historyEnabled && m.shouldCaptureTranscript() {
+		historyDir := m.transcriptDir
+		if historyDir == "" {
+			historyDir = m.cfg.HistoryDir()
+		}
+
+		historyLines := m.transcriptLines
+		if historyLines <= 0 {
+			historyLines = m.cfg.HistoryScrollbackLines()
+		}
+
+		sessionID := uuid.NewString()
+
+		store, tErr := transcript.NewStore(transcript.StoreOptions{
+			SessionID: sessionID,
+			Dir:       historyDir,
+			MaxLines:  historyLines,
+		})
+		if tErr != nil {
+			m.setLastError(fmt.Sprintf("Transcript disabled: %v", tErr))
+		} else {
+			m.transcriptMu.Lock()
+			m.transcriptStore = store
+
+			m.transcriptMu.Unlock()
+			defer m.closeTranscript()
+		}
+	}
+
+	// Create per-run signal directory (used by Claude executor).
+	if m.isHarnessSupported("claude") {
+		signalDir, mkErr := os.MkdirTemp("", "mush-signals-")
+		if mkErr != nil {
+			return fmt.Errorf("failed to create signal directory: %w", mkErr)
+		}
+
+		m.jobs.signalDir = signalDir
+
+		defer func() {
+			_ = os.RemoveAll(signalDir)
+		}()
+	}
+
+	// Create executors from registry.
+	frame := layout.ComputeFrame(m.term.width, m.term.height, m.term.SidebarEnabled())
+	ptyRows := layout.PtyRowsForFrame(frame)
+	termWriter := &lockedWriter{
+		mu:      &m.term.mu,
+		w:       os.Stdout,
+		onWrite: m.term.inspectTerminalControlSequences,
+	}
+
+	for _, harnessType := range m.supportedHarnesses {
+		info, ok := Lookup(harnessType)
+		if !ok {
+			continue
+		}
+
+		executor := info.New()
+
+		setupOpts := SetupOptions{
+			TermWriter:     termWriter,
+			TermWidth:      frame.PaneWidth,
+			TermHeight:     ptyRows,
+			SignalDir:      m.jobs.signalDir,
+			RunnerConfig:   m.jobs.runnerConfig,
+			BundleDir:      m.bundleDir,
+			BundleLoadMode: m.bundleLoadMode,
+			OnOutput: func(p []byte) {
+				m.appendTranscript("pty", p)
+			},
+			OnReady: func() {
+				if m.bundleLoadMode {
+					m.jobs.statusMu.Lock()
+					m.jobs.status = StatusReady
+					m.jobs.statusMu.Unlock()
+					m.drawStatusBar()
+				}
+			},
+			OnExit: m.signalDone,
+		}
+
+		if err := executor.Setup(m.ctx, &setupOpts); err != nil {
+			return fmt.Errorf("failed to setup %s executor: %w", harnessType, err)
+		}
+
+		m.executors[harnessType] = executor
+	}
+
+	defer func() {
+		for _, executor := range m.executors {
+			executor.Teardown()
+		}
+	}()
+
+	if m.bundleLoadMode {
+		return m.runBundleLoadMode()
+	}
+
+	return m.runWorkerMode()
 }
 
-func (m *RootModel) termWrite(p []byte) {
-	m.termMu.Lock()
-	defer m.termMu.Unlock()
+// runWorkerMode runs the standard job-polling worker mode.
+func (m *RootModel) runWorkerMode() error {
+	// Register worker with the platform.
+	name, metadata := worker.DefaultWorkerInfo()
 
-	_, _ = os.Stdout.Write(p)
+	workerID, err := worker.Register(m.ctx, m.jobs.client, m.habitatID, m.jobs.instanceID, name, metadata, buildinfo.Version)
+	if err != nil {
+		return fmt.Errorf("failed to register worker: %w", err)
+	}
+
+	m.jobs.workerID = workerID
+
+	workerHeartbeatCtx, cancelWorkerHeartbeat := context.WithCancel(m.ctx)
+	defer cancelWorkerHeartbeat()
+
+	worker.StartHeartbeat(workerHeartbeatCtx, m.jobs.client, m.jobs.workerID, m.jobs.CurrentJobID, func(err error) {
+		m.setLastError(fmt.Sprintf("Worker heartbeat failed: %v", err))
+	})
+
+	defer func() {
+		jsnap := m.jobs.Snapshot()
+
+		if err := worker.Deregister(m.jobs.client, m.jobs.workerID, jsnap.Completed, jsnap.Failed); err != nil {
+			m.setLastError(fmt.Sprintf("Worker deregistration failed: %v", err))
+		}
+	}()
+
+	// Start goroutines.
+	var wg sync.WaitGroup
+
+	// Terminal resize watcher (SIGWINCH + periodic reconciliation).
+	wg.Add(1)
+
+	go func() {
+		defer wg.Done()
+
+		m.term.resizeLoop(m.ctx, m.done)
+	}()
+
+	// Stdin → PTY (with quit key handling).
+	wg.Add(1)
+
+	go func() {
+		defer wg.Done()
+
+		m.copyInput()
+	}()
+
+	// Status bar updater.
+	wg.Add(1)
+
+	go func() {
+		defer wg.Done()
+
+		m.updateStatusLoop()
+	}()
+
+	// Job manager (polls for and processes jobs).
+	wg.Add(1)
+
+	go func() {
+		defer wg.Done()
+
+		m.jobs.Run(m.ctx, m.done)
+	}()
+
+	// Runner config refresh loop for MCP credential rotation.
+	if _, ok := m.executors["claude"]; ok {
+		wg.Add(1)
+
+		go func() {
+			defer wg.Done()
+
+			m.jobs.RunnerConfigRefreshLoop(m.ctx, m.done)
+		}()
+	}
+
+	// Ensure external context cancellation can always unblock Run().
+	go func() {
+		select {
+		case <-m.ctx.Done():
+			m.signalDone()
+		case <-m.done:
+		}
+	}()
+
+	// Wait for done signal.
+	<-m.done
+
+	m.cancel()
+
+	waitDone := make(chan struct{})
+
+	go func() { wg.Wait(); close(waitDone) }()
+
+	select {
+	case <-waitDone:
+	case <-time.After(m.ptyShutdownDeadline):
+	}
+
+	return nil
 }
 
-func (m *RootModel) termWriteString(s string) {
-	m.termWrite([]byte(s))
+// runBundleLoadMode runs a single interactive session with bundle assets.
+func (m *RootModel) runBundleLoadMode() error {
+	// Start goroutines.
+	var wg sync.WaitGroup
+
+	// Terminal resize watcher.
+	wg.Add(1)
+
+	go func() {
+		defer wg.Done()
+
+		m.term.resizeLoop(m.ctx, m.done)
+	}()
+
+	// Stdin → active executor.
+	wg.Add(1)
+
+	go func() {
+		defer wg.Done()
+
+		m.copyInput()
+	}()
+
+	// Status bar updater.
+	wg.Add(1)
+
+	go func() {
+		defer wg.Done()
+
+		m.updateStatusLoop()
+	}()
+
+	// Ensure external context cancellation can always unblock Run().
+	go func() {
+		select {
+		case <-m.ctx.Done():
+			m.signalDone()
+		case <-m.done:
+		}
+	}()
+
+	// Wait for done signal (user presses Ctrl+Q or executor process exits).
+	<-m.done
+
+	m.cancel()
+
+	waitDone := make(chan struct{})
+
+	go func() { wg.Wait(); close(waitDone) }()
+
+	select {
+	case <-waitDone:
+	case <-time.After(m.ptyShutdownDeadline):
+	}
+
+	return nil
 }
 
 func (m *RootModel) statusSnapshot() harnessstate.Snapshot {
-	// Read terminal dimensions under termMu (where they are written).
-	m.termMu.Lock()
-	width := m.width
-	height := m.height
-	m.termMu.Unlock()
+	w, h := m.term.Dimensions()
 
-	m.statusMu.Lock()
-	habitatID := m.habitatID
-	queueID := m.queueID
-	statusLabel := m.status.String()
-	completed := m.completed
-	failed := m.failed
-	lastHeartbeat := m.lastHeartbeat
-	lastError := m.lastError
-	lastErrorTime := m.lastErrorTime
-	bundleLoadMode := m.bundleLoadMode
-	bundleName := m.bundleName
-	bundleVer := m.bundleVer
-	bundleSummary := m.bundleSummary
-	supportedHarnesses := append([]string(nil), m.supportedHarnesses...)
+	jsnap := m.jobs.Snapshot()
+
 	nowFn := m.now
-	m.statusMu.Unlock()
-
-	m.jobMu.Lock()
-
-	jobID := ""
-	if m.currentJob != nil {
-		jobID = m.currentJob.ID
-	}
-	m.jobMu.Unlock()
-
 	if nowFn == nil {
 		nowFn = time.Now
 	}
 
 	now := nowFn()
 
-	frame := layout.ComputeFrame(width, height, m.sidebarEnabled())
+	frame := layout.ComputeFrame(w, h, m.sidebarEnabled())
 
 	return harnessstate.Snapshot{
-		Width:              width,
-		Height:             height,
+		Width:              w,
+		Height:             h,
 		SidebarVisible:     frame.SidebarVisible,
-		SidebarAvailable:   m.lrMarginSupported && !m.sidebarForcedOff.Load(),
+		SidebarAvailable:   !m.term.sidebarForcedOff.Load(),
 		SidebarWidth:       frame.SidebarWidth,
 		PaneXStart:         frame.PaneXStart,
 		PaneWidth:          frame.PaneWidth,
-		BundleLoadMode:     bundleLoadMode,
-		BundleName:         bundleName,
-		BundleVer:          bundleVer,
-		BundleLayers:       bundleSummary.TotalLayers,
-		BundleSkills:       append([]string(nil), bundleSummary.Skills...),
-		BundleAgents:       append([]string(nil), bundleSummary.Agents...),
-		BundleTools:        append([]string(nil), bundleSummary.ToolConfigs...),
-		BundleOther:        append([]string(nil), bundleSummary.Other...),
-		HabitatID:          habitatID,
-		QueueID:            queueID,
-		SupportedHarnesses: supportedHarnesses,
-		StatusLabel:        statusLabel,
+		BundleLoadMode:     m.bundleLoadMode,
+		BundleName:         m.bundleName,
+		BundleVer:          m.bundleVer,
+		BundleLayers:       m.bundleSummary.TotalLayers,
+		BundleSkills:       append([]string(nil), m.bundleSummary.Skills...),
+		BundleAgents:       append([]string(nil), m.bundleSummary.Agents...),
+		BundleTools:        append([]string(nil), m.bundleSummary.ToolConfigs...),
+		BundleOther:        append([]string(nil), m.bundleSummary.Other...),
+		HabitatID:          m.habitatID,
+		QueueID:            m.queueID,
+		SupportedHarnesses: append([]string(nil), m.supportedHarnesses...),
+		StatusLabel:        jsnap.StatusLabel,
 		CopyMode:           m.isCopyMode(),
-		JobID:              jobID,
-		LastHeartbeat:      lastHeartbeat,
-		Completed:          completed,
-		Failed:             failed,
-		LastError:          lastError,
-		LastErrorTime:      lastErrorTime,
+		JobID:              jsnap.JobID,
+		LastHeartbeat:      jsnap.LastHeartbeat,
+		Completed:          jsnap.Completed,
+		Failed:             jsnap.Failed,
+		LastError:          jsnap.LastError,
+		LastErrorTime:      jsnap.LastErrorTime,
 		MCPServers:         m.snapshotMCPServers(now),
 		Now:                now,
 	}
 }
 
 func (m *RootModel) snapshotMCPServers(now time.Time) []harnessstate.MCPServerStatus {
-	m.refreshMu.Lock()
-	cfg := m.runnerConfig
-	m.refreshMu.Unlock()
+	cfg := m.jobs.RunnerConfig()
 
 	if cfg == nil || len(cfg.Providers) == 0 {
 		return nil
@@ -353,377 +597,12 @@ func (m *RootModel) snapshotMCPServers(now time.Time) []harnessstate.MCPServerSt
 }
 
 func (m *RootModel) drawStatusBar() {
-	if m.altScreenActive.Load() {
+	if m.term.AltScreenActive() {
 		return
 	}
 
 	snap := m.statusSnapshot()
 	m.termWriteString(statusui.Render(&snap))
-}
-
-// NewRootModel creates a new root model with the given configuration.
-func NewRootModel(ctx context.Context, cfg *Config) *RootModel {
-	ctx, cancel := context.WithCancel(ctx)
-
-	initialStatus := StatusConnecting
-	if cfg.BundleLoadMode {
-		initialStatus = StatusStarting
-	}
-
-	return &RootModel{
-		ctx:                 ctx,
-		cancel:              cancel,
-		status:              initialStatus,
-		lastHeartbeat:       time.Now(),
-		client:              cfg.Client,
-		cfg:                 config.Load(),
-		habitatID:           cfg.HabitatID,
-		queueID:             cfg.QueueID,
-		supportedHarnesses:  cfg.SupportedHarnesses,
-		instanceID:          cfg.InstanceID,
-		runnerConfig:        cfg.RunnerConfig,
-		refreshInterval:     normalizeRefreshInterval(0),
-		done:                make(chan struct{}),
-		executors:           make(map[string]Executor),
-		setPTYSize:          pty.Setsize,
-		transcriptEnabled:   cfg.TranscriptEnabled,
-		transcriptDir:       cfg.TranscriptDir,
-		transcriptLines:     cfg.TranscriptLines,
-		bundleLoadMode:      cfg.BundleLoadMode,
-		bundleName:          cfg.BundleName,
-		bundleVer:           cfg.BundleVer,
-		bundleDir:           cfg.BundleDir,
-		bundleSummary:       cfg.BundleSummary,
-		now:                 time.Now,
-		ctrlCExitWindow:     defaultCtrlCExitWindow,
-		ptyShutdownDeadline: defaultPTYShutdownDeadline,
-		killProcess:         syscall.Kill,
-	}
-}
-
-// signalDone safely closes the done channel exactly once.
-func (m *RootModel) signalDone() {
-	m.closeOnce.Do(func() {
-		close(m.done)
-	})
-}
-
-// Run starts the harness with scroll region approach.
-func (m *RootModel) Run() error {
-	if m.client == nil && !m.bundleLoadMode {
-		return fmt.Errorf("missing client in harness config")
-	}
-
-	// Get terminal size
-	width, height, err := m.readTerminalSize()
-	if err != nil {
-		return fmt.Errorf("failed to get terminal size: %w", err)
-	}
-
-	m.width = width
-	m.height = height
-
-	// Set terminal to raw mode
-	oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
-	if err != nil {
-		return fmt.Errorf("failed to set raw mode: %w", err)
-	}
-
-	m.oldState = oldState
-	defer m.restore()
-
-	m.lrMarginSupported = m.detectLRMarginSupport()
-
-	// Clear screen and set up scroll region
-	m.setupScreen()
-
-	historyEnabled := m.transcriptEnabled
-	if !historyEnabled {
-		historyEnabled = m.cfg.HistoryEnabled()
-	}
-
-	if historyEnabled && m.shouldCaptureTranscript() {
-		historyDir := m.transcriptDir
-		if historyDir == "" {
-			historyDir = m.cfg.HistoryDir()
-		}
-
-		historyLines := m.transcriptLines
-		if historyLines <= 0 {
-			historyLines = m.cfg.HistoryScrollbackLines()
-		}
-
-		sessionID := uuid.NewString()
-
-		store, tErr := transcript.NewStore(transcript.StoreOptions{
-			SessionID: sessionID,
-			Dir:       historyDir,
-			MaxLines:  historyLines,
-		})
-		if tErr != nil {
-			m.setLastError(fmt.Sprintf("Transcript disabled: %v", tErr))
-		} else {
-			m.transcriptMu.Lock()
-			m.transcriptStore = store
-
-			m.transcriptMu.Unlock()
-			defer m.closeTranscript()
-		}
-	}
-
-	// Create per-run signal directory (used by Claude executor).
-	if m.isHarnessSupported("claude") {
-		signalDir, mkErr := os.MkdirTemp("", "mush-signals-")
-		if mkErr != nil {
-			return fmt.Errorf("failed to create signal directory: %w", mkErr)
-		}
-
-		m.signalDir = signalDir
-
-		defer func() {
-			_ = os.RemoveAll(signalDir)
-		}()
-	}
-
-	// Create executors from registry.
-	frame := layout.ComputeFrame(m.width, m.height, m.sidebarEnabled())
-	ptyRows := layout.PtyRowsForFrame(frame)
-	termWriter := &lockedWriter{
-		mu:      &m.termMu,
-		w:       os.Stdout,
-		onWrite: m.inspectTerminalControlSequences,
-	}
-
-	for _, harnessType := range m.supportedHarnesses {
-		info, ok := Lookup(harnessType)
-		if !ok {
-			continue
-		}
-
-		executor := info.New()
-
-		setupOpts := SetupOptions{
-			TermWriter:     termWriter,
-			TermWidth:      frame.PaneWidth,
-			TermHeight:     ptyRows,
-			SignalDir:      m.signalDir,
-			RunnerConfig:   m.runnerConfig,
-			BundleDir:      m.bundleDir,
-			BundleLoadMode: m.bundleLoadMode,
-			OnOutput: func(p []byte) {
-				m.appendTranscript("pty", p)
-			},
-			OnReady: func() {
-				if m.bundleLoadMode {
-					m.statusMu.Lock()
-					m.status = StatusReady
-					m.statusMu.Unlock()
-					m.drawStatusBar()
-				}
-			},
-			OnExit: m.signalDone,
-		}
-
-		if err := executor.Setup(m.ctx, &setupOpts); err != nil {
-			return fmt.Errorf("failed to setup %s executor: %w", harnessType, err)
-		}
-
-		m.executors[harnessType] = executor
-	}
-
-	defer func() {
-		for _, executor := range m.executors {
-			executor.Teardown()
-		}
-	}()
-
-	if m.bundleLoadMode {
-		return m.runBundleLoadMode()
-	}
-
-	return m.runWorkerMode()
-}
-
-// runWorkerMode runs the standard job-polling worker mode.
-func (m *RootModel) runWorkerMode() error {
-	// Register worker with the platform.
-	name, metadata := worker.DefaultWorkerInfo()
-
-	workerID, err := worker.Register(m.ctx, m.client, m.habitatID, m.instanceID, name, metadata, buildinfo.Version)
-	if err != nil {
-		return fmt.Errorf("failed to register worker: %w", err)
-	}
-
-	m.workerID = workerID
-
-	workerHeartbeatCtx, cancelWorkerHeartbeat := context.WithCancel(m.ctx)
-	defer cancelWorkerHeartbeat()
-
-	worker.StartHeartbeat(workerHeartbeatCtx, m.client, m.workerID, m.currentJobID, func(err error) {
-		m.setLastError(fmt.Sprintf("Worker heartbeat failed: %v", err))
-	})
-
-	defer func() {
-		m.statusMu.Lock()
-		completed := m.completed
-		failed := m.failed
-		m.statusMu.Unlock()
-
-		if err := worker.Deregister(m.client, m.workerID, completed, failed); err != nil {
-			m.setLastError(fmt.Sprintf("Worker deregistration failed: %v", err))
-		}
-	}()
-
-	// Start goroutines.
-	var wg sync.WaitGroup
-
-	// Terminal resize watcher (SIGWINCH + periodic reconciliation).
-	wg.Add(1)
-
-	go func() {
-		defer wg.Done()
-
-		m.resizeLoop()
-	}()
-
-	// Stdin → PTY (with quit key handling).
-	wg.Add(1)
-
-	go func() {
-		defer wg.Done()
-
-		m.copyInput()
-	}()
-
-	// Status bar updater.
-	wg.Add(1)
-
-	go func() {
-		defer wg.Done()
-
-		m.updateStatusLoop()
-	}()
-
-	// Job manager (polls for and processes jobs).
-	wg.Add(1)
-
-	go func() {
-		defer wg.Done()
-
-		m.jobManagerLoop()
-	}()
-
-	// Runner config refresh loop for MCP credential rotation.
-	if _, ok := m.executors["claude"]; ok {
-		wg.Add(1)
-
-		go func() {
-			defer wg.Done()
-
-			m.runnerConfigRefreshLoop()
-		}()
-	}
-
-	// Ensure external context cancellation can always unblock Run().
-	go func() {
-		select {
-		case <-m.ctx.Done():
-			m.signalDone()
-		case <-m.done:
-		}
-	}()
-
-	// Wait for done signal.
-	<-m.done
-
-	m.cancel()
-
-	waitDone := make(chan struct{})
-
-	go func() { wg.Wait(); close(waitDone) }()
-
-	select {
-	case <-waitDone:
-	case <-time.After(m.ptyShutdownDeadline):
-	}
-
-	return nil
-}
-
-// runBundleLoadMode runs a single interactive session with bundle assets.
-func (m *RootModel) runBundleLoadMode() error {
-	// Start goroutines.
-	var wg sync.WaitGroup
-
-	// Terminal resize watcher.
-	wg.Add(1)
-
-	go func() {
-		defer wg.Done()
-
-		m.resizeLoop()
-	}()
-
-	// Stdin → active executor.
-	wg.Add(1)
-
-	go func() {
-		defer wg.Done()
-
-		m.copyInput()
-	}()
-
-	// Status bar updater.
-	wg.Add(1)
-
-	go func() {
-		defer wg.Done()
-
-		m.updateStatusLoop()
-	}()
-
-	// Ensure external context cancellation can always unblock Run().
-	go func() {
-		select {
-		case <-m.ctx.Done():
-			m.signalDone()
-		case <-m.done:
-		}
-	}()
-
-	// Wait for done signal (user presses Ctrl+Q or executor process exits).
-	<-m.done
-
-	m.cancel()
-
-	waitDone := make(chan struct{})
-
-	go func() { wg.Wait(); close(waitDone) }()
-
-	select {
-	case <-waitDone:
-	case <-time.After(m.ptyShutdownDeadline):
-	}
-
-	return nil
-}
-
-// isHarnessSupported checks if a given harness type is in the supported list.
-func (m *RootModel) isHarnessSupported(harnessType string) bool {
-	for _, a := range m.supportedHarnesses {
-		if a == harnessType {
-			return true
-		}
-	}
-
-	return false
-}
-
-// setupScreen initializes the terminal with scroll region.
-func (m *RootModel) setupScreen() {
-	frame := layout.ComputeFrame(m.width, m.height, m.sidebarEnabled())
-	m.termWriteString(layout.SetupSequence(frame, m.sidebarEnabled()))
-	m.drawStatusBar()
 }
 
 func (m *RootModel) shouldCaptureTranscript() bool {
@@ -797,523 +676,19 @@ func (m *RootModel) popCopyEscPending() bool {
 	return pending
 }
 
-func clampTerminalSize(width, height int) (clampedWidth, clampedHeight int) {
-	return layout.ClampTerminalSize(width, height)
+// isHarnessSupported checks if a given harness type is in the supported list.
+func (m *RootModel) isHarnessSupported(harnessType string) bool {
+	for _, a := range m.supportedHarnesses {
+		if a == harnessType {
+			return true
+		}
+	}
+
+	return false
 }
 
 func (m *RootModel) ptyRowsForHeight(height int) int {
 	return layout.PtyRowsForHeight(height)
-}
-
-func (m *RootModel) sidebarEnabled() bool {
-	return m.lrMarginSupported && !m.sidebarForcedOff.Load() && !m.sidebarUserOff.Load()
-}
-
-func (m *RootModel) detectLRMarginSupport() bool {
-	if !supportsLRMargins(os.Getenv("TERM")) {
-		return false
-	}
-
-	return probeLRMarginSupport(os.Stdin, os.Stdout, lrMarginProbeTimeout, m.width)
-}
-
-func probeLRMarginSupport(stdin, stdout *os.File, timeout time.Duration, termWidth int) bool {
-	if stdin == nil || stdout == nil {
-		return false
-	}
-
-	// Probe reads stdin in non-blocking mode for up to `timeout` (typically 250ms).
-	// Any keystrokes typed during this window will be consumed and discarded.
-	// This is acceptable because the probe runs once at startup before any executor
-	// is active, and the terminal is already in raw mode with no prompt shown.
-
-	// Compute probe margins dynamically based on terminal width.
-	// Ghostty requires at least 2 columns between margins.
-	// ClampTerminalSize guarantees termWidth >= 20.
-	probeLeft := max(2, termWidth/4)
-	probeRight := max(probeLeft+2, termWidth/2)
-
-	// Save cursor, probe support and behavior, then restore state.
-	if _, err := stdout.WriteString("\x1b7"); err != nil {
-		return false
-	}
-
-	defer func() {
-		_, _ = stdout.WriteString("\x1b8\x1b[?69l")
-	}()
-
-	probeSeq := fmt.Sprintf("\x1b[?69$p\x1b[?69h\x1b[%d;%ds\x1b[1;%dH\r\x1b[6n", probeLeft, probeRight, probeRight)
-	if _, err := stdout.WriteString(probeSeq); err != nil {
-		return false
-	}
-
-	stdinFd := int(stdin.Fd())
-
-	flags, err := unix.FcntlInt(uintptr(stdinFd), unix.F_GETFL, 0)
-	if err != nil {
-		return false
-	}
-
-	if err := unix.SetNonblock(stdinFd, true); err != nil {
-		return false
-	}
-
-	defer func() {
-		_ = unix.SetNonblock(stdinFd, flags&unix.O_NONBLOCK != 0)
-	}()
-
-	deadline := time.Now().Add(timeout)
-	accum := make([]byte, 0, 128)
-	readBuf := make([]byte, 256)
-	modeSupported := false
-	modeDecided := false
-	result := false
-
-	for time.Now().Before(deadline) {
-		n, readErr := stdin.Read(readBuf)
-		if n > 0 {
-			accum = append(accum, readBuf[:n]...)
-			if len(accum) > 512 {
-				accum = accum[len(accum)-512:]
-			}
-
-			if !modeDecided {
-				if supported, decided := parseDECRQM69Response(accum); decided {
-					modeSupported = supported
-					modeDecided = true
-
-					if !modeSupported {
-						break
-					}
-				}
-			}
-
-			if col, ok := parseCPRColumn(accum); ok {
-				// Behavioral check: with margins set, carriage return should
-				// land at the left margin, not absolute column 1.
-				result = col == probeLeft && (modeSupported || !modeDecided)
-
-				break
-			}
-		}
-
-		if readErr != nil {
-			if errors.Is(readErr, unix.EAGAIN) || errors.Is(readErr, unix.EWOULDBLOCK) {
-				time.Sleep(10 * time.Millisecond)
-				continue
-			}
-
-			break
-		}
-	}
-
-	// Drain any late-arriving terminal responses so they don't leak into the
-	// child process's stdin as garbage (e.g. a delayed DECRQM reply).
-	drainDeadline := time.Now().Add(lrMarginDrainTimeout)
-	for time.Now().Before(drainDeadline) {
-		n, err := stdin.Read(readBuf)
-		if n == 0 && err != nil {
-			break
-		}
-	}
-
-	return result
-}
-
-func parseDECRQM69Response(data []byte) (supported, decided bool) {
-	switch {
-	case bytes.Contains(data, []byte("?69;1$y")),
-		bytes.Contains(data, []byte("?69;2$y")),
-		bytes.Contains(data, []byte("?69;3$y")):
-		return true, true
-	case bytes.Contains(data, []byte("?69;0$y")),
-		bytes.Contains(data, []byte("?69;4$y")):
-		return false, true
-	default:
-		return false, false
-	}
-}
-
-func parseCPRColumn(data []byte) (col int, ok bool) {
-	// Parse the most recent CSI row;colR response.
-	for i := len(data) - 1; i >= 0; i-- {
-		if data[i] != 'R' {
-			continue
-		}
-
-		start := -1
-
-		for j := i - 1; j >= 0; j-- {
-			if data[j] == 0x1b && j+1 < len(data) && data[j+1] == '[' {
-				start = j
-				break
-			}
-
-			// Bound scan for safety.
-			if i-j > 20 {
-				break
-			}
-		}
-
-		if start == -1 || start+2 >= i {
-			continue
-		}
-
-		payload := string(data[start+2 : i]) // row;col
-
-		parts := strings.Split(payload, ";")
-		if len(parts) != 2 {
-			continue
-		}
-
-		c, err := strconv.Atoi(parts[1])
-		if err != nil {
-			continue
-		}
-
-		return c, true
-	}
-
-	return 0, false
-}
-
-func supportsLRMargins(termName string) bool {
-	t := strings.ToLower(strings.TrimSpace(termName))
-	if t == "" || t == "dumb" {
-		return false
-	}
-
-	switch {
-	case strings.Contains(t, "xterm"),
-		strings.Contains(t, "screen"),
-		strings.Contains(t, "tmux"),
-		strings.Contains(t, "wezterm"),
-		strings.Contains(t, "ghostty"):
-		return true
-	default:
-		return false
-	}
-}
-
-func parseTerminalEvents(tail, chunk []byte) (events []terminalEvent, newTail []byte) {
-	combined := make([]byte, 0, len(tail)+len(chunk))
-	combined = append(combined, tail...)
-	combined = append(combined, chunk...)
-
-	i := 0
-
-	for i < len(combined) {
-		if combined[i] != 0x1b {
-			i++
-			continue
-		}
-
-		if i+1 >= len(combined) {
-			break
-		}
-
-		next := combined[i+1]
-		if next == 'c' {
-			events = append(events, terminalEventReset)
-			i += 2
-
-			continue
-		}
-
-		if next != '[' {
-			i += 2
-			continue
-		}
-
-		j := i + 2
-		for ; j < len(combined); j++ {
-			if combined[j] >= 0x40 && combined[j] <= 0x7e {
-				break
-			}
-		}
-
-		if j >= len(combined) {
-			break
-		}
-
-		params := string(combined[i+2 : j])
-		final := combined[j]
-
-		if ev, ok := terminalEventFromCSI(params, final); ok {
-			events = append(events, ev)
-		}
-
-		i = j + 1
-	}
-
-	rem := combined[i:]
-	if len(rem) > maxTermSeqTailBytes {
-		rem = rem[len(rem)-maxTermSeqTailBytes:]
-	}
-
-	newTail = make([]byte, len(rem))
-	copy(newTail, rem)
-
-	return events, newTail
-}
-
-func terminalEventFromCSI(params string, final byte) (terminalEvent, bool) {
-	switch {
-	case final == 'p' && params == "!":
-		return terminalEventSoftReset, true
-	case final == 'r' && params == "":
-		return terminalEventScrollReset, true
-	case final == 'l' && params == "?69":
-		return terminalEventDisableLR, true
-	case (final == 'h' || final == 'l') && strings.HasPrefix(params, "?"):
-		mode := strings.TrimPrefix(params, "?")
-		switch mode {
-		case "47", "1047", "1049":
-			if final == 'h' {
-				return terminalEventAltEnter, true
-			}
-
-			return terminalEventAltExit, true
-		}
-	}
-
-	return 0, false
-}
-
-func (m *RootModel) inspectTerminalControlSequences(p []byte) {
-	if len(p) == 0 {
-		return
-	}
-
-	m.termSeqMu.Lock()
-	events, tail := parseTerminalEvents(m.termSeqTail, p)
-	m.termSeqTail = tail
-	m.termSeqMu.Unlock()
-
-	for _, ev := range events {
-		m.handleTerminalEvent(ev)
-	}
-}
-
-func (m *RootModel) handleTerminalEvent(ev terminalEvent) {
-	switch ev {
-	case terminalEventAltEnter:
-		m.altScreenActive.Store(true)
-	case terminalEventAltExit:
-		wasActive := m.altScreenActive.Swap(false)
-		if wasActive {
-			m.restoreLayoutAfterAltScreen()
-		}
-	case terminalEventReset, terminalEventSoftReset, terminalEventScrollReset, terminalEventDisableLR:
-		m.disableSidebar()
-	}
-}
-
-func (m *RootModel) restoreLayoutAfterAltScreen() {
-	m.termMu.Lock()
-	frame := layout.ComputeFrame(m.width, m.height, m.sidebarEnabled())
-	_, _ = fmt.Fprint(os.Stdout, layout.ResizeSequenceWithCursor(frame, m.sidebarEnabled(), false))
-	m.termMu.Unlock()
-
-	m.drawStatusBar()
-}
-
-func (m *RootModel) disableSidebar() {
-	m.sidebarDisableMu.Lock()
-	if !m.sidebarEnabled() {
-		m.sidebarDisableMu.Unlock()
-		return
-	}
-
-	m.termMu.Lock()
-	termWidth := m.width
-	oldFrame := layout.ComputeFrame(m.width, m.height, m.sidebarEnabled())
-	m.sidebarForcedOff.Store(true)
-	newFrame := layout.ComputeFrame(m.width, m.height, m.sidebarEnabled())
-
-	if oldFrame.SidebarVisible {
-		_, _ = fmt.Fprint(os.Stdout, layout.ResizeSequenceWithCursor(newFrame, m.sidebarEnabled(), false))
-	}
-	m.termMu.Unlock()
-	m.sidebarDisableMu.Unlock()
-
-	if !oldFrame.SidebarVisible {
-		return
-	}
-
-	m.clearSidebarArea(oldFrame.SidebarWidth+1, oldFrame.Height, termWidth)
-
-	rows := layout.PtyRowsForFrame(newFrame)
-
-	for _, executor := range m.executors {
-		if r, ok := executor.(Resizable); ok {
-			r.Resize(rows, newFrame.PaneWidth)
-		}
-	}
-
-	m.drawStatusBar()
-}
-
-func (m *RootModel) toggleSidebar() {
-	if !m.lrMarginSupported || m.sidebarForcedOff.Load() || m.altScreenActive.Load() {
-		return
-	}
-
-	m.sidebarDisableMu.Lock()
-
-	m.termMu.Lock()
-	oldFrame := layout.ComputeFrame(m.width, m.height, m.sidebarEnabled())
-	termWidth := m.width
-
-	m.sidebarUserOff.Store(!m.sidebarUserOff.Load())
-
-	newFrame := layout.ComputeFrame(m.width, m.height, m.sidebarEnabled())
-	_, _ = fmt.Fprint(os.Stdout, layout.ResizeSequence(newFrame, m.sidebarEnabled()))
-	m.termMu.Unlock()
-	m.sidebarDisableMu.Unlock()
-
-	if oldFrame.SidebarVisible && !newFrame.SidebarVisible {
-		m.clearSidebarArea(oldFrame.SidebarWidth+1, oldFrame.Height, termWidth)
-	}
-
-	rows := layout.PtyRowsForFrame(newFrame)
-
-	for _, executor := range m.executors {
-		if r, ok := executor.(Resizable); ok {
-			r.Resize(rows, newFrame.PaneWidth)
-		}
-	}
-
-	m.drawStatusBar()
-}
-
-func (m *RootModel) readTerminalSize() (width, height int, err error) {
-	width, height, err = term.GetSize(int(os.Stdin.Fd()))
-	if err != nil {
-		return 0, 0, fmt.Errorf("get terminal size: %w", err)
-	}
-
-	width, height = clampTerminalSize(width, height)
-
-	return width, height, nil
-}
-
-func (m *RootModel) resizeLoop() {
-	sigCh := make(chan os.Signal, 1)
-
-	signal.Notify(sigCh, syscall.SIGWINCH)
-	defer signal.Stop(sigCh)
-
-	ticker := time.NewTicker(ResizePollInterval)
-	defer ticker.Stop()
-
-	m.refreshTerminalSize()
-
-	for {
-		select {
-		case <-m.ctx.Done():
-			return
-		case <-m.done:
-			return
-		case <-sigCh:
-			m.refreshTerminalSize()
-		case <-ticker.C:
-			m.refreshTerminalSize()
-		}
-	}
-}
-
-func (m *RootModel) refreshTerminalSize() {
-	width, height, err := m.readTerminalSize()
-	if err != nil {
-		m.setLastError(fmt.Sprintf("Terminal resize read failed: %v", err))
-		return
-	}
-
-	m.handleResize(width, height)
-}
-
-func (m *RootModel) handleResize(width, height int) {
-	width, height = clampTerminalSize(width, height)
-
-	if m.altScreenActive.Load() {
-		m.termMu.Lock()
-		m.width = width
-		m.height = height
-		m.termMu.Unlock()
-
-		frame := layout.ComputeFrame(width, height, false)
-		rows := layout.PtyRowsForFrame(frame)
-
-		for _, executor := range m.executors {
-			if r, ok := executor.(Resizable); ok {
-				r.Resize(rows, frame.PaneWidth)
-			}
-		}
-
-		return
-	}
-
-	m.termMu.Lock()
-	if width == m.width && height == m.height {
-		m.termMu.Unlock()
-		return
-	}
-
-	oldFrame := layout.ComputeFrame(m.width, m.height, m.sidebarEnabled())
-	m.width = width
-	m.height = height
-	newFrame := layout.ComputeFrame(m.width, m.height, m.sidebarEnabled())
-	_, _ = fmt.Fprint(os.Stdout, layout.ResizeSequenceWithCursor(newFrame, m.sidebarEnabled(), false))
-	m.termMu.Unlock()
-
-	if oldFrame.SidebarVisible && !newFrame.SidebarVisible {
-		m.clearSidebarArea(oldFrame.SidebarWidth+1, height, width)
-	} else if oldFrame.SidebarVisible && newFrame.SidebarVisible && oldFrame.SidebarWidth != newFrame.SidebarWidth {
-		clearWidth := oldFrame.SidebarWidth
-		if newFrame.SidebarWidth > clearWidth {
-			clearWidth = newFrame.SidebarWidth
-		}
-
-		m.clearSidebarArea(clearWidth+1, height, width)
-	}
-
-	rows := layout.PtyRowsForFrame(newFrame)
-
-	// Resize all Resizable executors.
-	for _, executor := range m.executors {
-		if r, ok := executor.(Resizable); ok {
-			r.Resize(rows, newFrame.PaneWidth)
-		}
-	}
-
-	m.drawStatusBar()
-}
-
-func (m *RootModel) clearSidebarArea(columns, height, termWidth int) {
-	if columns <= 0 {
-		return
-	}
-
-	if columns > termWidth {
-		columns = termWidth
-	}
-
-	rows := height - layout.TopBarHeight
-	if rows < 1 {
-		return
-	}
-
-	var b strings.Builder
-
-	blank := strings.Repeat(" ", columns)
-
-	for i := 0; i < rows; i++ {
-		b.WriteString(ansi.Move(layout.TopBarHeight+1+i, 1))
-		b.WriteString(blank)
-	}
-
-	m.termWriteString(b.String())
 }
 
 // copyInput copies stdin to active executor with quit key handling.
@@ -1321,6 +696,22 @@ func (m *RootModel) clearSidebarArea(columns, height, termWidth int) {
 // Uses unix.Poll with a 100ms timeout so that blocking stdin reads
 // can be interrupted when the context is canceled.
 func (m *RootModel) copyInput() {
+	// Replay any user keystrokes captured during the LR margin probe.
+	if len(m.term.probeLeftoverInput) > 0 {
+		leftover := m.term.probeLeftoverInput
+		m.term.probeLeftoverInput = nil
+
+		for _, harnessType := range m.supportedHarnesses {
+			if executor, ok := m.executors[harnessType]; ok {
+				if ir, ok := executor.(InputReceiver); ok {
+					_, _ = ir.WriteInput(leftover)
+
+					break
+				}
+			}
+		}
+	}
+
 	stdinFD := int(os.Stdin.Fd())
 	buf := make([]byte, 256)
 
@@ -1381,7 +772,7 @@ func (m *RootModel) copyInput() {
 			}
 
 			if buf[i] == ctrlG {
-				m.toggleSidebar()
+				m.term.toggleSidebar(m.jobs.CurrentJobID)
 
 				buf[i] = 0
 
@@ -1484,17 +875,6 @@ func (m *RootModel) handleCtrlC() bool {
 	return false
 }
 
-func (m *RootModel) hasActiveClaudeJob() bool {
-	m.jobMu.Lock()
-	defer m.jobMu.Unlock()
-
-	if m.currentJob == nil {
-		return false
-	}
-
-	return m.currentJob.GetHarnessType() == "claude"
-}
-
 // updateStatusLoop periodically updates the status bar.
 func (m *RootModel) updateStatusLoop() {
 	ticker := time.NewTicker(5 * time.Second)
@@ -1512,345 +892,16 @@ func (m *RootModel) updateStatusLoop() {
 	}
 }
 
-// jobManagerLoop manages the job queue and lifecycle by polling the API.
-func (m *RootModel) jobManagerLoop() {
-	// Wait for Claude to be ready if it's a supported harness.
-	m.statusMu.Lock()
-	m.status = StatusConnected
-	m.statusMu.Unlock()
-
-	pollInterval := m.cfg.PollInterval()
-
-	for {
-		select {
-		case <-m.ctx.Done():
-			return
-		case <-m.done:
-			return
-		default:
-		}
-
-		// Check if any Refreshable executors need restart.
-		if err := m.maybeRefreshExecutors(); err != nil {
-			m.setLastError(fmt.Sprintf("Executor refresh failed: %v", err))
-			time.Sleep(2 * time.Second)
-
-			continue
-		}
-
-		// Poll for a job.
-		job, err := m.client.ClaimJob(m.ctx, m.habitatID, m.queueID, int(pollInterval.Seconds()))
-		if err != nil {
-			if m.ctx.Err() != nil {
-				return // Context canceled
-			}
-
-			m.setLastError(fmt.Sprintf("Claim failed: %v", err))
-			time.Sleep(5 * time.Second) // Backoff on error
-
-			continue
-		}
-
-		if job == nil {
-			continue // No job, poll again
-		}
-
-		// Map execution.harnessType to local harness selection.
-		harnessType := job.GetHarnessType()
-		if harnessType == "" {
-			m.setLastError("Missing harness type in job execution config")
-			m.releaseJob(m.ctx, job)
-
-			continue
-		}
-
-		if !m.isHarnessSupported(harnessType) {
-			errMsg := fmt.Sprintf("Unsupported harness type: %s", harnessType)
-			m.setLastError(errMsg)
-			m.releaseJob(m.ctx, job)
-
-			continue
-		}
-
-		// Process the job.
-		m.processJob(job)
-	}
-}
-
-// processJob handles the lifecycle of a single job using the executor.
-func (m *RootModel) processJob(job *client.Job) {
-	ctx, span := observability.Tracer("mush.harness").Start(m.ctx, "job.process",
-		trace.WithAttributes(
-			attribute.String("job.id", job.ID),
-			attribute.String("job.queue_id", job.QueueID),
-			attribute.String("job.harness_type", job.GetHarnessType()),
-			attribute.String("job.priority", job.Priority),
-			attribute.Int("job.attempt_number", job.AttemptNumber),
-		),
-	)
-	defer span.End()
-
-	harnessType := job.GetHarnessType()
-
-	executor, ok := m.executors[harnessType]
-	if !ok {
-		m.setLastError(fmt.Sprintf("No executor for harness type: %s", harnessType))
-		span.SetStatus(codes.Error, "unsupported harness type")
-		m.releaseJob(ctx, job)
-
-		return
-	}
-
-	m.jobMu.Lock()
-	m.currentJob = job
-	m.jobMu.Unlock()
-
-	// Update status bar
-	m.statusMu.Lock()
-	m.status = StatusProcessing
-	m.statusMu.Unlock()
-	m.drawStatusBar()
-
-	// Start heartbeat for the job.
-	m.heartbeatCtx, m.heartbeatCancel = context.WithCancel(m.ctx)
-	go m.heartbeatLoop(m.heartbeatCtx, job.ID)
-
-	defer func() {
-		m.heartbeatCancel()
-		m.jobMu.Lock()
-		m.currentJob = nil
-		m.jobMu.Unlock()
-		m.inputMu.Lock()
-		m.lastCtrlCAt = time.Time{}
-		m.inputMu.Unlock()
-		m.statusMu.Lock()
-		m.status = StatusConnected
-		m.statusMu.Unlock()
-	}()
-
-	if _, err := m.client.StartJob(ctx, job.ID); err != nil {
-		m.setLastError(fmt.Sprintf("Start job failed: %v", err))
-	}
-
-	// Determine execution timeout.
-	execTimeout := DefaultExecutionTimeout
-	if job.Execution != nil && job.Execution.TimeoutMs > 0 {
-		execTimeout = time.Duration(job.Execution.TimeoutMs) * time.Millisecond
-	}
-
-	execCtx, cancelExec := context.WithTimeout(ctx, execTimeout)
-	defer cancelExec()
-
-	// Execute the job via the executor.
-	execCtx, execSpan := observability.Tracer("mush.harness").Start(execCtx, "job.execute",
-		trace.WithAttributes(
-			attribute.String("job.id", job.ID),
-			attribute.String("job.harness_type", harnessType),
-		),
-	)
-
-	result, execErr := executor.Execute(execCtx, job)
-
-	execSpan.End()
-
-	if execErr != nil {
-		reason := "execution_error"
-		msg := execErr.Error()
-		retry := true
-
-		var ee *ExecError
-		if errors.As(execErr, &ee) {
-			reason = ee.Reason
-			msg = ee.Message
-			retry = ee.Retry
-		}
-
-		span.RecordError(execErr)
-		span.SetStatus(codes.Error, reason)
-
-		if retry {
-			m.failJob(ctx, job, reason, msg)
-		} else {
-			m.failJobNoRetry(ctx, job, reason, msg)
-		}
-
-		return
-	}
-
-	span.SetStatus(codes.Ok, "")
-	m.completeJob(ctx, job, result.OutputData)
-
-	// Reset the executor for the next job.
-	if err := executor.Reset(m.ctx); err != nil {
-		m.setLastError(fmt.Sprintf("Executor reset failed: %v", err))
-	}
-}
-
-// heartbeatLoop sends periodic heartbeats for the current job.
-func (m *RootModel) heartbeatLoop(ctx context.Context, jobID string) {
-	interval := m.cfg.HeartbeatInterval()
-
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			_, err := m.client.HeartbeatJob(ctx, jobID)
-			if err != nil {
-				m.setLastError(fmt.Sprintf("Heartbeat failed: %v", err))
-				continue
-			}
-
-			m.statusMu.Lock()
-			m.lastHeartbeat = time.Now()
-			m.statusMu.Unlock()
-		}
-	}
-}
-
-// completeJob reports job completion to the API.
-func (m *RootModel) completeJob(ctx context.Context, job *client.Job, outputData map[string]any) {
-	err := m.client.CompleteJob(ctx, job.ID, outputData)
-	if err != nil {
-		m.setLastError(fmt.Sprintf("Complete failed: %v", err))
-		m.failJob(ctx, job, "completion_report_failed", err.Error())
-
-		return
-	}
-
-	m.statusMu.Lock()
-	m.completed++
-	m.statusMu.Unlock()
-}
-
-// releaseJob returns a job to the queue.
-func (m *RootModel) releaseJob(ctx context.Context, job *client.Job) {
-	if err := m.client.ReleaseJob(ctx, job.ID); err != nil {
-		m.setLastError(fmt.Sprintf("Release failed: %v", err))
-	}
-}
-
-// failJob reports job failure to the API (retryable).
-func (m *RootModel) failJob(ctx context.Context, job *client.Job, reason, message string) {
-	err := m.client.FailJob(ctx, job.ID, reason, message, true)
-	if err != nil {
-		m.setLastError(fmt.Sprintf("Fail report failed: %v", err))
-	}
-
-	m.statusMu.Lock()
-	m.failed++
-	m.statusMu.Unlock()
-}
-
-// failJobNoRetry reports a permanent job failure (no retry).
-func (m *RootModel) failJobNoRetry(ctx context.Context, job *client.Job, reason, message string) {
-	err := m.client.FailJob(ctx, job.ID, reason, message, false)
-	if err != nil {
-		m.setLastError(fmt.Sprintf("Fail report failed: %v", err))
-	}
-
-	m.statusMu.Lock()
-	m.failed++
-	m.statusMu.Unlock()
-}
-
-func (m *RootModel) currentJobID() string {
-	m.jobMu.Lock()
-	defer m.jobMu.Unlock()
-
-	if m.currentJob == nil {
-		return ""
-	}
-
-	return m.currentJob.ID
-}
-
-// setLastError records an error to be displayed in the status bar.
-func (m *RootModel) setLastError(msg string) {
-	m.statusMu.Lock()
-	m.lastError = msg
-	m.lastErrorTime = time.Now()
-	m.statusMu.Unlock()
-}
-
-func (m *RootModel) runnerConfigRefreshLoop() {
-	interval := m.refreshInterval
-	if interval <= 0 {
-		interval = normalizeRefreshInterval(0)
-	}
-
-	timer := time.NewTimer(interval)
-	defer timer.Stop()
-
-	for {
-		select {
-		case <-m.ctx.Done():
-			return
-		case <-m.done:
-			return
-		case <-timer.C:
-			cfg, err := m.client.GetRunnerConfig(m.ctx)
-			if err != nil {
-				m.setLastError(fmt.Sprintf("Runner config refresh failed: %v", err))
-				timer.Reset(interval)
-
-				continue
-			}
-
-			m.refreshMu.Lock()
-			interval = normalizeRefreshInterval(cfg.RefreshAfterSeconds)
-			m.refreshInterval = interval
-
-			// Check all refreshable executors.
-			for _, executor := range m.executors {
-				if r, ok := executor.(Refreshable); ok {
-					if r.NeedsRefresh(cfg) {
-						m.runnerConfig = cfg
-					}
-				}
-			}
-
-			m.refreshMu.Unlock()
-			timer.Reset(interval)
-		}
-	}
-}
-
-func (m *RootModel) maybeRefreshExecutors() error {
-	if m.currentJobID() != "" {
-		return nil
-	}
-
-	m.refreshMu.Lock()
-	cfg := m.runnerConfig
-	m.refreshMu.Unlock()
-
-	for harnessName, executor := range m.executors {
-		r, ok := executor.(Refreshable)
-		if !ok {
-			continue
-		}
-
-		if !r.NeedsRefresh(cfg) {
-			continue
-		}
-
-		if err := r.ApplyRefresh(m.ctx, cfg); err != nil {
-			return fmt.Errorf("apply refresh for %s: %w", harnessName, err)
-		}
-	}
-
-	return nil
-}
-
 func (m *RootModel) infof(format string, args ...any) {
 	msg := fmt.Sprintf(format, args...)
 	// Use \r\n because the terminal is in raw mode; writing through termWrite
 	// ensures the output lands inside the scroll region alongside PTY output.
 	m.termWrite([]byte(msg + "\r\n"))
+}
+
+// setLastError records an error to be displayed in the status bar.
+func (m *RootModel) setLastError(msg string) {
+	m.jobs.SetLastError(msg)
 }
 
 func summarizeMCPServers(names []string) string {
@@ -1884,22 +935,6 @@ func sameStringSlice(expected, compared []string) bool {
 	return true
 }
 
-// restore restores the terminal to its original state.
-// Safe to call multiple times (from both defer and signal handler).
-func (m *RootModel) restore() {
-	m.restoreOnce.Do(func() {
-		m.termMu.Lock()
-		h := m.height
-		seq := ansi.ResetScroll + ansi.DisableLRMode + ansi.ShowCursor + ansi.Reset + ansi.Move(h, 1) + "\n"
-		_, _ = os.Stdout.WriteString(seq)
-		m.termMu.Unlock()
-
-		if m.oldState != nil {
-			_ = term.Restore(int(os.Stdin.Fd()), m.oldState)
-		}
-	})
-}
-
 func annotateStartPTYError(err error, binaryPath string) error {
 	if !errors.Is(err, syscall.EPERM) {
 		return err
@@ -1910,4 +945,30 @@ func annotateStartPTYError(err error, binaryPath string) error {
 		err,
 		binaryPath,
 	)
+}
+
+// --- Forwarding methods for test compatibility and internal use ---
+
+func (m *RootModel) sidebarEnabled() bool {
+	return m.term.SidebarEnabled()
+}
+
+func (m *RootModel) handleResize(w, h int) {
+	m.term.handleResize(w, h)
+}
+
+func (m *RootModel) restoreLayoutAfterAltScreen() {
+	m.term.restoreLayoutAfterAltScreen()
+}
+
+func (m *RootModel) hasActiveClaudeJob() bool {
+	return m.jobs.HasActiveClaudeJob()
+}
+
+func (m *RootModel) termWrite(p []byte) {
+	m.term.Write(p)
+}
+
+func (m *RootModel) termWriteString(s string) {
+	m.term.WriteString(s)
 }

@@ -44,7 +44,10 @@ directory structure.`,
 }
 
 func newBundleLoadCmd() *cobra.Command {
-	var harnessType string
+	var (
+		harnessType  string
+		forceSidebar bool
+	)
 
 	cmd := &cobra.Command{
 		Use:   "load <slug>[:<version>]",
@@ -234,6 +237,7 @@ into a temporary directory. The session is interactive — exit the harness
 			// Run TUI in load mode.
 			cfg := &harness.Config{
 				SupportedHarnesses: []string{normalized},
+				ForceSidebar:       forceSidebar,
 				BundleLoadMode:     true,
 				BundleName:         ref.Slug,
 				BundleVer:          resolved.Version,
@@ -259,6 +263,7 @@ into a temporary directory. The session is interactive — exit the harness
 	}
 
 	cmd.Flags().StringVar(&harnessType, "harness", "", "Harness type to use (required)")
+	cmd.Flags().BoolVar(&forceSidebar, "force-sidebar", false, "Skip terminal probe and force sidebar rendering")
 	_ = cmd.MarkFlagRequired("harness")
 
 	return cmd

@@ -49,11 +49,12 @@ Use subcommands to start, check status, or stop the worker.`,
 
 func newWorkerStartCmd() *cobra.Command {
 	var (
-		dryRun      bool
-		queue       string
-		habitat     string
-		harnessType string
-		bundleRef   string
+		dryRun       bool
+		queue        string
+		habitat      string
+		harnessType  string
+		bundleRef    string
+		forceSidebar bool
 	)
 
 	cmd := &cobra.Command{
@@ -257,7 +258,7 @@ Press Ctrl+S to toggle copy mode (Esc to return to live input).`,
 
 			out.Println()
 
-			err = runWatch(ctx, c, habitatID, queueID, supportedHarnesses, runnerConfig, &bundleSummary)
+			err = runWatch(ctx, c, habitatID, queueID, supportedHarnesses, runnerConfig, &bundleSummary, forceSidebar)
 			if err != nil {
 				logger.Error("worker watch runtime failed", slog.String("event.type", "worker.error"), slog.String("error", err.Error()))
 				return err
@@ -279,6 +280,7 @@ Press Ctrl+S to toggle copy mode (Esc to return to live input).`,
 	cmd.Flags().StringVar(&habitat, "habitat", "", "Habitat slug or ID to connect to")
 	cmd.Flags().StringVar(&harnessType, "harness", "", "Specific harness type: claude, bash (default: all)")
 	cmd.Flags().StringVar(&bundleRef, "bundle", "", "Bundle slug[:version] to install before starting")
+	cmd.Flags().BoolVar(&forceSidebar, "force-sidebar", false, "Skip terminal probe and force sidebar rendering")
 
 	return cmd
 }
@@ -290,6 +292,7 @@ func runWatch(
 	supportedHarnesses []string,
 	runnerConfig *client.RunnerConfigResponse,
 	bundleSummary *harness.BundleSummary,
+	forceSidebar bool,
 ) error {
 	localCfg := config.Load()
 	cfg := &harness.Config{
@@ -301,6 +304,7 @@ func runWatch(
 		TranscriptEnabled:  localCfg.HistoryEnabled(),
 		TranscriptDir:      localCfg.HistoryDir(),
 		TranscriptLines:    localCfg.HistoryScrollbackLines(),
+		ForceSidebar:       forceSidebar,
 		BundleName:         bundleSummary.Name,
 		BundleVer:          bundleSummary.Version,
 		BundleSummary:      *bundleSummary,

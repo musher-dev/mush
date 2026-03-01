@@ -16,7 +16,7 @@ type Snapshot struct {
 	Height int
 
 	SidebarVisible   bool
-	SidebarAvailable bool // LR margins supported and not force-disabled (controls ^G hint)
+	SidebarAvailable bool // Not force-disabled by executor (controls ^G hint; Ctrl+G re-probes if needed)
 	SidebarWidth     int
 	PaneXStart       int
 	PaneWidth        int

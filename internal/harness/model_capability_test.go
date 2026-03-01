@@ -4,8 +4,11 @@ package harness
 
 import (
 	"bytes"
+	"os"
 	"sync"
+	"syscall"
 	"testing"
+	"time"
 )
 
 func TestSupportsLRMargins(t *testing.T) {
@@ -24,14 +27,15 @@ func TestSupportsLRMargins(t *testing.T) {
 		{name: "wezterm", term: "wezterm", want: true},
 		{name: "ghostty", term: "ghostty", want: true},
 
-		// Rejected terminals (no DECLRMM/DECSLRM support).
-		{name: "alacritty", term: "alacritty", want: false},
-		{name: "kitty", term: "kitty", want: false},
-		{name: "kitty-direct", term: "xterm-kitty", want: true}, // contains "xterm"
+		// Probed terminals (let the runtime probe decide).
+		{name: "alacritty", term: "alacritty", want: true},
+		{name: "kitty", term: "kitty", want: true},
+		{name: "foot", term: "foot", want: true},
+		{name: "unknown", term: "unknown", want: true},
+
+		// Rejected terminals (no probe attempted).
 		{name: "dumb", term: "dumb", want: false},
 		{name: "empty", term: "", want: false},
-		{name: "foot", term: "foot", want: false},
-		{name: "unknown", term: "unknown", want: false},
 
 		// Edge cases.
 		{name: "case insensitive upper", term: "XTERM-256COLOR", want: true},
@@ -164,11 +168,12 @@ func TestSidebarEnabledCombinations(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			m := &RootModel{
-				lrMarginSupported: tc.lrMarginSupport,
-			}
-			m.sidebarForcedOff.Store(tc.forcedOff)
-			m.sidebarUserOff.Store(tc.userOff)
+			ctrl := &TerminalController{}
+			ctrl.lrMarginSupported.Store(tc.lrMarginSupport)
+			ctrl.sidebarForcedOff.Store(tc.forcedOff)
+			ctrl.sidebarUserOff.Store(tc.userOff)
+
+			m := &RootModel{term: ctrl}
 
 			got := m.sidebarEnabled()
 			if got != tc.want {
@@ -255,5 +260,197 @@ func TestParseTerminalEvents(t *testing.T) {
 				t.Fatalf("tail length = %d, want <= %d", len(tail), maxTermSeqTailBytes)
 			}
 		})
+	}
+}
+
+func TestStripTerminalResponses(t *testing.T) {
+	tests := []struct {
+		name  string
+		input []byte
+		want  []byte
+	}{
+		{
+			name:  "empty input",
+			input: []byte{},
+			want:  nil,
+		},
+		{
+			name:  "DECRQM only",
+			input: []byte("\x1b[?69;1$y"),
+			want:  nil,
+		},
+		{
+			name:  "CPR only",
+			input: []byte("\x1b[12;5R"),
+			want:  nil,
+		},
+		{
+			name:  "both DECRQM and CPR",
+			input: []byte("\x1b[?69;2$y\x1b[1;10R"),
+			want:  nil,
+		},
+		{
+			name:  "user input only",
+			input: []byte("hello"),
+			want:  []byte("hello"),
+		},
+		{
+			name:  "user input before DECRQM",
+			input: []byte("ab\x1b[?69;1$y"),
+			want:  []byte("ab"),
+		},
+		{
+			name:  "user input after CPR",
+			input: []byte("\x1b[12;5Rxy"),
+			want:  []byte("xy"),
+		},
+		{
+			name:  "interleaved user input and responses",
+			input: []byte("a\x1b[?69;3$yb\x1b[1;10Rc"),
+			want:  []byte("abc"),
+		},
+		{
+			name:  "arrow key escape sequence preserved",
+			input: []byte("\x1b[?69;1$y\x1b[A\x1b[24;5R"),
+			want:  []byte("\x1b[A"),
+		},
+		{
+			name:  "multiple arrow keys preserved",
+			input: []byte("\x1b[A\x1b[B\x1b[C"),
+			want:  []byte("\x1b[A\x1b[B\x1b[C"),
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := stripTerminalResponses(tc.input)
+			if !bytes.Equal(got, tc.want) {
+				t.Fatalf("stripTerminalResponses(%q) = %q, want %q", tc.input, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestMatchDECRQM69(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   []byte
+		wantOK  bool
+		wantEnd int
+	}{
+		{name: "mode 0", input: []byte("\x1b[?69;0$y"), wantOK: true, wantEnd: 9},
+		{name: "mode 1", input: []byte("\x1b[?69;1$y"), wantOK: true, wantEnd: 9},
+		{name: "mode 2", input: []byte("\x1b[?69;2$y"), wantOK: true, wantEnd: 9},
+		{name: "mode 3", input: []byte("\x1b[?69;3$y"), wantOK: true, wantEnd: 9},
+		{name: "mode 4", input: []byte("\x1b[?69;4$y"), wantOK: true, wantEnd: 9},
+		{name: "invalid digit 5", input: []byte("\x1b[?69;5$y"), wantOK: false},
+		{name: "invalid digit 9", input: []byte("\x1b[?69;9$y"), wantOK: false},
+		{name: "truncated", input: []byte("\x1b[?69;1$"), wantOK: false},
+		{name: "too short", input: []byte("\x1b[?69"), wantOK: false},
+		{name: "wrong prefix", input: []byte("\x1b[?70;1$y"), wantOK: false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ok, end := matchDECRQM69(tc.input, 0)
+			if ok != tc.wantOK {
+				t.Fatalf("matchDECRQM69 ok = %v, want %v", ok, tc.wantOK)
+			}
+
+			if ok && end != tc.wantEnd {
+				t.Fatalf("matchDECRQM69 end = %d, want %d", end, tc.wantEnd)
+			}
+		})
+	}
+}
+
+func TestMatchCPR(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   []byte
+		wantOK  bool
+		wantEnd int
+	}{
+		{name: "simple", input: []byte("\x1b[1;1R"), wantOK: true, wantEnd: 6},
+		{name: "multi-digit", input: []byte("\x1b[24;80R"), wantOK: true, wantEnd: 8},
+		{name: "large values", input: []byte("\x1b[999;999R"), wantOK: true, wantEnd: 10},
+		{name: "missing semicolon", input: []byte("\x1b[123R"), wantOK: false},
+		{name: "no trailing R", input: []byte("\x1b[1;1X"), wantOK: false},
+		{name: "non-digit row", input: []byte("\x1b[a;1R"), wantOK: false},
+		{name: "non-digit col", input: []byte("\x1b[1;aR"), wantOK: false},
+		{name: "too short", input: []byte("\x1b["), wantOK: false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ok, end := matchCPR(tc.input, 0)
+			if ok != tc.wantOK {
+				t.Fatalf("matchCPR ok = %v, want %v", ok, tc.wantOK)
+			}
+
+			if ok && end != tc.wantEnd {
+				t.Fatalf("matchCPR end = %d, want %d", end, tc.wantEnd)
+			}
+		})
+	}
+}
+
+func TestProbeLRMarginSupportReturnsLeftover(t *testing.T) {
+	// Use raw syscall pipes to avoid Go's internal poller, which interferes
+	// with the SetNonblock calls inside probeLRMarginSupport.
+	var stdinFDs, stdoutFDs [2]int
+
+	if err := syscall.Pipe(stdinFDs[:]); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := syscall.Pipe(stdoutFDs[:]); err != nil {
+		syscall.Close(stdinFDs[0])
+		syscall.Close(stdinFDs[1])
+		t.Fatal(err)
+	}
+
+	stdinR := os.NewFile(uintptr(stdinFDs[0]), "stdin-r")
+	stdinW := os.NewFile(uintptr(stdinFDs[1]), "stdin-w")
+	stdoutR := os.NewFile(uintptr(stdoutFDs[0]), "stdout-r")
+	stdoutW := os.NewFile(uintptr(stdoutFDs[1]), "stdout-w")
+
+	defer stdinR.Close()
+	defer stdinW.Close()
+	defer stdoutR.Close()
+	defer stdoutW.Close()
+
+	// Write DECRQM response + CPR response + user keystrokes into the pipe.
+	// DECRQM: mode 69 set (supported). CPR: row=1, col=5 (margins active).
+	// User typed "hi" during the probe window.
+	termResponses := []byte("\x1b[?69;1$y\x1b[1;5Rhi")
+
+	go func() {
+		time.Sleep(10 * time.Millisecond)
+
+		_, _ = stdinW.Write(termResponses)
+	}()
+
+	// Drain stdout in the background to prevent blocking.
+	go func() {
+		buf := make([]byte, 1024)
+		for {
+			_, err := stdoutR.Read(buf)
+			if err != nil {
+				return
+			}
+		}
+	}()
+
+	// termWidth=20, probeLeft = max(2, 20/4) = 5, probeRight = max(7, 10) = 10.
+	// CPR col=5 == probeLeft → result should be true.
+	supported, userInput := probeLRMarginSupport(stdinR, stdoutW, 200*time.Millisecond, 20)
+
+	if !supported {
+		t.Fatal("expected supported=true")
+	}
+
+	if !bytes.Equal(userInput, []byte("hi")) {
+		t.Fatalf("userInput = %q, want %q", userInput, "hi")
 	}
 }

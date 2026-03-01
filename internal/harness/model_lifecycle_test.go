@@ -19,6 +19,7 @@ func TestHandleCtrlCExitsImmediatelyWithoutActiveClaudeJob(t *testing.T) {
 	m := &RootModel{
 		done:      make(chan struct{}),
 		executors: make(map[string]Executor),
+		jobs:      &JobLoop{},
 	}
 
 	if !m.handleCtrlC() {
@@ -46,13 +47,16 @@ func TestHandleCtrlCFirstPressInterruptsClaude(t *testing.T) {
 	ce := &mockInputReceiver{w: w}
 
 	m := &RootModel{
+		term:               &TerminalController{},
 		done:               make(chan struct{}),
 		executors:          map[string]Executor{"claude": ce},
 		supportedHarnesses: []string{"claude"},
 		now:                func() time.Time { return now },
 		ctrlCExitWindow:    2 * time.Second,
-		currentJob: &client.Job{
-			Execution: &client.ExecutionConfig{HarnessType: "claude"},
+		jobs: &JobLoop{
+			currentJob: &client.Job{
+				Execution: &client.ExecutionConfig{HarnessType: "claude"},
+			},
 		},
 	}
 
@@ -90,13 +94,16 @@ func TestHandleCtrlCSecondPressExitsWithinWindow(t *testing.T) {
 	ce := &mockInputReceiver{w: w}
 
 	m := &RootModel{
+		term:               &TerminalController{},
 		done:               make(chan struct{}),
 		executors:          map[string]Executor{"claude": ce},
 		supportedHarnesses: []string{"claude"},
 		now:                func() time.Time { return current },
 		ctrlCExitWindow:    2 * time.Second,
-		currentJob: &client.Job{
-			Execution: &client.ExecutionConfig{HarnessType: "claude"},
+		jobs: &JobLoop{
+			currentJob: &client.Job{
+				Execution: &client.ExecutionConfig{HarnessType: "claude"},
+			},
 		},
 	}
 
