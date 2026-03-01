@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -216,7 +217,12 @@ func (sf *sidebarFilter) rewrite(p []byte) []byte {
 			}
 
 			top, bottom := sf.scrollDims()
-			out = append(out, []byte(fmt.Sprintf("\x1b[%d;%dr", top, bottom))...)
+
+			out = append(out, "\x1b["...)
+			out = strconv.AppendInt(out, int64(top), 10)
+			out = append(out, ';')
+			out = strconv.AppendInt(out, int64(bottom), 10)
+			out = append(out, 'r')
 			i += 3
 
 		case third == '?':
@@ -334,9 +340,8 @@ func (sf *sidebarFilter) handleCSIQuestion(seq []byte) (action filterAction, seq
 	for j := 3; j < len(seq); j++ {
 		b := seq[j]
 		if b >= 0x40 && b <= 0x7e {
-			// Final byte found.
-			params := string(seq[3:j])
-			if b == 'l' && params == "69" {
+			// Final byte found. Check for CSI ?69l without string allocation.
+			if b == 'l' && j-3 == 2 && seq[3] == '6' && seq[4] == '9' {
 				return filterDrop, j + 1
 			}
 
@@ -355,9 +360,8 @@ func (sf *sidebarFilter) handleCSIParams(seq []byte) (action filterAction, seqLe
 	for j := 2; j < len(seq); j++ {
 		b := seq[j]
 		if b >= 0x40 && b <= 0x7e {
-			// Final byte found.
-			params := string(seq[2:j])
-			if b == 's' && isDECSLRMParams(params) {
+			// Final byte found. Check for DECSLRM without string allocation.
+			if b == 's' && isDECSLRMBytes(seq[2:j]) {
 				return filterDrop, j + 1
 			}
 
@@ -436,8 +440,10 @@ func (tc *TerminalController) Dimensions() (w, h int) {
 }
 
 // SidebarEnabled returns true when the sidebar is active.
+// Returns false during alt-screen mode so the output filter does not
+// rewrite/drop sequences that full-screen TUI programs need.
 func (tc *TerminalController) SidebarEnabled() bool {
-	return tc.lrMarginSupported.Load() && !tc.sidebarForcedOff.Load() && !tc.sidebarQuarantined.Load() && !tc.sidebarUserOff.Load()
+	return tc.lrMarginSupported.Load() && !tc.sidebarForcedOff.Load() && !tc.sidebarQuarantined.Load() && !tc.sidebarUserOff.Load() && !tc.altScreenActive.Load()
 }
 
 // AltScreenActive returns true when the alt-screen buffer is active.
@@ -1056,6 +1062,29 @@ func isDECSLRMParams(params string) bool {
 	for i := 0; i < len(params); i++ {
 		c := params[i]
 
+		switch {
+		case c >= '0' && c <= '9':
+			// digit — ok
+		case c == ';' && !semi:
+			semi = true
+		default:
+			return false
+		}
+	}
+
+	return true
+}
+
+// isDECSLRMBytes is the allocation-free byte-slice variant of isDECSLRMParams
+// for use on the PTY output hot path.
+func isDECSLRMBytes(params []byte) bool {
+	if len(params) == 0 {
+		return false
+	}
+
+	semi := false
+
+	for _, c := range params {
 		switch {
 		case c >= '0' && c <= '9':
 			// digit — ok

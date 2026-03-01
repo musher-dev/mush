@@ -156,14 +156,16 @@ func TestSidebarEnabledCombinations(t *testing.T) {
 		lrMarginSupport bool
 		forcedOff       bool
 		userOff         bool
+		altScreen       bool
 		want            bool
 	}{
-		{"all enabled", true, false, false, true},
-		{"no LR margin support", false, false, false, false},
-		{"forced off", true, true, false, false},
-		{"user off", true, false, true, false},
-		{"forced and user off", true, true, true, false},
-		{"no LR and user off", false, false, true, false},
+		{"all enabled", true, false, false, false, true},
+		{"no LR margin support", false, false, false, false, false},
+		{"forced off", true, true, false, false, false},
+		{"user off", true, false, true, false, false},
+		{"forced and user off", true, true, true, false, false},
+		{"no LR and user off", false, false, true, false, false},
+		{"alt screen active", true, false, false, true, false},
 	}
 
 	for _, tc := range tests {
@@ -172,6 +174,7 @@ func TestSidebarEnabledCombinations(t *testing.T) {
 			ctrl.lrMarginSupported.Store(tc.lrMarginSupport)
 			ctrl.sidebarForcedOff.Store(tc.forcedOff)
 			ctrl.sidebarUserOff.Store(tc.userOff)
+			ctrl.altScreenActive.Store(tc.altScreen)
 
 			m := &RootModel{term: ctrl}
 
