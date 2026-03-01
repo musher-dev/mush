@@ -588,7 +588,7 @@ func (tc *TerminalController) disableSidebar() {
 }
 
 // reassertOrQuarantine handles scroll-reset and disable-LR events with a
-// sliding-window rate limiter. Single events reassert the layout; repeated
+// fixed-window rate limiter. Single events reassert the layout; repeated
 // events within the window quarantine the sidebar (recoverable via ^G).
 func (tc *TerminalController) reassertOrQuarantine(ev terminalEvent) {
 	if !tc.SidebarEnabled() {
@@ -621,14 +621,19 @@ func (tc *TerminalController) reassertOrQuarantine(ev terminalEvent) {
 }
 
 // reassertLayout re-applies LR margins, scroll region, and status bar without
-// tearing down the sidebar.
+// tearing down the sidebar. Only emits LR-mode sequences when the sidebar is
+// actually visible (terminal wide enough); otherwise just restores the scroll region.
 func (tc *TerminalController) reassertLayout() {
 	tc.mu.Lock()
 	frame := layout.ComputeFrame(tc.width, tc.height, tc.SidebarEnabled())
-	seq := ansi.SaveCursor +
-		ansi.EnableLRMode +
-		ansi.LRMargins(frame.PaneXStart, frame.Width) +
-		ansi.ScrollRegion(frame.ContentTop, frame.Height) +
+
+	seq := ansi.SaveCursor
+	if frame.SidebarVisible {
+		seq += ansi.EnableLRMode +
+			ansi.LRMargins(frame.PaneXStart, frame.Width)
+	}
+
+	seq += ansi.ScrollRegion(frame.ContentTop, frame.Height) +
 		ansi.RestoreCursor
 	_, _ = fmt.Fprint(os.Stdout, seq)
 	tc.mu.Unlock()
