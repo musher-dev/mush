@@ -16,7 +16,7 @@ type Snapshot struct {
 	Height int
 
 	SidebarVisible   bool
-	SidebarAvailable bool // Not force-disabled by executor (controls ^G hint; Ctrl+G re-probes if needed)
+	SidebarAvailable bool // Sidebar feature available per terminal capabilities (controls ^G hint; Ctrl+G re-probes if needed)
 	SidebarWidth     int
 	PaneXStart       int
 	PaneWidth        int

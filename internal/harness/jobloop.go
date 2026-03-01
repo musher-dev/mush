@@ -128,8 +128,17 @@ func (jl *JobLoop) HasActiveClaudeJob() bool {
 func (jl *JobLoop) SetLastError(msg string) {
 	jl.statusMu.Lock()
 	jl.lastError = msg
-	jl.lastErrorTime = time.Now()
+	jl.lastErrorTime = jl.currentTime()
 	jl.statusMu.Unlock()
+}
+
+// currentTime returns the current time, using the injected clock when available.
+func (jl *JobLoop) currentTime() time.Time {
+	if jl.now != nil {
+		return jl.now()
+	}
+
+	return time.Now()
 }
 
 // Run executes the job manager loop, polling for and processing jobs.

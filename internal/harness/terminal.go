@@ -156,7 +156,11 @@ func (tc *TerminalController) detectLRMarginSupport() bool {
 		return false
 	}
 
-	supported, leftover := probeLRMarginSupport(os.Stdin, os.Stdout, lrMarginProbeTimeout, tc.width)
+	tc.mu.Lock()
+	width := tc.width
+	tc.mu.Unlock()
+
+	supported, leftover := probeLRMarginSupport(os.Stdin, os.Stdout, lrMarginProbeTimeout, width)
 	tc.probeLeftoverInput = leftover
 
 	return supported
