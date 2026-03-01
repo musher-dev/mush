@@ -454,3 +454,223 @@ func TestProbeLRMarginSupportReturnsLeftover(t *testing.T) {
 		t.Fatalf("userInput = %q, want %q", userInput, "hi")
 	}
 }
+
+func TestCursorRewriter(t *testing.T) {
+	tests := []struct {
+		name   string
+		active bool
+		input  []byte
+		want   []byte
+	}{
+		{
+			name:   "bare CSI s rewritten when active",
+			active: true,
+			input:  []byte("\x1b[s"),
+			want:   []byte("\x1b7"),
+		},
+		{
+			name:   "bare CSI u rewritten when active",
+			active: true,
+			input:  []byte("\x1b[u"),
+			want:   []byte("\x1b8"),
+		},
+		{
+			name:   "bare CSI s passthrough when inactive",
+			active: false,
+			input:  []byte("\x1b[s"),
+			want:   []byte("\x1b[s"),
+		},
+		{
+			name:   "bare CSI u passthrough when inactive",
+			active: false,
+			input:  []byte("\x1b[u"),
+			want:   []byte("\x1b[u"),
+		},
+		{
+			name:   "parameterized CSI s passthrough when active",
+			active: true,
+			input:  []byte("\x1b[1;40s"),
+			want:   []byte("\x1b[1;40s"),
+		},
+		{
+			name:   "plain text passthrough",
+			active: true,
+			input:  []byte("hello world"),
+			want:   []byte("hello world"),
+		},
+		{
+			name:   "mixed text and bare CSI s",
+			active: true,
+			input:  []byte("abc\x1b[sdef\x1b[ughij"),
+			want:   []byte("abc\x1b7def\x1b8ghij"),
+		},
+		{
+			name:   "multiple sequences in one chunk",
+			active: true,
+			input:  []byte("\x1b[s\x1b[u\x1b[s"),
+			want:   []byte("\x1b7\x1b8\x1b7"),
+		},
+		{
+			name:   "other CSI sequences pass through",
+			active: true,
+			input:  []byte("\x1b[H\x1b[2J"),
+			want:   []byte("\x1b[H\x1b[2J"),
+		},
+		{
+			name:   "ESC c (hard reset) passes through",
+			active: true,
+			input:  []byte("\x1bc"),
+			want:   []byte("\x1bc"),
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cr := &cursorRewriter{active: func() bool { return tc.active }}
+			got := cr.rewrite(tc.input)
+
+			if !bytes.Equal(got, tc.want) {
+				t.Fatalf("rewrite(%q) = %q, want %q", tc.input, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestCursorRewriterChunkBoundary(t *testing.T) {
+	t.Run("ESC at end of chunk 1 then [s in chunk 2", func(t *testing.T) {
+		cr := &cursorRewriter{active: func() bool { return true }}
+
+		got1 := cr.rewrite([]byte("abc\x1b"))
+		got1 = append(got1, cr.rewrite([]byte("[sdef"))...)
+		want := []byte("abc\x1b7def")
+
+		if !bytes.Equal(got1, want) {
+			t.Fatalf("got %q, want %q", got1, want)
+		}
+	})
+
+	t.Run("ESC [ at end of chunk 1 then s in chunk 2", func(t *testing.T) {
+		cr := &cursorRewriter{active: func() bool { return true }}
+
+		got1 := cr.rewrite([]byte("abc\x1b["))
+		got1 = append(got1, cr.rewrite([]byte("sdef"))...)
+		want := []byte("abc\x1b7def")
+
+		if !bytes.Equal(got1, want) {
+			t.Fatalf("got %q, want %q", got1, want)
+		}
+	})
+
+	t.Run("ESC [ at end of chunk 1 then parameterized s in chunk 2 (no rewrite)", func(t *testing.T) {
+		cr := &cursorRewriter{active: func() bool { return true }}
+
+		got1 := cr.rewrite([]byte("abc\x1b["))
+		got1 = append(got1, cr.rewrite([]byte("1;40s"))...)
+		want := []byte("abc\x1b[1;40s")
+
+		if !bytes.Equal(got1, want) {
+			t.Fatalf("got %q, want %q", got1, want)
+		}
+	})
+
+	t.Run("held tail flushed when active returns false", func(t *testing.T) {
+		active := true
+		cr := &cursorRewriter{active: func() bool { return active }}
+
+		// First chunk: active, ESC at end → held in tail.
+		got1 := cr.rewrite([]byte("abc\x1b"))
+
+		// Deactivate before next chunk.
+		active = false
+
+		got1 = append(got1, cr.rewrite([]byte("[sdef"))...)
+		// When inactive, the held ESC is flushed verbatim along with new data.
+		want := []byte("abc\x1b[sdef")
+
+		if !bytes.Equal(got1, want) {
+			t.Fatalf("got %q, want %q", got1, want)
+		}
+	})
+
+	t.Run("ESC [ at end of chunk 1 then u in chunk 2", func(t *testing.T) {
+		cr := &cursorRewriter{active: func() bool { return true }}
+
+		got1 := cr.rewrite([]byte("\x1b["))
+		got1 = append(got1, cr.rewrite([]byte("u"))...)
+		want := []byte("\x1b8")
+
+		if !bytes.Equal(got1, want) {
+			t.Fatalf("got %q, want %q", got1, want)
+		}
+	})
+}
+
+func TestTerminalEventFromCSI_DECSLRM(t *testing.T) {
+	t.Run("parameterized s triggers DisableLR", func(t *testing.T) {
+		ev, ok := terminalEventFromCSI("1;40", 's')
+		if !ok {
+			t.Fatal("expected ok=true")
+		}
+
+		if ev != terminalEventDisableLR {
+			t.Fatalf("event = %v, want terminalEventDisableLR", ev)
+		}
+	})
+
+	t.Run("bare s produces no event", func(t *testing.T) {
+		_, ok := terminalEventFromCSI("", 's')
+		if ok {
+			t.Fatal("expected ok=false for bare CSI s")
+		}
+	})
+}
+
+func TestLockedWriterFilter(t *testing.T) {
+	var buf bytes.Buffer
+
+	var mu sync.Mutex
+
+	var writtenToUnderlying []byte
+
+	var onWriteReceived []byte
+
+	lw := &lockedWriter{
+		mu: &mu,
+		w: writerFunc(func(p []byte) (int, error) {
+			writtenToUnderlying = make([]byte, len(p))
+			copy(writtenToUnderlying, p)
+
+			return buf.Write(p)
+		}),
+		filter: func(p []byte) []byte {
+			// Simulate rewriting: replace "ab" with "XY"
+			return bytes.ReplaceAll(p, []byte("ab"), []byte("XY"))
+		},
+		onWrite: func(p []byte) {
+			onWriteReceived = make([]byte, len(p))
+			copy(onWriteReceived, p)
+		},
+	}
+
+	input := []byte("abc")
+
+	n, err := lw.Write(input)
+	if err != nil {
+		t.Fatalf("Write error: %v", err)
+	}
+
+	// Return value should be len(input), not len(filtered).
+	if n != len(input) {
+		t.Fatalf("Write n = %d, want %d", n, len(input))
+	}
+
+	// Underlying writer should receive the filtered bytes.
+	if !bytes.Equal(writtenToUnderlying, []byte("XYc")) {
+		t.Fatalf("underlying write = %q, want %q", writtenToUnderlying, "XYc")
+	}
+
+	// onWrite should receive the original (unfiltered) bytes.
+	if !bytes.Equal(onWriteReceived, []byte("abc")) {
+		t.Fatalf("onWrite received = %q, want %q", onWriteReceived, "abc")
+	}
+}

@@ -285,9 +285,11 @@ func (m *RootModel) Run() error {
 	// Create executors from registry.
 	frame := layout.ComputeFrame(m.term.width, m.term.height, m.term.SidebarEnabled())
 	ptyRows := layout.PtyRowsForFrame(frame)
+	rewriter := &cursorRewriter{active: m.term.SidebarEnabled}
 	termWriter := &lockedWriter{
 		mu:      &m.term.mu,
 		w:       os.Stdout,
+		filter:  rewriter.rewrite,
 		onWrite: m.term.inspectTerminalControlSequences,
 	}
 
@@ -772,7 +774,7 @@ func (m *RootModel) copyInput() {
 			}
 
 			if buf[i] == ctrlG {
-				m.term.toggleSidebar(m.jobs.CurrentJobID)
+				m.term.toggleSidebar()
 
 				buf[i] = 0
 
