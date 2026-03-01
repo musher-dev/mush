@@ -7,8 +7,10 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -22,6 +24,11 @@ import (
 )
 
 const maxTermSeqTailBytes = 16
+
+const (
+	tamperThreshold = 5               // max reassert events before quarantine
+	tamperWindow    = 2 * time.Second // sliding window duration
+)
 
 type terminalEvent uint8
 
@@ -37,7 +44,7 @@ const (
 // TerminalController manages terminal I/O, scroll regions, sidebar toggling,
 // resize handling, and alt-screen tracking.
 type TerminalController struct {
-	mu     sync.Mutex // serializes stdout writes (was termMu)
+	mu     sync.Mutex // serializes stdout writes
 	width  int
 	height int
 
@@ -47,12 +54,19 @@ type TerminalController struct {
 	forceSidebar       bool
 	probeLeftoverInput []byte // user keystrokes captured during LR margin probe
 	sidebarForcedOff   atomic.Bool
+	sidebarQuarantined atomic.Bool // recoverable disable (rate limit exceeded)
+	tamperCount        atomic.Int32
+	tamperWindowStart  atomic.Int64 // UnixNano of window start
 	sidebarUserOff     atomic.Bool
 	altScreenActive    atomic.Bool
 	termSeqTail        []byte
 	termSeqMu          sync.Mutex
 	sidebarDisableMu   sync.Mutex
 	restoreOnce        sync.Once
+
+	// Atomic frame dimensions for the output filter (Part 2).
+	filterContentTop   atomic.Int32
+	filterScrollBottom atomic.Int32
 
 	// Set once in Run(), read-only thereafter.
 	executors          map[string]Executor
@@ -64,30 +78,33 @@ type TerminalController struct {
 	ptyActive     func() bool // true when any executor PTY is running (unsafe to probe)
 }
 
-// cursorRewriter is a stream filter that rewrites bare CSI s (SCOSC) → ESC 7
-// (DECSC) and bare CSI u (SCORC) → ESC 8 (DECRC). When the sidebar enables
-// DECLRMM (mode 69), CSI s changes meaning to DECSLRM which homes the cursor;
-// the DEC private forms are unambiguous and safe regardless of mode state.
+// sidebarFilter is a stream filter for PTY output when the sidebar is active.
+// It rewrites bare CSI s (SCOSC) → ESC 7 (DECSC), bare CSI u (SCORC) → ESC 8
+// (DECRC), bare CSI r → CSI <top>;<bottom> r (preserve scroll region), and
+// drops CSI ?69l (disable LR mode) and parameterized CSI Ps;Ps s (DECSLRM).
 //
-// The rewriter uses a small tail buffer (at most 2 bytes: ESC or ESC [) to
-// handle sequences split across Write chunk boundaries.
-type cursorRewriter struct {
-	active func() bool // true when sidebar is enabled (DECLRMM active)
-	tail   [2]byte     // held bytes from previous chunk
-	tailN  int         // number of valid bytes in tail (0, 1, or 2)
+// The filter uses a tail buffer of up to 8 bytes to handle sequences split
+// across Write chunk boundaries. If accumulated bytes exceed the buffer,
+// they are flushed through (the onWrite callback still catches the event).
+type sidebarFilter struct {
+	active     func() bool       // true when sidebar is enabled (DECLRMM active)
+	scrollDims func() (int, int) // returns (contentTop, scrollBottom) for CSI r rewrite
+	tail       [8]byte           // held bytes from previous chunk
+	tailN      int               // number of valid bytes in tail (0..8)
 }
 
-// rewrite processes a chunk of PTY output, rewriting bare CSI s/u when
-// active. It is designed for the hot path: if no ESC byte is present and no
-// tail is held, the input slice is returned directly (zero allocation).
-func (cr *cursorRewriter) rewrite(p []byte) []byte {
-	if !cr.active() {
+// rewrite processes a chunk of PTY output. When active, it rewrites or drops
+// sequences that would break the sidebar layout. Designed for the hot path:
+// if no ESC byte is present and no tail is held, the input slice is returned
+// directly (zero allocation).
+func (sf *sidebarFilter) rewrite(p []byte) []byte {
+	if !sf.active() {
 		// Not active — flush any held tail and pass through.
-		if cr.tailN > 0 {
-			out := make([]byte, cr.tailN+len(p))
-			copy(out, cr.tail[:cr.tailN])
-			copy(out[cr.tailN:], p)
-			cr.tailN = 0
+		if sf.tailN > 0 {
+			out := make([]byte, sf.tailN+len(p))
+			copy(out, sf.tail[:sf.tailN])
+			copy(out[sf.tailN:], p)
+			sf.tailN = 0
 
 			return out
 		}
@@ -96,24 +113,24 @@ func (cr *cursorRewriter) rewrite(p []byte) []byte {
 	}
 
 	// Fast path: no held tail and no ESC in chunk.
-	if cr.tailN == 0 && !containsByte(p, 0x1b) {
+	if sf.tailN == 0 && !containsByte(p, 0x1b) {
 		return p
 	}
 
 	// Prepend any held tail bytes.
 	var src []byte
-	if cr.tailN > 0 {
-		src = make([]byte, cr.tailN+len(p))
-		copy(src, cr.tail[:cr.tailN])
-		copy(src[cr.tailN:], p)
-		cr.tailN = 0
+	if sf.tailN > 0 {
+		src = make([]byte, sf.tailN+len(p))
+		copy(src, sf.tail[:sf.tailN])
+		copy(src[sf.tailN:], p)
+		sf.tailN = 0
 	} else {
 		src = p
 	}
 
-	// Lazy allocation: out stays nil until we encounter a rewrite or tail
-	// hold. This avoids allocating for the common case where the chunk
-	// contains ESC sequences (colors, cursor moves) but no bare CSI s/u.
+	// Lazy allocation: out stays nil until we encounter a rewrite, drop, or
+	// tail hold. This avoids allocating for the common case where the chunk
+	// contains ESC sequences (colors, cursor moves) but nothing we filter.
 	var out []byte
 
 	i := 0
@@ -132,8 +149,8 @@ func (cr *cursorRewriter) rewrite(p []byte) []byte {
 		// We have ESC at position i.
 		if i+1 >= len(src) {
 			// ESC at end of chunk — hold it.
-			cr.tail[0] = 0x1b
-			cr.tailN = 1
+			sf.tail[0] = 0x1b
+			sf.tailN = 1
 
 			if out == nil {
 				out = make([]byte, i, len(src))
@@ -157,9 +174,9 @@ func (cr *cursorRewriter) rewrite(p []byte) []byte {
 		// ESC [ at positions i, i+1.
 		if i+2 >= len(src) {
 			// ESC [ at end of chunk — hold both bytes.
-			cr.tail[0] = 0x1b
-			cr.tail[1] = '['
-			cr.tailN = 2
+			sf.tail[0] = 0x1b
+			sf.tail[1] = '['
+			sf.tailN = 2
 
 			if out == nil {
 				out = make([]byte, i, len(src))
@@ -173,7 +190,7 @@ func (cr *cursorRewriter) rewrite(p []byte) []byte {
 
 		switch {
 		case third == 's':
-			// Bare CSI s → ESC 7 (DECSC). Must allocate.
+			// Bare CSI s → ESC 7 (DECSC).
 			if out == nil {
 				out = make([]byte, i, len(src))
 				copy(out, src[:i])
@@ -181,8 +198,9 @@ func (cr *cursorRewriter) rewrite(p []byte) []byte {
 
 			out = append(out, 0x1b, '7')
 			i += 3
+
 		case third == 'u':
-			// Bare CSI u → ESC 8 (DECRC). Must allocate.
+			// Bare CSI u → ESC 8 (DECRC).
 			if out == nil {
 				out = make([]byte, i, len(src))
 				copy(out, src[:i])
@@ -190,13 +208,106 @@ func (cr *cursorRewriter) rewrite(p []byte) []byte {
 
 			out = append(out, 0x1b, '8')
 			i += 3
-		case (third >= '0' && third <= '9') || third == ';' || third == '?' || third == '!':
-			// Parameterized CSI — pass through the full sequence unchanged.
+
+		case third == 'r':
+			// Bare CSI r → CSI <top>;<bottom> r (preserve scroll region).
+			if out == nil {
+				out = make([]byte, i, len(src))
+				copy(out, src[:i])
+			}
+
+			top, bottom := sf.scrollDims()
+
+			out = append(out, "\x1b["...)
+			out = strconv.AppendInt(out, int64(top), 10)
+			out = append(out, ';')
+			out = strconv.AppendInt(out, int64(bottom), 10)
+			out = append(out, 'r')
+			i += 3
+
+		case third == '?':
+			// CSI ? ... — accumulate to find final byte.
+			action, seqLen := sf.handleCSIQuestion(src[i:])
+			if seqLen == 0 {
+				// Incomplete — hold remaining bytes in tail.
+				held := src[i:]
+				if len(held) > len(sf.tail) {
+					// Overflow — flush through.
+					if out != nil {
+						out = append(out, held...)
+					}
+				} else {
+					copy(sf.tail[:], held)
+					sf.tailN = len(held)
+
+					if out == nil {
+						out = make([]byte, i, len(src))
+						copy(out, src[:i])
+					}
+				}
+
+				i = len(src)
+
+				break
+			}
+
+			if action == filterDrop {
+				if out == nil {
+					out = make([]byte, i, len(src))
+					copy(out, src[:i])
+				}
+				// Drop — don't append anything.
+			} else if out != nil {
+				out = append(out, src[i:i+seqLen]...)
+			}
+
+			i += seqLen
+
+		case (third >= '0' && third <= '9') || third == ';':
+			// Parameterized CSI — accumulate to find final byte.
+			action, seqLen := sf.handleCSIParams(src[i:])
+			if seqLen == 0 {
+				// Incomplete — hold remaining bytes in tail.
+				held := src[i:]
+				if len(held) > len(sf.tail) {
+					// Overflow — flush through.
+					if out != nil {
+						out = append(out, held...)
+					}
+				} else {
+					copy(sf.tail[:], held)
+					sf.tailN = len(held)
+
+					if out == nil {
+						out = make([]byte, i, len(src))
+						copy(out, src[:i])
+					}
+				}
+
+				i = len(src)
+
+				break
+			}
+
+			if action == filterDrop {
+				if out == nil {
+					out = make([]byte, i, len(src))
+					copy(out, src[:i])
+				}
+			} else if out != nil {
+				out = append(out, src[i:i+seqLen]...)
+			}
+
+			i += seqLen
+
+		case third == '!':
+			// CSI ! p (soft reset) — pass through.
 			if out != nil {
 				out = append(out, src[i], src[i+1])
 			}
 
 			i += 2
+
 		default:
 			// Other bare CSI final — pass through.
 			if out != nil {
@@ -212,6 +323,59 @@ func (cr *cursorRewriter) rewrite(p []byte) []byte {
 	}
 
 	return src
+}
+
+type filterAction int
+
+const (
+	filterPass filterAction = iota
+	filterDrop
+)
+
+// handleCSIQuestion processes CSI ? ... sequences starting at seq[0]=ESC.
+// Returns the action and total sequence length. seqLen=0 means incomplete.
+func (sf *sidebarFilter) handleCSIQuestion(seq []byte) (action filterAction, seqLen int) {
+	// seq starts with ESC [ ?
+	// Find the final byte (0x40-0x7E).
+	for j := 3; j < len(seq); j++ {
+		b := seq[j]
+		if b >= 0x40 && b <= 0x7e {
+			// Final byte found. Check for CSI ?69l without string allocation.
+			if b == 'l' && j-3 == 2 && seq[3] == '6' && seq[4] == '9' {
+				return filterDrop, j + 1
+			}
+
+			return filterPass, j + 1
+		}
+	}
+
+	return filterPass, 0 // incomplete
+}
+
+// handleCSIParams processes CSI <digits/;> ... sequences starting at seq[0]=ESC.
+// Returns the action and total sequence length. seqLen=0 means incomplete.
+func (sf *sidebarFilter) handleCSIParams(seq []byte) (action filterAction, seqLen int) {
+	// seq starts with ESC [ <digit or ;>
+	// Find the final byte (0x40-0x7E).
+	for j := 2; j < len(seq); j++ {
+		b := seq[j]
+		if b >= 0x40 && b <= 0x7e {
+			// Final byte found. Check for DECSLRM without string allocation.
+			if b == 's' && isDECSLRMBytes(seq[2:j]) {
+				return filterDrop, j + 1
+			}
+
+			return filterPass, j + 1
+		}
+
+		// Only digits and ; are valid parameter bytes.
+		if (b < '0' || b > '9') && b != ';' {
+			// Not a simple parameterized sequence — pass through.
+			return filterPass, j + 1
+		}
+	}
+
+	return filterPass, 0 // incomplete
 }
 
 // containsByte reports whether b contains the byte c.
@@ -276,8 +440,10 @@ func (tc *TerminalController) Dimensions() (w, h int) {
 }
 
 // SidebarEnabled returns true when the sidebar is active.
+// Returns false during alt-screen mode so the output filter does not
+// rewrite/drop sequences that full-screen TUI programs need.
 func (tc *TerminalController) SidebarEnabled() bool {
-	return tc.lrMarginSupported.Load() && !tc.sidebarForcedOff.Load() && !tc.sidebarUserOff.Load()
+	return tc.lrMarginSupported.Load() && !tc.sidebarForcedOff.Load() && !tc.sidebarQuarantined.Load() && !tc.sidebarUserOff.Load() && !tc.altScreenActive.Load()
 }
 
 // AltScreenActive returns true when the alt-screen buffer is active.
@@ -290,14 +456,16 @@ func (tc *TerminalController) LRMarginSupported() bool {
 	return tc.lrMarginSupported.Load()
 }
 
-// SidebarAvailable returns whether the sidebar could be shown (LR supported and not force-disabled).
+// SidebarAvailable returns whether the sidebar could be shown (LR supported, not force-disabled, not quarantined).
 func (tc *TerminalController) SidebarAvailable() bool {
-	return tc.lrMarginSupported.Load() && !tc.sidebarForcedOff.Load()
+	return tc.lrMarginSupported.Load() && !tc.sidebarForcedOff.Load() && !tc.sidebarQuarantined.Load()
 }
 
 // setupScreen initializes the terminal with scroll region.
 func (tc *TerminalController) setupScreen() {
 	frame := layout.ComputeFrame(tc.width, tc.height, tc.SidebarEnabled())
+	tc.filterContentTop.Store(int32(frame.ContentTop))
+	tc.filterScrollBottom.Store(int32(frame.Height))
 	tc.WriteString(layout.SetupSequence(frame, tc.SidebarEnabled()))
 	tc.drawStatusBar()
 }
@@ -357,15 +525,27 @@ func (tc *TerminalController) handleTerminalEvent(ev terminalEvent) {
 		if wasActive {
 			tc.restoreLayoutAfterAltScreen()
 		}
-	case terminalEventReset, terminalEventSoftReset, terminalEventScrollReset, terminalEventDisableLR:
+	case terminalEventReset, terminalEventSoftReset:
+		// Hard/soft reset nukes all terminal state — permanent disable.
 		tc.disableSidebar()
+	case terminalEventScrollReset, terminalEventDisableLR:
+		// Common harness init sequences — reassert layout or quarantine.
+		tc.reassertOrQuarantine(ev)
 	}
 }
 
 func (tc *TerminalController) restoreLayoutAfterAltScreen() {
 	tc.mu.Lock()
-	frame := layout.ComputeFrame(tc.width, tc.height, tc.SidebarEnabled())
-	_, _ = fmt.Fprint(os.Stdout, layout.ResizeSequenceWithCursor(frame, tc.SidebarEnabled(), false))
+	sidebarOn := tc.SidebarEnabled()
+	frame := layout.ComputeFrame(tc.width, tc.height, sidebarOn)
+
+	seq := layout.ResizeSequenceWithCursor(frame, sidebarOn, false)
+	if sidebarOn {
+		// Wrap with SaveCursor/RestoreCursor to avoid DECSLRM cursor-homing side effect.
+		seq = ansi.SaveCursor + seq + ansi.RestoreCursor
+	}
+
+	_, _ = fmt.Fprint(os.Stdout, seq)
 	tc.mu.Unlock()
 
 	tc.drawStatusBar()
@@ -405,6 +585,128 @@ func (tc *TerminalController) disableSidebar() {
 	}
 
 	tc.drawStatusBar()
+}
+
+// reassertOrQuarantine handles scroll-reset and disable-LR events with a
+// fixed-window rate limiter. Single events reassert the layout; repeated
+// events within the window quarantine the sidebar (recoverable via ^G).
+func (tc *TerminalController) reassertOrQuarantine(ev terminalEvent) {
+	if !tc.SidebarEnabled() {
+		return
+	}
+
+	now := time.Now().UnixNano()
+	winStart := tc.tamperWindowStart.Load()
+
+	if now-winStart > tamperWindow.Nanoseconds() {
+		// Window expired — reset.
+		tc.tamperCount.Store(1)
+		tc.tamperWindowStart.Store(now)
+	} else {
+		tc.tamperCount.Add(1)
+	}
+
+	if tc.tamperCount.Load() > int32(tamperThreshold) {
+		tc.quarantineSidebar(ev)
+		return
+	}
+
+	tc.reassertLayout()
+	slog.Default().Debug(
+		"sidebar layout reasserted after child event",
+		slog.String("component", "harness"),
+		slog.String("event.type", "sidebar.reassert"),
+		slog.String("terminal_event", terminalEventName(ev)),
+	)
+}
+
+// reassertLayout re-applies LR margins, scroll region, and status bar without
+// tearing down the sidebar. Only emits LR-mode sequences when the sidebar is
+// actually visible (terminal wide enough); otherwise just restores the scroll region.
+func (tc *TerminalController) reassertLayout() {
+	tc.mu.Lock()
+	frame := layout.ComputeFrame(tc.width, tc.height, tc.SidebarEnabled())
+
+	seq := ansi.SaveCursor
+	if frame.SidebarVisible {
+		seq += ansi.EnableLRMode +
+			ansi.LRMargins(frame.PaneXStart, frame.Width)
+	}
+
+	seq += ansi.ScrollRegion(frame.ContentTop, frame.Height) +
+		ansi.RestoreCursor
+	_, _ = fmt.Fprint(os.Stdout, seq)
+	tc.mu.Unlock()
+
+	tc.drawStatusBar()
+}
+
+// quarantineSidebar recovers the sidebar area and sets the quarantine flag.
+// Unlike disableSidebar (permanent), quarantine is recoverable via ^G toggle.
+func (tc *TerminalController) quarantineSidebar(ev terminalEvent) {
+	tc.sidebarDisableMu.Lock()
+	if !tc.SidebarEnabled() {
+		tc.sidebarDisableMu.Unlock()
+		return
+	}
+
+	tc.mu.Lock()
+	termWidth := tc.width
+	oldFrame := layout.ComputeFrame(tc.width, tc.height, tc.SidebarEnabled())
+	tc.sidebarQuarantined.Store(true)
+	newFrame := layout.ComputeFrame(tc.width, tc.height, tc.SidebarEnabled())
+
+	if oldFrame.SidebarVisible {
+		_, _ = fmt.Fprint(os.Stdout, layout.ResizeSequenceWithCursor(newFrame, tc.SidebarEnabled(), false))
+	}
+	tc.mu.Unlock()
+	tc.sidebarDisableMu.Unlock()
+
+	if !oldFrame.SidebarVisible {
+		return
+	}
+
+	tc.clearSidebarArea(oldFrame.SidebarWidth+1, oldFrame.Height, termWidth)
+
+	rows := layout.PtyRowsForFrame(newFrame)
+
+	for _, executor := range tc.executors {
+		if r, ok := executor.(Resizable); ok {
+			r.Resize(rows, newFrame.PaneWidth)
+		}
+	}
+
+	tc.setLastError("sidebar quarantined: repeated layout resets by child process (\x07 to retry)")
+
+	slog.Default().Warn(
+		"sidebar quarantined due to repeated layout-tamper events",
+		slog.String("component", "harness"),
+		slog.String("event.type", "sidebar.quarantine"),
+		slog.String("terminal_event", terminalEventName(ev)),
+		slog.Int("tamper_count", int(tc.tamperCount.Load())),
+	)
+
+	tc.drawStatusBar()
+}
+
+// terminalEventName returns a human-readable name for logging.
+func terminalEventName(ev terminalEvent) string {
+	switch ev {
+	case terminalEventReset:
+		return "hard-reset"
+	case terminalEventSoftReset:
+		return "soft-reset"
+	case terminalEventScrollReset:
+		return "scroll-reset"
+	case terminalEventDisableLR:
+		return "disable-lr"
+	case terminalEventAltEnter:
+		return "alt-enter"
+	case terminalEventAltExit:
+		return "alt-exit"
+	default:
+		return fmt.Sprintf("unknown(%d)", ev)
+	}
 }
 
 // reprobeAndEnableSidebar re-runs the LR margin probe inline (called from
@@ -466,6 +768,32 @@ func (tc *TerminalController) reprobeAndEnableSidebar() {
 
 func (tc *TerminalController) toggleSidebar() {
 	if tc.sidebarForcedOff.Load() || tc.altScreenActive.Load() {
+		return
+	}
+
+	// Quarantine recovery: clear flag, reset tamper counters, re-enable.
+	if tc.sidebarQuarantined.Load() {
+		tc.sidebarQuarantined.Store(false)
+		tc.tamperCount.Store(0)
+		tc.tamperWindowStart.Store(0)
+
+		tc.sidebarDisableMu.Lock()
+		tc.mu.Lock()
+		newFrame := layout.ComputeFrame(tc.width, tc.height, tc.SidebarEnabled())
+		_, _ = fmt.Fprint(os.Stdout, layout.ResizeSequence(newFrame, tc.SidebarEnabled()))
+		tc.mu.Unlock()
+		tc.sidebarDisableMu.Unlock()
+
+		rows := layout.PtyRowsForFrame(newFrame)
+
+		for _, executor := range tc.executors {
+			if r, ok := executor.(Resizable); ok {
+				r.Resize(rows, newFrame.PaneWidth)
+			}
+		}
+
+		tc.drawStatusBar()
+
 		return
 	}
 
@@ -579,6 +907,8 @@ func (tc *TerminalController) handleResize(width, height int) {
 	tc.width = width
 	tc.height = height
 	newFrame := layout.ComputeFrame(tc.width, tc.height, tc.SidebarEnabled())
+	tc.filterContentTop.Store(int32(newFrame.ContentTop))
+	tc.filterScrollBottom.Store(int32(newFrame.Height))
 	_, _ = fmt.Fprint(os.Stdout, layout.ResizeSequenceWithCursor(newFrame, tc.SidebarEnabled(), false))
 	tc.mu.Unlock()
 
@@ -737,6 +1067,29 @@ func isDECSLRMParams(params string) bool {
 	for i := 0; i < len(params); i++ {
 		c := params[i]
 
+		switch {
+		case c >= '0' && c <= '9':
+			// digit — ok
+		case c == ';' && !semi:
+			semi = true
+		default:
+			return false
+		}
+	}
+
+	return true
+}
+
+// isDECSLRMBytes is the allocation-free byte-slice variant of isDECSLRMParams
+// for use on the PTY output hot path.
+func isDECSLRMBytes(params []byte) bool {
+	if len(params) == 0 {
+		return false
+	}
+
+	semi := false
+
+	for _, c := range params {
 		switch {
 		case c >= '0' && c <= '9':
 			// digit — ok

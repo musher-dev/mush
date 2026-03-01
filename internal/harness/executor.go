@@ -39,6 +39,21 @@ type Refreshable interface {
 	ApplyRefresh(ctx context.Context, cfg *client.RunnerConfigResponse) error
 }
 
+// SignalDirConsumer is for executors that need a signal directory for completion detection.
+type SignalDirConsumer interface {
+	SetSignalDir(dir string)
+}
+
+// TranscriptSource is for executors whose output should be captured for history.
+type TranscriptSource interface {
+	WantsTranscript() bool
+}
+
+// InterruptHandler is for executors that handle Ctrl+C by forwarding to the process.
+type InterruptHandler interface {
+	Interrupt() error
+}
+
 // SetupOptions contains the configuration for executor setup.
 type SetupOptions struct {
 	// TermWriter is the writer for terminal output.

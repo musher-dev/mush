@@ -112,16 +112,39 @@ func (jl *JobLoop) CurrentJobID() string {
 	return jl.currentJob.ID
 }
 
-// HasActiveClaudeJob returns true when a Claude-type job is in progress.
-func (jl *JobLoop) HasActiveClaudeJob() bool {
+// HasActiveInterruptableJob returns true when the current job's executor
+// implements InterruptHandler.
+func (jl *JobLoop) HasActiveInterruptableJob() bool {
+	jl.jobMu.Lock()
+	job := jl.currentJob
+	jl.jobMu.Unlock()
+
+	if job == nil {
+		return false
+	}
+
+	harnessType := job.GetHarnessType()
+
+	executor, ok := jl.executors[harnessType]
+	if !ok {
+		return false
+	}
+
+	_, isHandler := executor.(InterruptHandler)
+
+	return isHandler
+}
+
+// CurrentJobHarnessType returns the harness type of the currently executing job, or "".
+func (jl *JobLoop) CurrentJobHarnessType() string {
 	jl.jobMu.Lock()
 	defer jl.jobMu.Unlock()
 
 	if jl.currentJob == nil {
-		return false
+		return ""
 	}
 
-	return jl.currentJob.GetHarnessType() == "claude"
+	return jl.currentJob.GetHarnessType()
 }
 
 // SetLastError records an error to be displayed in the status bar.

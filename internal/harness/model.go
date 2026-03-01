@@ -269,8 +269,8 @@ func (m *RootModel) Run() error {
 		}
 	}
 
-	// Create per-run signal directory (used by Claude executor).
-	if m.isHarnessSupported("claude") {
+	// Create per-run signal directory if any supported harness needs it.
+	if needsSignalDir(m.supportedHarnesses) {
 		signalDir, mkErr := os.MkdirTemp("", "mush-signals-")
 		if mkErr != nil {
 			return fmt.Errorf("failed to create signal directory: %w", mkErr)
@@ -286,11 +286,16 @@ func (m *RootModel) Run() error {
 	// Create executors from registry.
 	frame := layout.ComputeFrame(m.term.width, m.term.height, m.term.SidebarEnabled())
 	ptyRows := layout.PtyRowsForFrame(frame)
-	rewriter := &cursorRewriter{active: m.term.SidebarEnabled}
+	filter := &sidebarFilter{
+		active: m.term.SidebarEnabled,
+		scrollDims: func() (int, int) {
+			return int(m.term.filterContentTop.Load()), int(m.term.filterScrollBottom.Load())
+		},
+	}
 	termWriter := &lockedWriter{
 		mu:      &m.term.mu,
 		w:       os.Stdout,
-		filter:  rewriter.rewrite,
+		filter:  filter.rewrite,
 		onWrite: m.term.inspectTerminalControlSequences,
 	}
 
@@ -411,7 +416,7 @@ func (m *RootModel) runWorkerMode() error {
 	}()
 
 	// Runner config refresh loop for MCP credential rotation.
-	if _, ok := m.executors["claude"]; ok {
+	if hasRefreshableExecutor(m.executors) {
 		wg.Add(1)
 
 		go func() {
@@ -609,7 +614,7 @@ func (m *RootModel) drawStatusBar() {
 }
 
 func (m *RootModel) shouldCaptureTranscript() bool {
-	return m.isHarnessSupported("claude")
+	return hasTranscriptSource(m.supportedHarnesses)
 }
 
 func (m *RootModel) appendTranscript(stream string, chunk []byte) {
@@ -679,10 +684,44 @@ func (m *RootModel) popCopyEscPending() bool {
 	return pending
 }
 
-// isHarnessSupported checks if a given harness type is in the supported list.
-func (m *RootModel) isHarnessSupported(harnessType string) bool {
-	for _, a := range m.supportedHarnesses {
-		if a == harnessType {
+// needsSignalDir checks if any supported harness type implements SignalDirConsumer.
+func needsSignalDir(supportedHarnesses []string) bool {
+	for _, name := range supportedHarnesses {
+		info, ok := Lookup(name)
+		if !ok {
+			continue
+		}
+
+		executor := info.New()
+		if _, ok := executor.(SignalDirConsumer); ok {
+			return true
+		}
+	}
+
+	return false
+}
+
+// hasTranscriptSource checks if any supported harness type implements TranscriptSource.
+func hasTranscriptSource(supportedHarnesses []string) bool {
+	for _, name := range supportedHarnesses {
+		info, ok := Lookup(name)
+		if !ok {
+			continue
+		}
+
+		executor := info.New()
+		if ts, ok := executor.(TranscriptSource); ok && ts.WantsTranscript() {
+			return true
+		}
+	}
+
+	return false
+}
+
+// hasRefreshableExecutor checks if any executor in the map implements Refreshable.
+func hasRefreshableExecutor(executors map[string]Executor) bool {
+	for _, executor := range executors {
+		if _, ok := executor.(Refreshable); ok {
 			return true
 		}
 	}
@@ -830,8 +869,8 @@ func (m *RootModel) copyInput() {
 }
 
 func (m *RootModel) handleCtrlC() bool {
-	// When not actively running a Claude job, Ctrl+C exits immediately.
-	if !m.hasActiveClaudeJob() {
+	// When not actively running an interruptable job, Ctrl+C exits immediately.
+	if !m.hasActiveInterruptableJob() {
 		m.signalDone()
 		return true
 	}
@@ -866,14 +905,15 @@ func (m *RootModel) handleCtrlC() bool {
 		return true
 	}
 
-	// Forward Ctrl+C to the Claude executor.
-	if executor, ok := m.executors["claude"]; ok {
-		if ir, ok := executor.(InputReceiver); ok {
-			_, _ = ir.WriteInput([]byte{ctrlC})
+	// Forward Ctrl+C to the current job's executor via InterruptHandler.
+	harnessType := m.jobs.CurrentJobHarnessType()
+	if executor, ok := m.executors[harnessType]; ok {
+		if ih, ok := executor.(InterruptHandler); ok {
+			_ = ih.Interrupt()
 		}
 	}
 
-	m.infof("Interrupt sent to Claude. Press Ctrl+C again within %s to exit watch mode.", window.Round(time.Second))
+	m.infof("Interrupt sent to agent. Press Ctrl+C again within %s to exit watch mode.", window.Round(time.Second))
 
 	return false
 }
@@ -964,8 +1004,8 @@ func (m *RootModel) restoreLayoutAfterAltScreen() {
 	m.term.restoreLayoutAfterAltScreen()
 }
 
-func (m *RootModel) hasActiveClaudeJob() bool {
-	return m.jobs.HasActiveClaudeJob()
+func (m *RootModel) hasActiveInterruptableJob() bool {
+	return m.jobs.HasActiveInterruptableJob()
 }
 
 // isPTYActive reports whether any executor PTY is currently running, making it

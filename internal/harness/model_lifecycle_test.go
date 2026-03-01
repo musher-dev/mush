@@ -45,15 +45,17 @@ func TestHandleCtrlCFirstPressInterruptsClaude(t *testing.T) {
 
 	// Create a mock claude executor that captures input.
 	ce := &mockInputReceiver{w: w}
+	execs := map[string]Executor{"claude": ce}
 
 	m := &RootModel{
 		term:               &TerminalController{},
 		done:               make(chan struct{}),
-		executors:          map[string]Executor{"claude": ce},
+		executors:          execs,
 		supportedHarnesses: []string{"claude"},
 		now:                func() time.Time { return now },
 		ctrlCExitWindow:    2 * time.Second,
 		jobs: &JobLoop{
+			executors: execs,
 			currentJob: &client.Job{
 				Execution: &client.ExecutionConfig{HarnessType: "claude"},
 			},
@@ -92,15 +94,17 @@ func TestHandleCtrlCSecondPressExitsWithinWindow(t *testing.T) {
 	current := base
 
 	ce := &mockInputReceiver{w: w}
+	execs := map[string]Executor{"claude": ce}
 
 	m := &RootModel{
 		term:               &TerminalController{},
 		done:               make(chan struct{}),
-		executors:          map[string]Executor{"claude": ce},
+		executors:          execs,
 		supportedHarnesses: []string{"claude"},
 		now:                func() time.Time { return current },
 		ctrlCExitWindow:    2 * time.Second,
 		jobs: &JobLoop{
+			executors: execs,
 			currentJob: &client.Job{
 				Execution: &client.ExecutionConfig{HarnessType: "claude"},
 			},
@@ -147,7 +151,7 @@ func containsAll(s string, subs []string) bool {
 	return true
 }
 
-// mockInputReceiver is a test double for InputReceiver.
+// mockInputReceiver is a test double for InputReceiver and InterruptHandler.
 type mockInputReceiver struct {
 	w *os.File
 }
@@ -166,4 +170,14 @@ func (m *mockInputReceiver) WriteInput(p []byte) (int, error) {
 	}
 
 	return n, nil
+}
+
+// Interrupt implements InterruptHandler.
+func (m *mockInputReceiver) Interrupt() error {
+	_, err := m.w.Write([]byte{ctrlC})
+	if err != nil {
+		return fmt.Errorf("interrupt: %w", err)
+	}
+
+	return nil
 }
