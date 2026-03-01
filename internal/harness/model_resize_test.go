@@ -85,10 +85,19 @@ func TestHandleResizeCallsResizable(t *testing.T) {
 		},
 	}
 
-	m := &RootModel{
+	execs := map[string]Executor{"claude": mockExec}
+
+	ctrl := &TerminalController{
 		width:              80,
 		height:             24,
-		executors:          map[string]Executor{"claude": mockExec},
+		executors:          execs,
+		supportedHarnesses: []string{"claude"},
+	}
+	ctrl.drawStatusBar = func() {} // no-op for test
+
+	m := &RootModel{
+		term:               ctrl,
+		executors:          execs,
 		supportedHarnesses: []string{"claude"},
 	}
 
@@ -103,15 +112,21 @@ func TestHandleResizeCallsResizable(t *testing.T) {
 			got.cols, got.rows, 120, 40-layout.TopBarHeight)
 	}
 
-	if m.width != 120 || m.height != 40 {
-		t.Fatalf("model dimensions = (%d,%d), want (120,40)", m.width, m.height)
+	w, h := m.term.Dimensions()
+	if w != 120 || h != 40 {
+		t.Fatalf("model dimensions = (%d,%d), want (120,40)", w, h)
 	}
 }
 
 func TestHandleResizeDoesNotForcePaneCursor(t *testing.T) {
-	m := &RootModel{
+	ctrl := &TerminalController{
 		width:  80,
 		height: 24,
+	}
+	ctrl.drawStatusBar = func() {} // no-op for test
+
+	m := &RootModel{
+		term: ctrl,
 	}
 
 	output := captureStdout(t, func() {
@@ -127,10 +142,15 @@ func TestHandleResizeDoesNotForcePaneCursor(t *testing.T) {
 }
 
 func TestRestoreLayoutAfterAltScreenDoesNotForcePaneCursor(t *testing.T) {
+	ctrl := &TerminalController{
+		width:  140,
+		height: 40,
+	}
+	ctrl.lrMarginSupported.Store(true)
+	ctrl.drawStatusBar = func() {} // no-op for test
+
 	m := &RootModel{
-		width:             140,
-		height:            40,
-		lrMarginSupported: true,
+		term: ctrl,
 	}
 
 	output := captureStdout(t, func() {

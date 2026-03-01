@@ -38,22 +38,38 @@ func Render(s *state.Snapshot) string {
 }
 
 const (
+	// Status bar palette.
 	barBG    = "\x1b[48;5;236m"              // bar background
 	barFG    = "\x1b[38;5;252m"              // bar foreground
 	barReset = "\x1b[22;39m" + barBG + barFG // clear bold, reset FG, re-apply BG+FG
+
+	// Accent colors (applied over bar background).
+	bold    = "\x1b[1m"
+	dimGray = "\x1b[90m"
+	green   = "\x1b[32m"
+	yellow  = "\x1b[33m"
+	red     = "\x1b[31m"
+
+	// Sidebar palette.
+	sidebarBG     = "\x1b[48;5;238m"
+	sidebarFG     = "\x1b[38;5;252m"
+	sidebarBorder = "\x1b[48;5;236m\x1b[38;5;244m"
+
+	// Reset.
+	resetAll = "\x1b[0m"
 )
 
 func topBarLine(s *state.Snapshot) string {
-	sep := " \x1b[90m|" + barReset + " "
+	sep := " " + dimGray + "|" + barReset + " "
 
 	parts := []string{
-		"\x1b[1mMUSH" + barReset,
+		bold + "MUSH" + barReset,
 		fmt.Sprintf("Status: %s", styleStatus(s.StatusLabel)),
 	}
 	if s.CopyMode {
-		parts = append(parts, "Mode: \x1b[33mCOPY"+barReset)
+		parts = append(parts, "Mode: "+yellow+"COPY"+barReset)
 	} else {
-		parts = append(parts, "Mode: \x1b[32mLIVE"+barReset)
+		parts = append(parts, "Mode: "+green+"LIVE"+barReset)
 	}
 
 	// Keyboard shortcut hints — always visible for discoverability.
@@ -62,13 +78,13 @@ func topBarLine(s *state.Snapshot) string {
 		hints = append([]string{"^G Sidebar"}, hints...)
 	}
 
-	parts = append(parts, "\x1b[90m"+strings.Join(hints, "  ")+barReset)
+	parts = append(parts, dimGray+strings.Join(hints, "  ")+barReset)
 
 	line := strings.Join(parts, sep)
 	line = barBG + barFG + " " + line
 	line = render.PadRightVisible(line, s.Width-1)
 
-	return line + " \x1b[0m"
+	return line + " " + resetAll
 }
 
 func sidebarLines(s *state.Snapshot, rows int) []string {
@@ -191,21 +207,21 @@ func sidebarRow(content string, sidebarWidth int) string {
 	body := " " + content
 	body = render.PadRightVisible(body, sidebarWidth)
 
-	return "\x1b[48;5;238m\x1b[38;5;252m" + body + "\x1b[48;5;236m\x1b[38;5;244m│\x1b[0m"
+	return sidebarBG + sidebarFG + body + sidebarBorder + "│" + resetAll
 }
 
 func styleStatus(label string) string {
 	switch label {
 	case "Starting...":
-		return "\x1b[33m\x1b[1mStarting" + barReset
+		return yellow + bold + "Starting" + barReset
 	case "Ready":
-		return "\x1b[32m\x1b[1mReady" + barReset
+		return green + bold + "Ready" + barReset
 	case "Connected":
-		return "\x1b[32m\x1b[1mConnected" + barReset
+		return green + bold + "Connected" + barReset
 	case "Processing":
-		return "\x1b[33m\x1b[1mProcessing" + barReset
+		return yellow + bold + "Processing" + barReset
 	case "Error":
-		return "\x1b[31m\x1b[1mError" + barReset
+		return red + bold + "Error" + barReset
 	default:
 		return label
 	}

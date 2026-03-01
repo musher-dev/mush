@@ -169,7 +169,6 @@ flowchart LR
 ## Contributing
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md) for development setup, code style, and testing.
-Architecture details are in [CLAUDE.md](./.claude/CLAUDE.md).
 
 ## License
 

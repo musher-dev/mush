@@ -37,10 +37,10 @@ Thumbs.db
 # env file
 .env
 
-# Claude Code runtime artifacts
-.claude/settings.local.json
+# Claude Code — ignore everything inside except CLAUDE.md
+.claude/**
+!.claude/CLAUDE.md
 
 # Local tooling/cache (workspace-specific)
 .tools/
 .cache/
-.claude/

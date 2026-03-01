@@ -36,6 +36,9 @@ type Config struct {
 	TranscriptDir      string
 	TranscriptLines    int
 
+	// ForceSidebar skips the LR margin probe and assumes sidebar support.
+	ForceSidebar bool
+
 	// BundleLoadMode runs a single interactive session instead of polling for jobs.
 	BundleLoadMode bool
 	BundleName     string // for status bar display
