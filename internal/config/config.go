@@ -12,7 +12,6 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -160,27 +159,15 @@ func (c *Config) HistoryScrollbackLines() int {
 }
 
 // parseDuration reads a config key and interprets it as a duration.
-// It first tries time.ParseDuration (e.g. "30s", "1m"). If that fails,
-// it tries parsing as a bare integer (seconds) for backward compatibility.
-// Returns fallback if the result is less than minIntervalDuration.
+// It tries time.ParseDuration (e.g. "30s", "1m").
+// Returns fallback if the value is empty, unparseable, or less than minIntervalDuration.
 func (c *Config) parseDuration(key string, fallback time.Duration) time.Duration {
 	raw := c.GetString(key)
 	if raw == "" {
 		return fallback
 	}
 
-	// Try Go duration string first (e.g. "30s", "1m30s").
 	if d, err := time.ParseDuration(raw); err == nil {
-		if d < minIntervalDuration {
-			return fallback
-		}
-
-		return d
-	}
-
-	// Backward compat: bare integer treated as seconds.
-	if secs, err := strconv.Atoi(raw); err == nil {
-		d := time.Duration(secs) * time.Second
 		if d < minIntervalDuration {
 			return fallback
 		}

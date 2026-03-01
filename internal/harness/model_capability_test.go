@@ -455,7 +455,14 @@ func TestProbeLRMarginSupportReturnsLeftover(t *testing.T) {
 	}
 }
 
-func TestCursorRewriter(t *testing.T) {
+func newTestFilter(active bool) *sidebarFilter {
+	return &sidebarFilter{
+		active:     func() bool { return active },
+		scrollDims: func() (int, int) { return 2, 24 },
+	}
+}
+
+func TestSidebarFilter(t *testing.T) {
 	tests := []struct {
 		name   string
 		active bool
@@ -485,12 +492,6 @@ func TestCursorRewriter(t *testing.T) {
 			active: false,
 			input:  []byte("\x1b[u"),
 			want:   []byte("\x1b[u"),
-		},
-		{
-			name:   "parameterized CSI s passthrough when active",
-			active: true,
-			input:  []byte("\x1b[1;40s"),
-			want:   []byte("\x1b[1;40s"),
 		},
 		{
 			name:   "plain text passthrough",
@@ -526,8 +527,8 @@ func TestCursorRewriter(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			cr := &cursorRewriter{active: func() bool { return tc.active }}
-			got := cr.rewrite(tc.input)
+			sf := newTestFilter(tc.active)
+			got := sf.rewrite(tc.input)
 
 			if !bytes.Equal(got, tc.want) {
 				t.Fatalf("rewrite(%q) = %q, want %q", tc.input, got, tc.want)
@@ -536,13 +537,13 @@ func TestCursorRewriter(t *testing.T) {
 	}
 }
 
-func TestCursorRewriterNoAllocForSGR(t *testing.T) {
+func TestSidebarFilterNoAllocForSGR(t *testing.T) {
 	// Chunks with ESC sequences that are NOT bare CSI s/u should return
 	// the original slice without allocation (lazy-alloc optimization).
-	cr := &cursorRewriter{active: func() bool { return true }}
+	sf := newTestFilter(true)
 
 	sgr := []byte("\x1b[31mhello\x1b[0m") // red text + reset
-	got := cr.rewrite(sgr)
+	got := sf.rewrite(sgr)
 
 	// Should be the exact same slice (pointer equality).
 	if &got[0] != &sgr[0] {
@@ -550,12 +551,12 @@ func TestCursorRewriterNoAllocForSGR(t *testing.T) {
 	}
 }
 
-func TestCursorRewriterChunkBoundary(t *testing.T) {
+func TestSidebarFilterChunkBoundary(t *testing.T) {
 	t.Run("ESC at end of chunk 1 then [s in chunk 2", func(t *testing.T) {
-		cr := &cursorRewriter{active: func() bool { return true }}
+		sf := newTestFilter(true)
 
-		got1 := cr.rewrite([]byte("abc\x1b"))
-		got1 = append(got1, cr.rewrite([]byte("[sdef"))...)
+		got1 := sf.rewrite([]byte("abc\x1b"))
+		got1 = append(got1, sf.rewrite([]byte("[sdef"))...)
 		want := []byte("abc\x1b7def")
 
 		if !bytes.Equal(got1, want) {
@@ -564,10 +565,10 @@ func TestCursorRewriterChunkBoundary(t *testing.T) {
 	})
 
 	t.Run("ESC [ at end of chunk 1 then s in chunk 2", func(t *testing.T) {
-		cr := &cursorRewriter{active: func() bool { return true }}
+		sf := newTestFilter(true)
 
-		got1 := cr.rewrite([]byte("abc\x1b["))
-		got1 = append(got1, cr.rewrite([]byte("sdef"))...)
+		got1 := sf.rewrite([]byte("abc\x1b["))
+		got1 = append(got1, sf.rewrite([]byte("sdef"))...)
 		want := []byte("abc\x1b7def")
 
 		if !bytes.Equal(got1, want) {
@@ -575,12 +576,13 @@ func TestCursorRewriterChunkBoundary(t *testing.T) {
 		}
 	})
 
-	t.Run("ESC [ at end of chunk 1 then parameterized s in chunk 2 (no rewrite)", func(t *testing.T) {
-		cr := &cursorRewriter{active: func() bool { return true }}
+	t.Run("ESC [ at end of chunk 1 then parameterized s in chunk 2 drops DECSLRM", func(t *testing.T) {
+		sf := newTestFilter(true)
 
-		got1 := cr.rewrite([]byte("abc\x1b["))
-		got1 = append(got1, cr.rewrite([]byte("1;40s"))...)
-		want := []byte("abc\x1b[1;40s")
+		got1 := sf.rewrite([]byte("abc\x1b["))
+		got1 = append(got1, sf.rewrite([]byte("1;40s"))...)
+		// DECSLRM (parameterized CSI s) should be dropped when active.
+		want := []byte("abc")
 
 		if !bytes.Equal(got1, want) {
 			t.Fatalf("got %q, want %q", got1, want)
@@ -589,15 +591,18 @@ func TestCursorRewriterChunkBoundary(t *testing.T) {
 
 	t.Run("held tail flushed when active returns false", func(t *testing.T) {
 		active := true
-		cr := &cursorRewriter{active: func() bool { return active }}
+		sf := &sidebarFilter{
+			active:     func() bool { return active },
+			scrollDims: func() (int, int) { return 2, 24 },
+		}
 
 		// First chunk: active, ESC at end → held in tail.
-		got1 := cr.rewrite([]byte("abc\x1b"))
+		got1 := sf.rewrite([]byte("abc\x1b"))
 
 		// Deactivate before next chunk.
 		active = false
 
-		got1 = append(got1, cr.rewrite([]byte("[sdef"))...)
+		got1 = append(got1, sf.rewrite([]byte("[sdef"))...)
 		// When inactive, the held ESC is flushed verbatim along with new data.
 		want := []byte("abc\x1b[sdef")
 
@@ -607,16 +612,99 @@ func TestCursorRewriterChunkBoundary(t *testing.T) {
 	})
 
 	t.Run("ESC [ at end of chunk 1 then u in chunk 2", func(t *testing.T) {
-		cr := &cursorRewriter{active: func() bool { return true }}
+		sf := newTestFilter(true)
 
-		got1 := cr.rewrite([]byte("\x1b["))
-		got1 = append(got1, cr.rewrite([]byte("u"))...)
+		got1 := sf.rewrite([]byte("\x1b["))
+		got1 = append(got1, sf.rewrite([]byte("u"))...)
 		want := []byte("\x1b8")
 
 		if !bytes.Equal(got1, want) {
 			t.Fatalf("got %q, want %q", got1, want)
 		}
 	})
+}
+
+func TestSidebarFilterBareCSIRRewrite(t *testing.T) {
+	sf := newTestFilter(true) // scrollDims returns (2, 24)
+	got := sf.rewrite([]byte("\x1b[r"))
+	want := []byte("\x1b[2;24r")
+
+	if !bytes.Equal(got, want) {
+		t.Fatalf("rewrite(bare CSI r) = %q, want %q", got, want)
+	}
+}
+
+func TestSidebarFilterParameterizedCSIRPassthrough(t *testing.T) {
+	sf := newTestFilter(true)
+	input := []byte("\x1b[2;24r")
+	got := sf.rewrite(input)
+
+	if !bytes.Equal(got, input) {
+		t.Fatalf("rewrite(parameterized CSI r) = %q, want %q", got, input)
+	}
+}
+
+func TestSidebarFilterCSI69lDropped(t *testing.T) {
+	sf := newTestFilter(true)
+	got := sf.rewrite([]byte("\x1b[?69l"))
+
+	if len(got) != 0 {
+		t.Fatalf("rewrite(CSI ?69l) = %q, want empty", got)
+	}
+}
+
+func TestSidebarFilterCSI69lPassthroughInactive(t *testing.T) {
+	sf := newTestFilter(false)
+	input := []byte("\x1b[?69l")
+	got := sf.rewrite(input)
+
+	if !bytes.Equal(got, input) {
+		t.Fatalf("rewrite(CSI ?69l inactive) = %q, want %q", got, input)
+	}
+}
+
+func TestSidebarFilterCSI25lPassthrough(t *testing.T) {
+	sf := newTestFilter(true)
+	input := []byte("\x1b[?25l") // hide cursor — should not be dropped
+	got := sf.rewrite(input)
+
+	if !bytes.Equal(got, input) {
+		t.Fatalf("rewrite(CSI ?25l) = %q, want %q", got, input)
+	}
+}
+
+func TestSidebarFilterDECSLRMDropped(t *testing.T) {
+	sf := newTestFilter(true)
+	got := sf.rewrite([]byte("\x1b[1;40s"))
+
+	if len(got) != 0 {
+		t.Fatalf("rewrite(DECSLRM) = %q, want empty", got)
+	}
+}
+
+func TestSidebarFilterCSI69lChunkBoundary(t *testing.T) {
+	sf := newTestFilter(true)
+
+	// Split CSI ?69l across two chunks: ESC[?69 | l
+	got := sf.rewrite([]byte("\x1b[?69"))
+	got = append(got, sf.rewrite([]byte("l"))...)
+
+	if len(got) != 0 {
+		t.Fatalf("rewrite(CSI ?69l split) = %q, want empty", got)
+	}
+}
+
+func TestSidebarFilterTailOverflow(t *testing.T) {
+	sf := newTestFilter(true)
+	// A very long CSI sequence (>8 bytes) should flush through on overflow.
+	// ESC [ ? 1 2 3 4 5 6 7 l  = 11 bytes, exceeds 8-byte tail.
+	input := []byte("\x1b[?1234567l")
+	got := sf.rewrite(input)
+
+	// Should pass through (not matched as ?69l, too long to hold in tail).
+	if !bytes.Equal(got, input) {
+		t.Fatalf("rewrite(overflow) = %q, want %q", got, input)
+	}
 }
 
 func TestTerminalEventFromCSI_DECSLRM(t *testing.T) {
@@ -718,5 +806,182 @@ func TestLockedWriterFilter(t *testing.T) {
 	// onWrite should receive the original (unfiltered) bytes.
 	if !bytes.Equal(onWriteReceived, []byte("abc")) {
 		t.Fatalf("onWrite received = %q, want %q", onWriteReceived, "abc")
+	}
+}
+
+// --- Reassert / Quarantine tests ---
+
+func newTestTerminalController() *TerminalController {
+	tc := &TerminalController{
+		width:  140,
+		height: 40,
+	}
+	tc.lrMarginSupported.Store(true)
+	tc.drawStatusBar = func() {}
+	tc.setLastError = func(string) {}
+
+	return tc
+}
+
+func TestScrollResetReassertsSidebar(t *testing.T) {
+	tc := newTestTerminalController()
+
+	captureStdout(t, func() {
+		tc.handleTerminalEvent(terminalEventScrollReset)
+	})
+
+	if !tc.SidebarEnabled() {
+		t.Fatal("sidebar should remain enabled after single scroll reset")
+	}
+
+	if tc.sidebarForcedOff.Load() {
+		t.Fatal("sidebarForcedOff should not be set")
+	}
+
+	if tc.sidebarQuarantined.Load() {
+		t.Fatal("sidebarQuarantined should not be set after single event")
+	}
+}
+
+func TestRepeatedScrollResetsQuarantineSidebar(t *testing.T) {
+	tc := newTestTerminalController()
+
+	captureStdout(t, func() {
+		for i := 0; i < tamperThreshold+1; i++ {
+			tc.handleTerminalEvent(terminalEventScrollReset)
+		}
+	})
+
+	if tc.SidebarEnabled() {
+		t.Fatal("sidebar should be disabled after quarantine")
+	}
+
+	if tc.sidebarForcedOff.Load() {
+		t.Fatal("sidebarForcedOff should NOT be set (quarantine is recoverable)")
+	}
+
+	if !tc.sidebarQuarantined.Load() {
+		t.Fatal("sidebarQuarantined should be set")
+	}
+}
+
+func TestQuarantineRecoveryViaToggle(t *testing.T) {
+	tc := newTestTerminalController()
+
+	captureStdout(t, func() {
+		// Trigger quarantine.
+		for i := 0; i < tamperThreshold+1; i++ {
+			tc.handleTerminalEvent(terminalEventScrollReset)
+		}
+
+		if !tc.sidebarQuarantined.Load() {
+			t.Fatal("expected quarantine after repeated events")
+		}
+
+		// Toggle (^G) should recover.
+		tc.toggleSidebar()
+	})
+
+	if tc.sidebarQuarantined.Load() {
+		t.Fatal("quarantine should be cleared after toggle")
+	}
+
+	if !tc.SidebarEnabled() {
+		t.Fatal("sidebar should be re-enabled after toggle recovery")
+	}
+}
+
+func TestHardResetStillPermanentlyDisables(t *testing.T) {
+	tc := newTestTerminalController()
+
+	captureStdout(t, func() {
+		tc.handleTerminalEvent(terminalEventReset)
+	})
+
+	if !tc.sidebarForcedOff.Load() {
+		t.Fatal("sidebarForcedOff should be set after hard reset")
+	}
+
+	// Toggle should be a no-op.
+	captureStdout(t, func() {
+		tc.toggleSidebar()
+	})
+
+	if !tc.sidebarForcedOff.Load() {
+		t.Fatal("sidebarForcedOff should remain set after toggle attempt")
+	}
+}
+
+func TestSoftResetPermanentlyDisables(t *testing.T) {
+	tc := newTestTerminalController()
+
+	captureStdout(t, func() {
+		tc.handleTerminalEvent(terminalEventSoftReset)
+	})
+
+	if !tc.sidebarForcedOff.Load() {
+		t.Fatal("sidebarForcedOff should be set after soft reset")
+	}
+}
+
+func TestTamperWindowResetsAfterTimeout(t *testing.T) {
+	tc := newTestTerminalController()
+
+	captureStdout(t, func() {
+		// Send events just below threshold.
+		for i := 0; i < tamperThreshold-1; i++ {
+			tc.handleTerminalEvent(terminalEventScrollReset)
+		}
+
+		// Simulate window expiry by resetting the start.
+		tc.tamperWindowStart.Store(time.Now().Add(-3 * tamperWindow).UnixNano())
+
+		// Next event should start a fresh window, not quarantine.
+		tc.handleTerminalEvent(terminalEventScrollReset)
+	})
+
+	if tc.sidebarQuarantined.Load() {
+		t.Fatal("quarantine should not be set after window expired")
+	}
+
+	if !tc.SidebarEnabled() {
+		t.Fatal("sidebar should remain enabled")
+	}
+}
+
+func TestDisableLREventReassertsSidebar(t *testing.T) {
+	tc := newTestTerminalController()
+
+	captureStdout(t, func() {
+		tc.handleTerminalEvent(terminalEventDisableLR)
+	})
+
+	if !tc.SidebarEnabled() {
+		t.Fatal("sidebar should remain enabled after single disable-LR event")
+	}
+}
+
+func TestSidebarAvailableReflectsQuarantine(t *testing.T) {
+	tc := newTestTerminalController()
+
+	if !tc.SidebarAvailable() {
+		t.Fatal("SidebarAvailable should be true initially")
+	}
+
+	tc.sidebarQuarantined.Store(true)
+
+	if tc.SidebarAvailable() {
+		t.Fatal("SidebarAvailable should be false when quarantined")
+	}
+
+	if tc.SidebarEnabled() {
+		t.Fatal("SidebarEnabled should be false when quarantined")
+	}
+
+	tc.sidebarQuarantined.Store(false)
+	tc.sidebarForcedOff.Store(true)
+
+	if tc.SidebarAvailable() {
+		t.Fatal("SidebarAvailable should be false when forcedOff")
 	}
 }

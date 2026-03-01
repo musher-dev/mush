@@ -241,11 +241,6 @@ func TestConfig_PollInterval(t *testing.T) {
 			envVal: "45s",
 			want:   45 * time.Second,
 		},
-		{
-			name:   "bare integer from env (backward compat)",
-			envVal: "60",
-			want:   60 * time.Second,
-		},
 	}
 
 	for _, tt := range tests {
@@ -276,11 +271,6 @@ func TestConfig_HeartbeatInterval(t *testing.T) {
 			name:   "duration string from env",
 			envVal: "20s",
 			want:   20 * time.Second,
-		},
-		{
-			name:   "bare integer from env (backward compat)",
-			envVal: "15",
-			want:   15 * time.Second,
 		},
 	}
 

@@ -852,11 +852,42 @@ func getPromptFromJob(job *client.Job) (string, error) {
 	return "", fmt.Errorf("missing execution.renderedInstruction for job")
 }
 
+// SetSignalDir implements SignalDirConsumer.
+func (e *ClaudeExecutor) SetSignalDir(dir string) {
+	e.signalDir = dir
+}
+
+// WantsTranscript implements TranscriptSource.
+func (e *ClaudeExecutor) WantsTranscript() bool {
+	return true
+}
+
+// Interrupt implements InterruptHandler — writes Ctrl+C to the PTY.
+func (e *ClaudeExecutor) Interrupt() error {
+	e.mu.Lock()
+	ptmx := e.ptmx
+	e.mu.Unlock()
+
+	if ptmx == nil {
+		return nil
+	}
+
+	_, err := ptmx.Write([]byte{ctrlC})
+	if err != nil {
+		return fmt.Errorf("interrupt pty: %w", err)
+	}
+
+	return nil
+}
+
 // Ensure ClaudeExecutor satisfies all interfaces.
 var (
-	_ Executor      = (*ClaudeExecutor)(nil)
-	_ Resizable     = (*ClaudeExecutor)(nil)
-	_ InputReceiver = (*ClaudeExecutor)(nil)
-	_ Refreshable   = (*ClaudeExecutor)(nil)
-	_ io.Writer     = (*lockedWriter)(nil)
+	_ Executor          = (*ClaudeExecutor)(nil)
+	_ Resizable         = (*ClaudeExecutor)(nil)
+	_ InputReceiver     = (*ClaudeExecutor)(nil)
+	_ Refreshable       = (*ClaudeExecutor)(nil)
+	_ SignalDirConsumer = (*ClaudeExecutor)(nil)
+	_ TranscriptSource  = (*ClaudeExecutor)(nil)
+	_ InterruptHandler  = (*ClaudeExecutor)(nil)
+	_ io.Writer         = (*lockedWriter)(nil)
 )
