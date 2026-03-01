@@ -186,6 +186,7 @@ func NewRootModel(ctx context.Context, cfg *Config) *RootModel {
 	// Wire callbacks.
 	model.term.drawStatusBar = model.drawStatusBar
 	model.term.setLastError = model.setLastError
+	model.term.ptyActive = model.isPTYActive
 	model.jobs.drawStatusBar = model.drawStatusBar
 	model.jobs.infof = model.infof
 	model.jobs.signalDone = model.signalDone
@@ -285,9 +286,11 @@ func (m *RootModel) Run() error {
 	// Create executors from registry.
 	frame := layout.ComputeFrame(m.term.width, m.term.height, m.term.SidebarEnabled())
 	ptyRows := layout.PtyRowsForFrame(frame)
+	rewriter := &cursorRewriter{active: m.term.SidebarEnabled}
 	termWriter := &lockedWriter{
 		mu:      &m.term.mu,
 		w:       os.Stdout,
+		filter:  rewriter.rewrite,
 		onWrite: m.term.inspectTerminalControlSequences,
 	}
 
@@ -772,7 +775,7 @@ func (m *RootModel) copyInput() {
 			}
 
 			if buf[i] == ctrlG {
-				m.term.toggleSidebar(m.jobs.CurrentJobID)
+				m.term.toggleSidebar()
 
 				buf[i] = 0
 
@@ -963,6 +966,17 @@ func (m *RootModel) restoreLayoutAfterAltScreen() {
 
 func (m *RootModel) hasActiveClaudeJob() bool {
 	return m.jobs.HasActiveClaudeJob()
+}
+
+// isPTYActive reports whether any executor PTY is currently running, making it
+// unsafe to send probe escape sequences to stdin/stdout. In bundle-load mode
+// the PTY is always live; in worker mode it is live only while a job executes.
+func (m *RootModel) isPTYActive() bool {
+	if m.bundleLoadMode {
+		return true
+	}
+
+	return m.jobs.CurrentJobID() != ""
 }
 
 func (m *RootModel) termWrite(p []byte) {

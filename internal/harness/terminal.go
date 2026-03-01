@@ -3,6 +3,7 @@
 package harness
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -60,29 +61,195 @@ type TerminalController struct {
 	// Callbacks wired by RootModel.
 	drawStatusBar func()
 	setLastError  func(string)
+	ptyActive     func() bool // true when any executor PTY is running (unsafe to probe)
 }
 
-// lockedWriter wraps an io.Writer with a mutex and an optional onWrite callback.
+// cursorRewriter is a stream filter that rewrites bare CSI s (SCOSC) → ESC 7
+// (DECSC) and bare CSI u (SCORC) → ESC 8 (DECRC). When the sidebar enables
+// DECLRMM (mode 69), CSI s changes meaning to DECSLRM which homes the cursor;
+// the DEC private forms are unambiguous and safe regardless of mode state.
+//
+// The rewriter uses a small tail buffer (at most 2 bytes: ESC or ESC [) to
+// handle sequences split across Write chunk boundaries.
+type cursorRewriter struct {
+	active func() bool // true when sidebar is enabled (DECLRMM active)
+	tail   [2]byte     // held bytes from previous chunk
+	tailN  int         // number of valid bytes in tail (0, 1, or 2)
+}
+
+// rewrite processes a chunk of PTY output, rewriting bare CSI s/u when
+// active. It is designed for the hot path: if no ESC byte is present and no
+// tail is held, the input slice is returned directly (zero allocation).
+func (cr *cursorRewriter) rewrite(p []byte) []byte {
+	if !cr.active() {
+		// Not active — flush any held tail and pass through.
+		if cr.tailN > 0 {
+			out := make([]byte, cr.tailN+len(p))
+			copy(out, cr.tail[:cr.tailN])
+			copy(out[cr.tailN:], p)
+			cr.tailN = 0
+
+			return out
+		}
+
+		return p
+	}
+
+	// Fast path: no held tail and no ESC in chunk.
+	if cr.tailN == 0 && !containsByte(p, 0x1b) {
+		return p
+	}
+
+	// Prepend any held tail bytes.
+	var src []byte
+	if cr.tailN > 0 {
+		src = make([]byte, cr.tailN+len(p))
+		copy(src, cr.tail[:cr.tailN])
+		copy(src[cr.tailN:], p)
+		cr.tailN = 0
+	} else {
+		src = p
+	}
+
+	// Lazy allocation: out stays nil until we encounter a rewrite or tail
+	// hold. This avoids allocating for the common case where the chunk
+	// contains ESC sequences (colors, cursor moves) but no bare CSI s/u.
+	var out []byte
+
+	i := 0
+
+	for i < len(src) {
+		if src[i] != 0x1b {
+			if out != nil {
+				out = append(out, src[i])
+			}
+
+			i++
+
+			continue
+		}
+
+		// We have ESC at position i.
+		if i+1 >= len(src) {
+			// ESC at end of chunk — hold it.
+			cr.tail[0] = 0x1b
+			cr.tailN = 1
+
+			if out == nil {
+				out = make([]byte, i, len(src))
+				copy(out, src[:i])
+			}
+
+			break
+		}
+
+		if src[i+1] != '[' {
+			// ESC followed by non-'[' — not a CSI, pass through.
+			if out != nil {
+				out = append(out, src[i], src[i+1])
+			}
+
+			i += 2
+
+			continue
+		}
+
+		// ESC [ at positions i, i+1.
+		if i+2 >= len(src) {
+			// ESC [ at end of chunk — hold both bytes.
+			cr.tail[0] = 0x1b
+			cr.tail[1] = '['
+			cr.tailN = 2
+
+			if out == nil {
+				out = make([]byte, i, len(src))
+				copy(out, src[:i])
+			}
+
+			break
+		}
+
+		third := src[i+2]
+
+		switch {
+		case third == 's':
+			// Bare CSI s → ESC 7 (DECSC). Must allocate.
+			if out == nil {
+				out = make([]byte, i, len(src))
+				copy(out, src[:i])
+			}
+
+			out = append(out, 0x1b, '7')
+			i += 3
+		case third == 'u':
+			// Bare CSI u → ESC 8 (DECRC). Must allocate.
+			if out == nil {
+				out = make([]byte, i, len(src))
+				copy(out, src[:i])
+			}
+
+			out = append(out, 0x1b, '8')
+			i += 3
+		case (third >= '0' && third <= '9') || third == ';' || third == '?' || third == '!':
+			// Parameterized CSI — pass through the full sequence unchanged.
+			if out != nil {
+				out = append(out, src[i], src[i+1])
+			}
+
+			i += 2
+		default:
+			// Other bare CSI final — pass through.
+			if out != nil {
+				out = append(out, src[i], src[i+1])
+			}
+
+			i += 2
+		}
+	}
+
+	if out != nil {
+		return out
+	}
+
+	return src
+}
+
+// containsByte reports whether b contains the byte c.
+func containsByte(b []byte, c byte) bool {
+	return bytes.IndexByte(b, c) >= 0
+}
+
+// lockedWriter wraps an io.Writer with a mutex, an optional pre-write filter,
+// and an optional onWrite callback.
 type lockedWriter struct {
 	mu      *sync.Mutex
 	w       io.Writer
+	filter  func([]byte) []byte // pre-write transform (nil = passthrough)
 	onWrite func([]byte)
 }
 
 func (lw *lockedWriter) Write(p []byte) (int, error) {
 	lw.mu.Lock()
-	written, err := lw.w.Write(p)
+
+	out := p
+	if lw.filter != nil {
+		out = lw.filter(p)
+	}
+
+	_, err := lw.w.Write(out)
 	lw.mu.Unlock()
 
-	if lw.onWrite != nil && written > 0 {
-		lw.onWrite(p[:written])
+	// onWrite receives the original (unfiltered) bytes so that the event
+	// parser can detect parameterized DECSLRM and other sequences.
+	if lw.onWrite != nil && len(p) > 0 {
+		lw.onWrite(p)
 	}
 
 	if err != nil {
-		return written, fmt.Errorf("write to locked writer: %w", err)
+		return len(p), fmt.Errorf("write to locked writer: %w", err)
 	}
 
-	return written, nil
+	return len(p), nil
 }
 
 // Write writes bytes to stdout under the terminal mutex.
@@ -243,10 +410,12 @@ func (tc *TerminalController) disableSidebar() {
 // reprobeAndEnableSidebar re-runs the LR margin probe inline (called from
 // copyInput via toggleSidebar when lrMarginSupported is false). If the probe
 // succeeds, the sidebar is enabled and the layout is reconfigured.
-func (tc *TerminalController) reprobeAndEnableSidebar(currentJobID func() string) {
-	// Unsafe to probe while a job's PTY is active — the probe reads stdin
-	// and writes escape sequences that would corrupt the child process.
-	if currentJobID() != "" {
+func (tc *TerminalController) reprobeAndEnableSidebar() {
+	// Unsafe to probe while any executor PTY is active — the probe reads
+	// stdin and writes escape sequences that would corrupt the child process.
+	// This covers both worker mode (job PTY running) and bundle-load mode
+	// (interactive Claude PTY alive but no job loop).
+	if tc.ptyActive != nil && tc.ptyActive() {
 		return
 	}
 
@@ -295,13 +464,13 @@ func (tc *TerminalController) reprobeAndEnableSidebar(currentJobID func() string
 	tc.drawStatusBar()
 }
 
-func (tc *TerminalController) toggleSidebar(currentJobID func() string) {
+func (tc *TerminalController) toggleSidebar() {
 	if tc.sidebarForcedOff.Load() || tc.altScreenActive.Load() {
 		return
 	}
 
 	if !tc.lrMarginSupported.Load() {
-		tc.reprobeAndEnableSidebar(currentJobID)
+		tc.reprobeAndEnableSidebar()
 		return
 	}
 
@@ -536,6 +705,10 @@ func terminalEventFromCSI(params string, final byte) (terminalEvent, bool) {
 		return terminalEventScrollReset, true
 	case final == 'l' && params == "?69":
 		return terminalEventDisableLR, true
+	case final == 's' && isDECSLRMParams(params):
+		// Parameterized CSI <digits>;<digits> s is DECSLRM — the child is
+		// taking over left/right margin control. Disable the sidebar.
+		return terminalEventDisableLR, true
 	case (final == 'h' || final == 'l') && strings.HasPrefix(params, "?"):
 		mode := strings.TrimPrefix(params, "?")
 		switch mode {
@@ -549,4 +722,30 @@ func terminalEventFromCSI(params string, final byte) (terminalEvent, bool) {
 	}
 
 	return 0, false
+}
+
+// isDECSLRMParams reports whether params matches the DECSLRM grammar:
+// one or two groups of digits separated by a semicolon (e.g. "1;40", "5;",
+// ";80", "10"). No private-mode prefix (?) or other non-digit characters.
+func isDECSLRMParams(params string) bool {
+	if params == "" {
+		return false
+	}
+
+	semi := false
+
+	for i := 0; i < len(params); i++ {
+		c := params[i]
+
+		switch {
+		case c >= '0' && c <= '9':
+			// digit — ok
+		case c == ';' && !semi:
+			semi = true
+		default:
+			return false
+		}
+	}
+
+	return true
 }
