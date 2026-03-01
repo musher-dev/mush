@@ -536,6 +536,20 @@ func TestCursorRewriter(t *testing.T) {
 	}
 }
 
+func TestCursorRewriterNoAllocForSGR(t *testing.T) {
+	// Chunks with ESC sequences that are NOT bare CSI s/u should return
+	// the original slice without allocation (lazy-alloc optimization).
+	cr := &cursorRewriter{active: func() bool { return true }}
+
+	sgr := []byte("\x1b[31mhello\x1b[0m") // red text + reset
+	got := cr.rewrite(sgr)
+
+	// Should be the exact same slice (pointer equality).
+	if &got[0] != &sgr[0] {
+		t.Fatal("expected zero-copy passthrough for SGR-only chunk")
+	}
+}
+
 func TestCursorRewriterChunkBoundary(t *testing.T) {
 	t.Run("ESC at end of chunk 1 then [s in chunk 2", func(t *testing.T) {
 		cr := &cursorRewriter{active: func() bool { return true }}

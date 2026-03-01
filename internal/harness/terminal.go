@@ -111,12 +111,19 @@ func (cr *cursorRewriter) rewrite(p []byte) []byte {
 		src = p
 	}
 
-	out := make([]byte, 0, len(src))
+	// Lazy allocation: out stays nil until we encounter a rewrite or tail
+	// hold. This avoids allocating for the common case where the chunk
+	// contains ESC sequences (colors, cursor moves) but no bare CSI s/u.
+	var out []byte
+
 	i := 0
 
 	for i < len(src) {
 		if src[i] != 0x1b {
-			out = append(out, src[i])
+			if out != nil {
+				out = append(out, src[i])
+			}
+
 			i++
 
 			continue
@@ -128,12 +135,20 @@ func (cr *cursorRewriter) rewrite(p []byte) []byte {
 			cr.tail[0] = 0x1b
 			cr.tailN = 1
 
+			if out == nil {
+				out = make([]byte, i, len(src))
+				copy(out, src[:i])
+			}
+
 			break
 		}
 
 		if src[i+1] != '[' {
 			// ESC followed by non-'[' — not a CSI, pass through.
-			out = append(out, src[i], src[i+1])
+			if out != nil {
+				out = append(out, src[i], src[i+1])
+			}
+
 			i += 2
 
 			continue
@@ -146,6 +161,11 @@ func (cr *cursorRewriter) rewrite(p []byte) []byte {
 			cr.tail[1] = '['
 			cr.tailN = 2
 
+			if out == nil {
+				out = make([]byte, i, len(src))
+				copy(out, src[:i])
+			}
+
 			break
 		}
 
@@ -153,25 +173,45 @@ func (cr *cursorRewriter) rewrite(p []byte) []byte {
 
 		switch {
 		case third == 's':
-			// Bare CSI s → ESC 7 (DECSC).
+			// Bare CSI s → ESC 7 (DECSC). Must allocate.
+			if out == nil {
+				out = make([]byte, i, len(src))
+				copy(out, src[:i])
+			}
+
 			out = append(out, 0x1b, '7')
 			i += 3
 		case third == 'u':
-			// Bare CSI u → ESC 8 (DECRC).
+			// Bare CSI u → ESC 8 (DECRC). Must allocate.
+			if out == nil {
+				out = make([]byte, i, len(src))
+				copy(out, src[:i])
+			}
+
 			out = append(out, 0x1b, '8')
 			i += 3
 		case (third >= '0' && third <= '9') || third == ';' || third == '?' || third == '!':
 			// Parameterized CSI — pass through the full sequence unchanged.
-			out = append(out, src[i], src[i+1])
+			if out != nil {
+				out = append(out, src[i], src[i+1])
+			}
+
 			i += 2
 		default:
 			// Other bare CSI final — pass through.
-			out = append(out, src[i], src[i+1])
+			if out != nil {
+				out = append(out, src[i], src[i+1])
+			}
+
 			i += 2
 		}
 	}
 
-	return out
+	if out != nil {
+		return out
+	}
+
+	return src
 }
 
 // containsByte reports whether b contains the byte c.
