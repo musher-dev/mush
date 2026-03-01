@@ -520,7 +520,7 @@ func (m *RootModel) statusSnapshot() harnessstate.Snapshot {
 		Width:              w,
 		Height:             h,
 		SidebarVisible:     frame.SidebarVisible,
-		SidebarAvailable:   !m.term.sidebarForcedOff.Load(),
+		SidebarAvailable:   m.term.SidebarAvailable(),
 		SidebarWidth:       frame.SidebarWidth,
 		PaneXStart:         frame.PaneXStart,
 		PaneWidth:          frame.PaneWidth,
