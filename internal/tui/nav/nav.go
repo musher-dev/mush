@@ -10,7 +10,7 @@ import (
 
 // Run launches the interactive navigation TUI.
 func Run(_ context.Context) error {
-	p := tea.NewProgram(newModel())
+	p := tea.NewProgram(newModel(), tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		return fmt.Errorf("run TUI: %w", err)
 	}

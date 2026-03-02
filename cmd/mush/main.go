@@ -17,6 +17,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/musher-dev/mush/internal/buildinfo"
+	"github.com/musher-dev/mush/internal/config"
 	clierrors "github.com/musher-dev/mush/internal/errors"
 	"github.com/musher-dev/mush/internal/observability"
 	"github.com/musher-dev/mush/internal/output"
@@ -433,7 +434,11 @@ func shouldShowTUI(flagValue bool, out *output.Writer) bool {
 		return false
 	}
 
-	return pickBoolFlagOrEnv(flagValue, "MUSH_INTERACTIVE")
+	if pickBoolFlagOrEnv(flagValue, "MUSH_INTERACTIVE") {
+		return true
+	}
+
+	return config.Load().Interactive()
 }
 
 // VersionInfo represents version information for JSON output.
