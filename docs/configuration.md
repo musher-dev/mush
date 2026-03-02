@@ -60,6 +60,7 @@ Mush reads `config.yaml` from the config root. The file is created automatically
 | `api.url` | string | `https://api.musher.dev` | `MUSH_API_URL` | Musher platform API endpoint |
 | `worker.poll_interval` | duration | `30s` | `MUSH_WORKER_POLL_INTERVAL` | Job poll interval (e.g. `30s`, `1m`) |
 | `worker.heartbeat_interval` | duration | `30s` | `MUSH_WORKER_HEARTBEAT_INTERVAL` | Heartbeat interval (e.g. `30s`, `1m`) |
+| `interactive` | bool | `false` | `MUSH_INTERACTIVE` | Launch interactive TUI when running bare `mush` |
 | `history.enabled` | bool | `true` | `MUSH_HISTORY_ENABLED` | Enable transcript history recording |
 | `history.dir` | string | `<state root>/history` | `MUSH_HISTORY_DIR` | Transcript storage directory |
 | `history.scrollback_lines` | int | `10000` | `MUSH_HISTORY_SCROLLBACK_LINES` | In-memory scrollback ring buffer size (lines) |
@@ -315,6 +316,7 @@ Summary of all environment variables that affect Mush behavior:
 | `MUSH_HISTORY_RETENTION` | History retention period (Go duration, e.g., `720h`) |
 | `MUSH_WORKER_POLL_INTERVAL` | Job poll interval (Go duration, e.g., `30s`) |
 | `MUSH_WORKER_HEARTBEAT_INTERVAL` | Heartbeat interval (Go duration, e.g., `30s`) |
+| `MUSH_INTERACTIVE` | Enable interactive TUI for bare `mush` (`1` or `true`) |
 | `MUSH_UPDATE_DISABLED` | Disable update checks (`1` or `true`) |
 | `MUSH_JSON` | Enable JSON output (`1` or `true`) |
 | `MUSH_QUIET` | Enable quiet mode (`1` or `true`) |

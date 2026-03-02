@@ -20,6 +20,7 @@ import (
 	clierrors "github.com/musher-dev/mush/internal/errors"
 	"github.com/musher-dev/mush/internal/observability"
 	"github.com/musher-dev/mush/internal/output"
+	"github.com/musher-dev/mush/internal/tui/nav"
 	"github.com/musher-dev/mush/internal/update"
 )
 
@@ -107,16 +108,17 @@ func handleError(out *output.Writer, err error) int {
 
 func newRootCmd() *cobra.Command {
 	var (
-		jsonOutput bool
-		quiet      bool
-		noColor    bool
-		noInput    bool
-		logLevel   string
-		logFormat  string
-		logFile    string
-		logStderr  string
-		apiURL     string
-		apiKey     string
+		jsonOutput  bool
+		quiet       bool
+		noColor     bool
+		noInput     bool
+		interactive bool
+		logLevel    string
+		logFormat   string
+		logFile     string
+		logStderr   string
+		apiURL      string
+		apiKey      string
 	)
 
 	out := output.Default()
@@ -129,8 +131,17 @@ your local agent runtime, with full access to your dev
 environment.
 
 Get started:  mush init`,
+		Example:       `  mush --interactive`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
+		Args:          noArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if shouldShowTUI(interactive, out) {
+				return nav.Run(cmd.Context())
+			}
+
+			return cmd.Help()
+		},
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			if strings.TrimSpace(apiURL) != "" {
 				validatedURL, err := validateAPIURL(apiURL)
@@ -253,6 +264,7 @@ Get started:  mush init`,
 	rootCmd.PersistentFlags().BoolVar(&quiet, "quiet", false, "Minimal output (for CI)")
 	rootCmd.PersistentFlags().BoolVar(&noColor, "no-color", false, "Disable colored output")
 	rootCmd.PersistentFlags().BoolVar(&noInput, "no-input", false, "Disable interactive prompts")
+	rootCmd.PersistentFlags().BoolVar(&interactive, "interactive", false, "Launch interactive TUI navigation")
 	rootCmd.PersistentFlags().StringVar(&logLevel, "log-level", "", "Log level: error, warn, info, debug")
 	rootCmd.PersistentFlags().StringVar(&logFormat, "log-format", "", "Log format: json, text")
 	rootCmd.PersistentFlags().StringVar(&logFile, "log-file", "", "Optional structured log file path")
@@ -408,6 +420,20 @@ func validateAPIURL(raw string) (string, error) {
 func isInteractiveCommand(path string) bool {
 	return path == "mush worker start" || strings.HasPrefix(path, "mush worker start ") ||
 		path == "mush bundle load" || strings.HasPrefix(path, "mush bundle load ")
+}
+
+// shouldShowTUI returns true if the interactive TUI should be launched
+// instead of showing help text for the bare `mush` command.
+func shouldShowTUI(flagValue bool, out *output.Writer) bool {
+	if out.JSON || out.Quiet || out.NoInput {
+		return false
+	}
+
+	if !out.Terminal().IsTTY {
+		return false
+	}
+
+	return pickBoolFlagOrEnv(flagValue, "MUSH_INTERACTIVE")
 }
 
 // VersionInfo represents version information for JSON output.

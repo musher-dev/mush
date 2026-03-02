@@ -66,3 +66,25 @@ If/when a TUI framework is adopted:
 3. **Migrate prompt selection** — Replace `internal/prompt/` arrow-key selection with a Bubble Tea `list` model for richer interaction (filtering, search).
 4. **Extend `mush worker start`** — Add a multi-step wizard combining habitat, queue, harness, and bundle selection into a single TUI flow.
 5. **Preserve `internal/harness/` status bar** — The current ANSI scroll region approach works well for the watch-mode use case and does not need framework migration.
+
+---
+
+## Addendum: Root Command TUI Navigation (2026-03)
+
+The root `mush` command (bare, with no subcommand) now supports an opt-in interactive TUI mode via the `--interactive` flag, `MUSH_INTERACTIVE` env var, or `interactive` config key.
+
+**This does not change the bare-noun prohibition.** The six noun commands (`worker`, `bundle`, `auth`, `config`, `history`, `habitat`) still show help text when invoked without a verb. Only the root `mush` command gains TUI behavior, and only when explicitly opted in.
+
+### Suppression rules
+
+The TUI is suppressed (falls back to help text) when any of:
+- `--json` / `MUSH_JSON` is set
+- `--quiet` / `MUSH_QUIET` is set
+- `--no-input` / `MUSH_NO_INPUT` / `CI=true` is set
+- stdout is not a TTY
+
+### Implementation
+
+- Flag + env resolution uses the existing `pickBoolFlagOrEnv()` pattern.
+- TUI entry point: `internal/tui/nav.Run(ctx)` — lives at the Feature/Orchestration layer.
+- Framework: Bubble Tea (`github.com/charmbracelet/bubbletea`), as anticipated above.

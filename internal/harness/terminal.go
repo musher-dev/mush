@@ -26,8 +26,9 @@ import (
 const maxTermSeqTailBytes = 16
 
 const (
-	tamperThreshold = 5               // max reassert events before quarantine
-	tamperWindow    = 2 * time.Second // sliding window duration
+	tamperThreshold    = 5               // max reassert events before quarantine
+	tamperWindow       = 2 * time.Second // sliding window duration
+	sidebarRedrawDelay = 16 * time.Millisecond
 )
 
 type terminalEvent uint8
@@ -39,6 +40,7 @@ const (
 	terminalEventDisableLR
 	terminalEventAltEnter
 	terminalEventAltExit
+	terminalEventEraseDisplay
 )
 
 // TerminalController manages terminal I/O, scroll regions, sidebar toggling,
@@ -62,6 +64,8 @@ type TerminalController struct {
 	termSeqTail        []byte
 	termSeqMu          sync.Mutex
 	sidebarDisableMu   sync.Mutex
+	sidebarRedrawMu    sync.Mutex
+	sidebarRedrawTimer *time.Timer
 	restoreOnce        sync.Once
 
 	// Atomic frame dimensions for the output filter.
@@ -437,6 +441,17 @@ func (sf *sidebarFilter) handleCSIParams(seq []byte) (action filterAction, seqLe
 				row = clampInt(row+top-1, top, bottom)
 
 				return filterRewrite, j + 1, buildSingleParam(row, b)
+
+			case 'K': // EL — Erase in Line
+				mode := parseParamBytes(params)
+				if mode == 0 {
+					return filterPass, j + 1, nil
+				}
+				// Mode 1 or 2: rewrite to pane-only erase.
+				_, _, xStart, termW := sf.paneDims()
+				paneW := termW - xStart + 1
+
+				return filterRewrite, j + 1, buildPaneLineErase(xStart, paneW)
 			}
 
 			return filterPass, j + 1, nil
@@ -614,6 +629,10 @@ func (tc *TerminalController) handleTerminalEvent(ev terminalEvent) {
 	case terminalEventScrollReset, terminalEventDisableLR:
 		// Common harness init sequences — reassert layout or quarantine.
 		tc.reassertOrQuarantine(ev)
+	case terminalEventEraseDisplay:
+		if tc.SidebarEnabled() {
+			tc.scheduleSidebarRedraw()
+		}
 	}
 }
 
@@ -726,6 +745,28 @@ func (tc *TerminalController) reassertLayout() {
 	tc.drawStatusBar()
 }
 
+// scheduleSidebarRedraw triggers a debounced sidebar redraw after CSI J
+// (Erase in Display) is detected. Multiple rapid calls coalesce into a single
+// redraw after sidebarRedrawDelay.
+func (tc *TerminalController) scheduleSidebarRedraw() {
+	tc.sidebarRedrawMu.Lock()
+	defer tc.sidebarRedrawMu.Unlock()
+
+	if tc.sidebarRedrawTimer != nil {
+		return // already scheduled
+	}
+
+	tc.sidebarRedrawTimer = time.AfterFunc(sidebarRedrawDelay, func() {
+		tc.sidebarRedrawMu.Lock()
+		tc.sidebarRedrawTimer = nil
+		tc.sidebarRedrawMu.Unlock()
+
+		if tc.SidebarEnabled() {
+			tc.drawStatusBar()
+		}
+	})
+}
+
 // quarantineSidebar recovers the sidebar area and sets the quarantine flag.
 // Unlike disableSidebar (permanent), quarantine is recoverable via ^G toggle.
 func (tc *TerminalController) quarantineSidebar(ev terminalEvent) {
@@ -789,6 +830,8 @@ func terminalEventName(ev terminalEvent) string {
 		return "alt-enter"
 	case terminalEventAltExit:
 		return "alt-exit"
+	case terminalEventEraseDisplay:
+		return "erase-display"
 	default:
 		return fmt.Sprintf("unknown(%d)", ev)
 	}
@@ -1126,6 +1169,8 @@ func terminalEventFromCSI(params string, final byte) (terminalEvent, bool) {
 		// Parameterized CSI <digits>;<digits> s is DECSLRM — the child is
 		// taking over left/right margin control. Disable the sidebar.
 		return terminalEventDisableLR, true
+	case final == 'J' && (params == "" || params == "0" || params == "1" || params == "2"):
+		return terminalEventEraseDisplay, true
 	case (final == 'h' || final == 'l') && strings.HasPrefix(params, "?"):
 		mode := strings.TrimPrefix(params, "?")
 		switch mode {
@@ -1280,6 +1325,27 @@ func buildSingleParam(n int, final byte) []byte {
 
 	out := make([]byte, pos)
 	copy(out, buf[:pos])
+
+	return out
+}
+
+// buildPaneLineErase builds a sequence that erases only the pane portion of the
+// current line: DECSC + CHA(xStart) + ECH(paneWidth) + DECRC.
+func buildPaneLineErase(xStart, paneWidth int) []byte {
+	var buf [32]byte // ESC7 + CSI<digits>G + CSI<digits>X + ESC8 — max ~22 bytes
+
+	n := copy(buf[:], "\x1b7\x1b[")
+	n += appendIntBytes(buf[n:], xStart)
+	buf[n] = 'G'
+	n++
+	n += copy(buf[n:], "\x1b[")
+	n += appendIntBytes(buf[n:], paneWidth)
+	buf[n] = 'X'
+	n++
+	n += copy(buf[n:], "\x1b8")
+
+	out := make([]byte, n)
+	copy(out, buf[:n])
 
 	return out
 }
