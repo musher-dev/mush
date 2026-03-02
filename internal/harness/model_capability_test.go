@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"os"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -1365,5 +1366,180 @@ func TestSidebarAvailableReflectsQuarantine(t *testing.T) {
 
 	if tc.SidebarAvailable() {
 		t.Fatal("SidebarAvailable should be false when forcedOff")
+	}
+}
+
+// --- EL (Erase in Line) filter tests ---
+
+func TestSidebarFilterELRewrite(t *testing.T) {
+	tests := []struct {
+		name   string
+		active bool
+		input  []byte
+		want   []byte
+	}{
+		{
+			name:   "CSI 2K rewritten when active",
+			active: true,
+			input:  []byte("\x1b[2K"),
+			// paneDims: (2, 24, 38, 140) → paneW = 140 - 38 + 1 = 103
+			// DECSC + CHA(38) + ECH(103) + DECRC
+			want: []byte("\x1b7\x1b[38G\x1b[103X\x1b8"),
+		},
+		{
+			name:   "CSI 1K rewritten when active",
+			active: true,
+			input:  []byte("\x1b[1K"),
+			want:   []byte("\x1b7\x1b[38G\x1b[103X\x1b8"),
+		},
+		{
+			name:   "CSI 0K passes through when active",
+			active: true,
+			input:  []byte("\x1b[0K"),
+			want:   []byte("\x1b[0K"),
+		},
+		{
+			name:   "bare CSI K (implicit mode 0) passes through when active",
+			active: true,
+			input:  []byte("\x1b[K"),
+			// bare CSI K has no params, so it goes through the 'default' case in
+			// the switch on third byte, not handleCSIParams. It passes through.
+			want: []byte("\x1b[K"),
+		},
+		{
+			name:   "CSI 2K passes through when inactive",
+			active: false,
+			input:  []byte("\x1b[2K"),
+			want:   []byte("\x1b[2K"),
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			sf := newTestFilter(tc.active)
+			got := sf.rewrite(tc.input)
+
+			if !bytes.Equal(got, tc.want) {
+				t.Fatalf("rewrite(%q) = %q, want %q", tc.input, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestSidebarFilterELChunkBoundary(t *testing.T) {
+	sf := newTestFilter(true) // paneDims: (2, 24, 38, 140)
+
+	// Split CSI 2K across two writes: ESC[2 | K
+	got := sf.rewrite([]byte("\x1b[2"))
+	got = append(got, sf.rewrite([]byte("K"))...)
+	want := []byte("\x1b7\x1b[38G\x1b[103X\x1b8")
+
+	if !bytes.Equal(got, want) {
+		t.Fatalf("rewrite(CSI 2K split) = %q, want %q", got, want)
+	}
+}
+
+func TestBuildPaneLineErase(t *testing.T) {
+	got := buildPaneLineErase(38, 103)
+	want := []byte("\x1b7\x1b[38G\x1b[103X\x1b8")
+
+	if !bytes.Equal(got, want) {
+		t.Fatalf("buildPaneLineErase(38, 103) = %q, want %q", got, want)
+	}
+}
+
+// --- CSI J event detection tests ---
+
+func TestParseTerminalEventsEraseDisplay(t *testing.T) {
+	tests := []struct {
+		name      string
+		chunk     []byte
+		wantEvent []terminalEvent
+	}{
+		{
+			name:      "CSI 2J → erase-display",
+			chunk:     []byte("\x1b[2J"),
+			wantEvent: []terminalEvent{terminalEventEraseDisplay},
+		},
+		{
+			name:      "bare CSI J → erase-display",
+			chunk:     []byte("\x1b[J"),
+			wantEvent: []terminalEvent{terminalEventEraseDisplay},
+		},
+		{
+			name:      "CSI 0J → erase-display",
+			chunk:     []byte("\x1b[0J"),
+			wantEvent: []terminalEvent{terminalEventEraseDisplay},
+		},
+		{
+			name:      "CSI 1J → erase-display",
+			chunk:     []byte("\x1b[1J"),
+			wantEvent: []terminalEvent{terminalEventEraseDisplay},
+		},
+		{
+			name:      "CSI 3J → no event (scrollback erase is safe)",
+			chunk:     []byte("\x1b[3J"),
+			wantEvent: nil,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			events, _ := parseTerminalEvents(nil, tc.chunk)
+			if len(events) != len(tc.wantEvent) {
+				t.Fatalf("events len = %d, want %d (%v)", len(events), len(tc.wantEvent), events)
+			}
+
+			for i := range events {
+				if events[i] != tc.wantEvent[i] {
+					t.Fatalf("events[%d] = %v, want %v", i, events[i], tc.wantEvent[i])
+				}
+			}
+		})
+	}
+}
+
+func TestTerminalEventNameEraseDisplay(t *testing.T) {
+	got := terminalEventName(terminalEventEraseDisplay)
+	if got != "erase-display" {
+		t.Fatalf("terminalEventName(terminalEventEraseDisplay) = %q, want %q", got, "erase-display")
+	}
+}
+
+func TestScheduleSidebarRedraw(t *testing.T) {
+	var redrawCount atomic.Int32
+
+	done := make(chan struct{}, 1)
+
+	tc := &TerminalController{
+		width:  140,
+		height: 40,
+	}
+	tc.lrMarginSupported.Store(true)
+	tc.drawStatusBar = func() {
+		redrawCount.Add(1)
+
+		select {
+		case done <- struct{}{}:
+		default:
+		}
+	}
+	tc.setLastError = func(string) {}
+
+	// Multiple rapid calls should coalesce.
+	tc.scheduleSidebarRedraw()
+	tc.scheduleSidebarRedraw()
+	tc.scheduleSidebarRedraw()
+
+	// Wait for the timer to fire with a bounded timeout.
+	select {
+	case <-done:
+		// ok
+	case <-time.After(2 * time.Second):
+		t.Fatal("sidebar redraw did not occur within 2s")
+	}
+
+	if got := redrawCount.Load(); got != 1 {
+		t.Fatalf("expected 1 redraw, got %d", got)
 	}
 }

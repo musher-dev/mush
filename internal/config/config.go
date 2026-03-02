@@ -48,6 +48,7 @@ func Load() *Config {
 	v.SetDefault("api.url", DefaultAPIURL)
 	v.SetDefault("worker.poll_interval", DefaultPollInterval)
 	v.SetDefault("worker.heartbeat_interval", DefaultHeartbeatInterval)
+	v.SetDefault("interactive", false)
 	v.SetDefault("history.enabled", true)
 	v.SetDefault("history.scrollback_lines", 10000)
 	v.SetDefault("history.retention", (30 * 24 * time.Hour).String())
@@ -141,6 +142,11 @@ func (c *Config) PollInterval() time.Duration {
 // HeartbeatInterval returns the heartbeat interval as a duration.
 func (c *Config) HeartbeatInterval() time.Duration {
 	return c.parseDuration("worker.heartbeat_interval", defaultHeartbeatIntervalDuration)
+}
+
+// Interactive returns whether the interactive TUI is enabled.
+func (c *Config) Interactive() bool {
+	return c.v.GetBool("interactive")
 }
 
 // HistoryEnabled returns whether transcript history is enabled.
