@@ -535,13 +535,20 @@ func (tc *TerminalController) SidebarAvailable() bool {
 	return tc.lrMarginSupported.Load() && !tc.sidebarForcedOff.Load() && !tc.sidebarQuarantined.Load()
 }
 
-// setupScreen initializes the terminal with scroll region.
-func (tc *TerminalController) setupScreen() {
-	frame := layout.ComputeFrame(tc.width, tc.height, tc.SidebarEnabled())
+// storeFilterDims updates the atomic frame dimensions read by the sidebarFilter.
+// Must be called on every layout transition that changes pane geometry so that
+// cursor-coordinate translation (CUP/CHA/HPA/VPA) uses the correct offsets.
+func (tc *TerminalController) storeFilterDims(frame layout.Frame) {
 	tc.filterContentTop.Store(int32(frame.ContentTop))
 	tc.filterScrollBottom.Store(int32(frame.Height))
 	tc.filterPaneXStart.Store(int32(frame.PaneXStart))
 	tc.filterTermWidth.Store(int32(frame.Width))
+}
+
+// setupScreen initializes the terminal with scroll region.
+func (tc *TerminalController) setupScreen() {
+	frame := layout.ComputeFrame(tc.width, tc.height, tc.SidebarEnabled())
+	tc.storeFilterDims(frame)
 	tc.WriteString(layout.SetupSequence(frame, tc.SidebarEnabled()))
 	tc.drawStatusBar()
 }
@@ -614,6 +621,7 @@ func (tc *TerminalController) restoreLayoutAfterAltScreen() {
 	tc.mu.Lock()
 	sidebarOn := tc.SidebarEnabled()
 	frame := layout.ComputeFrame(tc.width, tc.height, sidebarOn)
+	tc.storeFilterDims(frame)
 
 	seq := layout.ResizeSequenceWithCursor(frame, sidebarOn, false)
 	if sidebarOn {
@@ -702,6 +710,7 @@ func (tc *TerminalController) reassertOrQuarantine(ev terminalEvent) {
 func (tc *TerminalController) reassertLayout() {
 	tc.mu.Lock()
 	frame := layout.ComputeFrame(tc.width, tc.height, tc.SidebarEnabled())
+	tc.storeFilterDims(frame)
 
 	seq := ansi.SaveCursor
 	if frame.SidebarVisible {
@@ -826,6 +835,7 @@ func (tc *TerminalController) reprobeAndEnableSidebar() {
 	tc.mu.Lock()
 
 	newFrame := layout.ComputeFrame(tc.width, tc.height, tc.SidebarEnabled())
+	tc.storeFilterDims(newFrame)
 	_, _ = fmt.Fprint(os.Stdout, layout.ResizeSequence(newFrame, tc.SidebarEnabled()))
 
 	tc.mu.Unlock()
@@ -856,6 +866,7 @@ func (tc *TerminalController) toggleSidebar() {
 		tc.sidebarDisableMu.Lock()
 		tc.mu.Lock()
 		newFrame := layout.ComputeFrame(tc.width, tc.height, tc.SidebarEnabled())
+		tc.storeFilterDims(newFrame)
 		_, _ = fmt.Fprint(os.Stdout, layout.ResizeSequence(newFrame, tc.SidebarEnabled()))
 		tc.mu.Unlock()
 		tc.sidebarDisableMu.Unlock()
@@ -887,6 +898,7 @@ func (tc *TerminalController) toggleSidebar() {
 	tc.sidebarUserOff.Store(!tc.sidebarUserOff.Load())
 
 	newFrame := layout.ComputeFrame(tc.width, tc.height, tc.SidebarEnabled())
+	tc.storeFilterDims(newFrame)
 	_, _ = fmt.Fprint(os.Stdout, layout.ResizeSequence(newFrame, tc.SidebarEnabled()))
 	tc.mu.Unlock()
 	tc.sidebarDisableMu.Unlock()
@@ -983,10 +995,7 @@ func (tc *TerminalController) handleResize(width, height int) {
 	tc.width = width
 	tc.height = height
 	newFrame := layout.ComputeFrame(tc.width, tc.height, tc.SidebarEnabled())
-	tc.filterContentTop.Store(int32(newFrame.ContentTop))
-	tc.filterScrollBottom.Store(int32(newFrame.Height))
-	tc.filterPaneXStart.Store(int32(newFrame.PaneXStart))
-	tc.filterTermWidth.Store(int32(newFrame.Width))
+	tc.storeFilterDims(newFrame)
 	_, _ = fmt.Fprint(os.Stdout, layout.ResizeSequenceWithCursor(newFrame, tc.SidebarEnabled(), false))
 	tc.mu.Unlock()
 
