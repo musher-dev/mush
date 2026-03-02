@@ -1507,11 +1507,9 @@ func TestTerminalEventNameEraseDisplay(t *testing.T) {
 }
 
 func TestScheduleSidebarRedraw(t *testing.T) {
-	var redraws sync.WaitGroup
-
 	var redrawCount atomic.Int32
 
-	redraws.Add(1)
+	done := make(chan struct{}, 1)
 
 	tc := &TerminalController{
 		width:  140,
@@ -1520,7 +1518,11 @@ func TestScheduleSidebarRedraw(t *testing.T) {
 	tc.lrMarginSupported.Store(true)
 	tc.drawStatusBar = func() {
 		redrawCount.Add(1)
-		redraws.Done()
+
+		select {
+		case done <- struct{}{}:
+		default:
+		}
 	}
 	tc.setLastError = func(string) {}
 
@@ -1529,8 +1531,13 @@ func TestScheduleSidebarRedraw(t *testing.T) {
 	tc.scheduleSidebarRedraw()
 	tc.scheduleSidebarRedraw()
 
-	// Wait for the timer to fire.
-	redraws.Wait()
+	// Wait for the timer to fire with a bounded timeout.
+	select {
+	case <-done:
+		// ok
+	case <-time.After(2 * time.Second):
+		t.Fatal("sidebar redraw did not occur within 2s")
+	}
 
 	if got := redrawCount.Load(); got != 1 {
 		t.Fatalf("expected 1 redraw, got %d", got)

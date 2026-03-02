@@ -572,6 +572,15 @@ func (tc *TerminalController) setupScreen() {
 // Safe to call multiple times (from both defer and signal handler).
 func (tc *TerminalController) restore() {
 	tc.restoreOnce.Do(func() {
+		// Stop any pending sidebar redraw timer so it doesn't fire after
+		// the terminal has been reset.
+		tc.sidebarRedrawMu.Lock()
+		if tc.sidebarRedrawTimer != nil {
+			tc.sidebarRedrawTimer.Stop()
+			tc.sidebarRedrawTimer = nil
+		}
+		tc.sidebarRedrawMu.Unlock()
+
 		tc.mu.Lock()
 		h := tc.height
 		seq := ansi.ResetScroll + ansi.DisableLRMode + ansi.ShowCursor + ansi.Reset + ansi.Move(h, 1) + "\n"
