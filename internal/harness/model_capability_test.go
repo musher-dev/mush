@@ -459,9 +459,16 @@ func TestProbeLRMarginSupportReturnsLeftover(t *testing.T) {
 }
 
 func newTestFilter(active bool) *sidebarFilter {
+	// 140-col terminal, sidebar occupies cols 1-37, pane starts at col 38.
+	return newTestFilterWithDims(active, 2, 24, 38, 140)
+}
+
+func newTestFilterWithDims(active bool, contentTop, scrollBottom, paneXStart, termWidth int) *sidebarFilter {
 	return &sidebarFilter{
-		active:     func() bool { return active },
-		scrollDims: func() (int, int) { return 2, 24 },
+		active: func() bool { return active },
+		paneDims: func() (int, int, int, int) {
+			return contentTop, scrollBottom, paneXStart, termWidth
+		},
 	}
 }
 
@@ -515,10 +522,10 @@ func TestSidebarFilter(t *testing.T) {
 			want:   []byte("\x1b7\x1b8\x1b7"),
 		},
 		{
-			name:   "other CSI sequences pass through",
+			name:   "CUP translated, erase display passes through",
 			active: true,
 			input:  []byte("\x1b[H\x1b[2J"),
-			want:   []byte("\x1b[H\x1b[2J"),
+			want:   []byte("\x1b[2;38H\x1b[2J"),
 		},
 		{
 			name:   "ESC c (hard reset) passes through",
@@ -595,8 +602,8 @@ func TestSidebarFilterChunkBoundary(t *testing.T) {
 	t.Run("held tail flushed when active returns false", func(t *testing.T) {
 		active := true
 		sf := &sidebarFilter{
-			active:     func() bool { return active },
-			scrollDims: func() (int, int) { return 2, 24 },
+			active:   func() bool { return active },
+			paneDims: func() (int, int, int, int) { return 2, 24, 38, 140 },
 		}
 
 		// First chunk: active, ESC at end → held in tail.
@@ -628,7 +635,7 @@ func TestSidebarFilterChunkBoundary(t *testing.T) {
 }
 
 func TestSidebarFilterBareCSIRRewrite(t *testing.T) {
-	sf := newTestFilter(true) // scrollDims returns (2, 24)
+	sf := newTestFilter(true) // paneDims returns (2, 24, 38, 140)
 	got := sf.rewrite([]byte("\x1b[r"))
 	want := []byte("\x1b[2;24r")
 
@@ -699,14 +706,386 @@ func TestSidebarFilterCSI69lChunkBoundary(t *testing.T) {
 
 func TestSidebarFilterTailOverflow(t *testing.T) {
 	sf := newTestFilter(true)
-	// A very long CSI sequence (>8 bytes) should flush through on overflow.
-	// ESC [ ? 1 2 3 4 5 6 7 l  = 11 bytes, exceeds 8-byte tail.
-	input := []byte("\x1b[?1234567l")
+	// A very long CSI sequence (>16 bytes) should flush through on overflow.
+	// ESC [ ? 1 2 3 4 5 6 7 8 9 0 1 2 3 l  = 18 bytes, exceeds 16-byte tail.
+	input := []byte("\x1b[?1234567890123l")
 	got := sf.rewrite(input)
 
 	// Should pass through (not matched as ?69l, too long to hold in tail).
 	if !bytes.Equal(got, input) {
 		t.Fatalf("rewrite(overflow) = %q, want %q", got, input)
+	}
+}
+
+// --- Cursor coordinate translation tests ---
+// Test filter uses paneDims returning (contentTop=2, scrollBottom=24, paneXStart=38, termWidth=140).
+// Child coordinates are 1-based relative to the pane.
+// Translation: row → clamp(row + 2 - 1, 2, 24), col → clamp(col + 38 - 1, 38, 140).
+
+func TestSidebarFilterCUPTranslation(t *testing.T) {
+	tests := []struct {
+		name  string
+		input []byte
+		want  []byte
+	}{
+		{
+			name:  "bare CUP (CSI H) → home to pane origin",
+			input: []byte("\x1b[H"),
+			want:  []byte("\x1b[2;38H"),
+		},
+		{
+			name:  "bare CUP (CSI f) → home to pane origin",
+			input: []byte("\x1b[f"),
+			want:  []byte("\x1b[2;38f"),
+		},
+		{
+			name:  "CUP row=1 col=1 → pane origin",
+			input: []byte("\x1b[1;1H"),
+			want:  []byte("\x1b[2;38H"),
+		},
+		{
+			name:  "CUP row=5 col=10 → translated",
+			input: []byte("\x1b[5;10H"),
+			want:  []byte("\x1b[6;47H"),
+		},
+		{
+			name:  "CUP with zero params defaults to 1",
+			input: []byte("\x1b[0;0H"),
+			want:  []byte("\x1b[2;38H"),
+		},
+		{
+			name:  "CUP semicolon only → defaults to 1;1",
+			input: []byte("\x1b[;H"),
+			want:  []byte("\x1b[2;38H"),
+		},
+		{
+			name:  "CUP row only → col defaults to 1",
+			input: []byte("\x1b[5H"),
+			want:  []byte("\x1b[6;38H"),
+		},
+		{
+			name:  "CUP row exceeds bounds → clamped to scrollBottom",
+			input: []byte("\x1b[999;1H"),
+			want:  []byte("\x1b[24;38H"),
+		},
+		{
+			name:  "CUP col exceeds bounds → clamped to termWidth",
+			input: []byte("\x1b[1;999H"),
+			want:  []byte("\x1b[2;140H"),
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			sf := newTestFilter(true)
+			got := sf.rewrite(tc.input)
+
+			if !bytes.Equal(got, tc.want) {
+				t.Fatalf("rewrite(%q) = %q, want %q", tc.input, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestSidebarFilterCHATranslation(t *testing.T) {
+	tests := []struct {
+		name  string
+		input []byte
+		want  []byte
+	}{
+		{
+			name:  "bare CHA (CSI G) → pane col start",
+			input: []byte("\x1b[G"),
+			want:  []byte("\x1b[38G"),
+		},
+		{
+			name:  "CHA col=1 → pane col start",
+			input: []byte("\x1b[1G"),
+			want:  []byte("\x1b[38G"),
+		},
+		{
+			name:  "CHA col=10 → translated",
+			input: []byte("\x1b[10G"),
+			want:  []byte("\x1b[47G"),
+		},
+		{
+			name:  "CHA col exceeds bounds → clamped",
+			input: []byte("\x1b[999G"),
+			want:  []byte("\x1b[140G"),
+		},
+		{
+			name:  "bare HPA (CSI `) → pane col start",
+			input: []byte("\x1b[`"),
+			want:  []byte("\x1b[38`"),
+		},
+		{
+			name:  "HPA col=5 → translated",
+			input: []byte("\x1b[5`"),
+			want:  []byte("\x1b[42`"),
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			sf := newTestFilter(true)
+			got := sf.rewrite(tc.input)
+
+			if !bytes.Equal(got, tc.want) {
+				t.Fatalf("rewrite(%q) = %q, want %q", tc.input, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestSidebarFilterVPATranslation(t *testing.T) {
+	tests := []struct {
+		name  string
+		input []byte
+		want  []byte
+	}{
+		{
+			name:  "bare VPA (CSI d) → pane top row",
+			input: []byte("\x1b[d"),
+			want:  []byte("\x1b[2d"),
+		},
+		{
+			name:  "VPA row=1 → pane top row",
+			input: []byte("\x1b[1d"),
+			want:  []byte("\x1b[2d"),
+		},
+		{
+			name:  "VPA row=5 → translated",
+			input: []byte("\x1b[5d"),
+			want:  []byte("\x1b[6d"),
+		},
+		{
+			name:  "VPA row exceeds bounds → clamped",
+			input: []byte("\x1b[999d"),
+			want:  []byte("\x1b[24d"),
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			sf := newTestFilter(true)
+			got := sf.rewrite(tc.input)
+
+			if !bytes.Equal(got, tc.want) {
+				t.Fatalf("rewrite(%q) = %q, want %q", tc.input, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestSidebarFilterCursorPassthroughWhenInactive(t *testing.T) {
+	tests := []struct {
+		name  string
+		input []byte
+	}{
+		{"CUP inactive", []byte("\x1b[5;10H")},
+		{"CHA inactive", []byte("\x1b[10G")},
+		{"HPA inactive", []byte("\x1b[10`")},
+		{"VPA inactive", []byte("\x1b[5d")},
+		{"bare CUP inactive", []byte("\x1b[H")},
+		{"bare CHA inactive", []byte("\x1b[G")},
+		{"bare VPA inactive", []byte("\x1b[d")},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			sf := newTestFilter(false)
+			got := sf.rewrite(tc.input)
+
+			if !bytes.Equal(got, tc.input) {
+				t.Fatalf("rewrite(%q) = %q, want passthrough %q", tc.input, got, tc.input)
+			}
+		})
+	}
+}
+
+func TestSidebarFilterMixedCursorAndSGR(t *testing.T) {
+	sf := newTestFilter(true) // paneDims: (2, 24, 38, 140)
+
+	// SGR (color) + CUP + text + CHA + text
+	input := []byte("\x1b[31m\x1b[1;1Hhello\x1b[1Gworld")
+	got := sf.rewrite(input)
+	want := []byte("\x1b[31m\x1b[2;38Hhello\x1b[38Gworld")
+
+	if !bytes.Equal(got, want) {
+		t.Fatalf("rewrite mixed = %q, want %q", got, want)
+	}
+}
+
+func TestSidebarFilterCursorChunkBoundary(t *testing.T) {
+	t.Run("CUP split across chunks", func(t *testing.T) {
+		sf := newTestFilter(true)
+
+		// Split CSI 5;10H: ESC[5;1 | 0H
+		got := sf.rewrite([]byte("\x1b[5;1"))
+		got = append(got, sf.rewrite([]byte("0H"))...)
+		want := []byte("\x1b[6;47H")
+
+		if !bytes.Equal(got, want) {
+			t.Fatalf("got %q, want %q", got, want)
+		}
+	})
+
+	t.Run("CHA split across chunks", func(t *testing.T) {
+		sf := newTestFilter(true)
+
+		// Split CSI 10G: ESC[ | 10G
+		got := sf.rewrite([]byte("\x1b["))
+		got = append(got, sf.rewrite([]byte("10G"))...)
+		want := []byte("\x1b[47G")
+
+		if !bytes.Equal(got, want) {
+			t.Fatalf("got %q, want %q", got, want)
+		}
+	})
+
+	t.Run("VPA split ESC at chunk end", func(t *testing.T) {
+		sf := newTestFilter(true)
+
+		got := sf.rewrite([]byte("text\x1b"))
+		got = append(got, sf.rewrite([]byte("[5d"))...)
+		want := []byte("text\x1b[6d")
+
+		if !bytes.Equal(got, want) {
+			t.Fatalf("got %q, want %q", got, want)
+		}
+	})
+}
+
+func TestSidebarFilterDECSLRMStillDropped(t *testing.T) {
+	sf := newTestFilter(true)
+
+	// Parameterized CSI s (DECSLRM) should still be dropped.
+	got := sf.rewrite([]byte("before\x1b[1;40safter"))
+
+	want := []byte("beforeafter")
+	if !bytes.Equal(got, want) {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+func TestSidebarFilterExistingBehaviorUnchanged(t *testing.T) {
+	sf := newTestFilter(true)
+
+	// CSI s → DECSC, CSI u → DECRC (existing rewrites should still work)
+	got := sf.rewrite([]byte("\x1b[s\x1b[u"))
+	want := []byte("\x1b7\x1b8")
+
+	if !bytes.Equal(got, want) {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+func TestSidebarFilterCustomDims(t *testing.T) {
+	// Narrower pane: contentTop=3, scrollBottom=30, paneXStart=50, termWidth=100
+	sf := newTestFilterWithDims(true, 3, 30, 50, 100)
+
+	// CUP row=1 col=1 → (3, 50)
+	got := sf.rewrite([]byte("\x1b[1;1H"))
+	want := []byte("\x1b[3;50H")
+
+	if !bytes.Equal(got, want) {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+
+	// CUP row=28 col=51 → (30, 100) — both clamped
+	got = sf.rewrite([]byte("\x1b[100;100H"))
+	want = []byte("\x1b[30;100H")
+
+	if !bytes.Equal(got, want) {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+// --- Helper function unit tests ---
+
+func TestParseTwoParams(t *testing.T) {
+	tests := []struct {
+		name   string
+		input  []byte
+		wantP1 int
+		wantP2 int
+	}{
+		{"normal", []byte("5;10"), 5, 10},
+		{"single param", []byte("5"), 5, 1},
+		{"zero defaults to 1", []byte("0;0"), 1, 1},
+		{"empty defaults to 1", []byte(""), 1, 1},
+		{"semicolon only", []byte(";"), 1, 1},
+		{"leading semicolon", []byte(";10"), 1, 10},
+		{"trailing semicolon", []byte("5;"), 5, 1},
+		{"large values", []byte("999;999"), 999, 999},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			p1, p2 := parseTwoParams(tc.input)
+			if p1 != tc.wantP1 || p2 != tc.wantP2 {
+				t.Fatalf("parseTwoParams(%q) = (%d, %d), want (%d, %d)",
+					tc.input, p1, p2, tc.wantP1, tc.wantP2)
+			}
+		})
+	}
+}
+
+func TestParseOneParam(t *testing.T) {
+	tests := []struct {
+		name  string
+		input []byte
+		want  int
+	}{
+		{"normal", []byte("5"), 5},
+		{"zero defaults to 1", []byte("0"), 1},
+		{"empty defaults to 1", []byte(""), 1},
+		{"large value", []byte("999"), 999},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := parseOneParam(tc.input)
+			if got != tc.want {
+				t.Fatalf("parseOneParam(%q) = %d, want %d", tc.input, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestClampInt(t *testing.T) {
+	tests := []struct {
+		v, lo, hi, want int
+	}{
+		{5, 1, 10, 5},
+		{0, 1, 10, 1},
+		{15, 1, 10, 10},
+		{1, 1, 1, 1},
+	}
+
+	for _, tc := range tests {
+		got := clampInt(tc.v, tc.lo, tc.hi)
+		if got != tc.want {
+			t.Fatalf("clampInt(%d, %d, %d) = %d, want %d", tc.v, tc.lo, tc.hi, got, tc.want)
+		}
+	}
+}
+
+func TestBuildCUP(t *testing.T) {
+	got := buildCUP(5, 38, 'H')
+	want := []byte("\x1b[5;38H")
+
+	if !bytes.Equal(got, want) {
+		t.Fatalf("buildCUP(5, 38, 'H') = %q, want %q", got, want)
+	}
+}
+
+func TestBuildSingleParam(t *testing.T) {
+	got := buildSingleParam(38, 'G')
+	want := []byte("\x1b[38G")
+
+	if !bytes.Equal(got, want) {
+		t.Fatalf("buildSingleParam(38, 'G') = %q, want %q", got, want)
 	}
 }
 

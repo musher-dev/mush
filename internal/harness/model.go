@@ -288,8 +288,11 @@ func (m *RootModel) Run() error {
 	ptyRows := layout.PtyRowsForFrame(frame)
 	filter := &sidebarFilter{
 		active: m.term.SidebarEnabled,
-		scrollDims: func() (int, int) {
-			return int(m.term.filterContentTop.Load()), int(m.term.filterScrollBottom.Load())
+		paneDims: func() (int, int, int, int) {
+			return int(m.term.filterContentTop.Load()),
+				int(m.term.filterScrollBottom.Load()),
+				int(m.term.filterPaneXStart.Load()),
+				int(m.term.filterTermWidth.Load())
 		},
 	}
 	termWriter := &lockedWriter{
