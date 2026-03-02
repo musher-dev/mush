@@ -64,9 +64,11 @@ type TerminalController struct {
 	sidebarDisableMu   sync.Mutex
 	restoreOnce        sync.Once
 
-	// Atomic frame dimensions for the output filter (Part 2).
+	// Atomic frame dimensions for the output filter.
 	filterContentTop   atomic.Int32
 	filterScrollBottom atomic.Int32
+	filterPaneXStart   atomic.Int32
+	filterTermWidth    atomic.Int32
 
 	// Set once in Run(), read-only thereafter.
 	executors          map[string]Executor
@@ -87,10 +89,10 @@ type TerminalController struct {
 // across Write chunk boundaries. If accumulated bytes exceed the buffer,
 // they are flushed through (the onWrite callback still catches the event).
 type sidebarFilter struct {
-	active     func() bool       // true when sidebar is enabled (DECLRMM active)
-	scrollDims func() (int, int) // returns (contentTop, scrollBottom) for CSI r rewrite
-	tail       [8]byte           // held bytes from previous chunk
-	tailN      int               // number of valid bytes in tail (0..8)
+	active   func() bool                 // true when sidebar is enabled (DECLRMM active)
+	paneDims func() (int, int, int, int) // returns (contentTop, scrollBottom, paneXStart, termWidth)
+	tail     [16]byte                    // held bytes from previous chunk (cursor seqs can reach ~12 bytes)
+	tailN    int                         // number of valid bytes in tail (0..16)
 }
 
 // rewrite processes a chunk of PTY output. When active, it rewrites or drops
@@ -216,7 +218,7 @@ func (sf *sidebarFilter) rewrite(p []byte) []byte {
 				copy(out, src[:i])
 			}
 
-			top, bottom := sf.scrollDims()
+			top, bottom, _, _ := sf.paneDims()
 
 			out = append(out, "\x1b["...)
 			out = strconv.AppendInt(out, int64(top), 10)
@@ -265,7 +267,7 @@ func (sf *sidebarFilter) rewrite(p []byte) []byte {
 
 		case (third >= '0' && third <= '9') || third == ';':
 			// Parameterized CSI — accumulate to find final byte.
-			action, seqLen := sf.handleCSIParams(src[i:])
+			action, seqLen, rewritten := sf.handleCSIParams(src[i:])
 			if seqLen == 0 {
 				// Incomplete — hold remaining bytes in tail.
 				held := src[i:]
@@ -289,16 +291,59 @@ func (sf *sidebarFilter) rewrite(p []byte) []byte {
 				break
 			}
 
-			if action == filterDrop {
+			switch action {
+			case filterDrop:
 				if out == nil {
 					out = make([]byte, i, len(src))
 					copy(out, src[:i])
 				}
-			} else if out != nil {
-				out = append(out, src[i:i+seqLen]...)
+			case filterRewrite:
+				if out == nil {
+					out = make([]byte, i, len(src))
+					copy(out, src[:i])
+				}
+
+				out = append(out, rewritten...)
+			default:
+				if out != nil {
+					out = append(out, src[i:i+seqLen]...)
+				}
 			}
 
 			i += seqLen
+
+		case third == 'H' || third == 'f':
+			// Bare CUP (CSI H / CSI f) — translate default (1,1).
+			if out == nil {
+				out = make([]byte, i, len(src))
+				copy(out, src[:i])
+			}
+
+			top, _, xStart, _ := sf.paneDims()
+			out = append(out, buildCUP(top, xStart, third)...)
+			i += 3
+
+		case third == 'G' || third == '`':
+			// Bare CHA / HPA — translate default col 1.
+			if out == nil {
+				out = make([]byte, i, len(src))
+				copy(out, src[:i])
+			}
+
+			_, _, xStart, _ := sf.paneDims()
+			out = append(out, buildSingleParam(xStart, third)...)
+			i += 3
+
+		case third == 'd':
+			// Bare VPA — translate default row 1.
+			if out == nil {
+				out = make([]byte, i, len(src))
+				copy(out, src[:i])
+			}
+
+			top, _, _, _ := sf.paneDims()
+			out = append(out, buildSingleParam(top, third)...)
+			i += 3
 
 		case third == '!':
 			// CSI ! p (soft reset) — pass through.
@@ -330,6 +375,7 @@ type filterAction int
 const (
 	filterPass filterAction = iota
 	filterDrop
+	filterRewrite
 )
 
 // handleCSIQuestion processes CSI ? ... sequences starting at seq[0]=ESC.
@@ -353,8 +399,9 @@ func (sf *sidebarFilter) handleCSIQuestion(seq []byte) (action filterAction, seq
 }
 
 // handleCSIParams processes CSI <digits/;> ... sequences starting at seq[0]=ESC.
-// Returns the action and total sequence length. seqLen=0 means incomplete.
-func (sf *sidebarFilter) handleCSIParams(seq []byte) (action filterAction, seqLen int) {
+// Returns the action, total sequence length, and optional rewritten bytes.
+// seqLen=0 means incomplete. rewritten is non-nil only when action is filterRewrite.
+func (sf *sidebarFilter) handleCSIParams(seq []byte) (action filterAction, seqLen int, rewritten []byte) {
 	// seq starts with ESC [ <digit or ;>
 	// Find the final byte (0x40-0x7E).
 	for j := 2; j < len(seq); j++ {
@@ -362,20 +409,47 @@ func (sf *sidebarFilter) handleCSIParams(seq []byte) (action filterAction, seqLe
 		if b >= 0x40 && b <= 0x7e {
 			// Final byte found. Check for DECSLRM without string allocation.
 			if b == 's' && isDECSLRMBytes(seq[2:j]) {
-				return filterDrop, j + 1
+				return filterDrop, j + 1, nil
 			}
 
-			return filterPass, j + 1
+			// Cursor-addressing sequences — translate coordinates.
+			params := seq[2:j]
+
+			switch b {
+			case 'H', 'f': // CUP — row;col
+				top, bottom, xStart, termW := sf.paneDims()
+				row, col := parseTwoParams(params)
+				row = clampInt(row+top-1, top, bottom)
+				col = clampInt(col+xStart-1, xStart, termW)
+
+				return filterRewrite, j + 1, buildCUP(row, col, b)
+
+			case 'G', '`': // CHA / HPA — col
+				_, _, xStart, termW := sf.paneDims()
+				col := parseOneParam(params)
+				col = clampInt(col+xStart-1, xStart, termW)
+
+				return filterRewrite, j + 1, buildSingleParam(col, b)
+
+			case 'd': // VPA — row
+				top, bottom, _, _ := sf.paneDims()
+				row := parseOneParam(params)
+				row = clampInt(row+top-1, top, bottom)
+
+				return filterRewrite, j + 1, buildSingleParam(row, b)
+			}
+
+			return filterPass, j + 1, nil
 		}
 
 		// Only digits and ; are valid parameter bytes.
 		if (b < '0' || b > '9') && b != ';' {
 			// Not a simple parameterized sequence — pass through.
-			return filterPass, j + 1
+			return filterPass, j + 1, nil
 		}
 	}
 
-	return filterPass, 0 // incomplete
+	return filterPass, 0, nil // incomplete
 }
 
 // containsByte reports whether b contains the byte c.
@@ -466,6 +540,8 @@ func (tc *TerminalController) setupScreen() {
 	frame := layout.ComputeFrame(tc.width, tc.height, tc.SidebarEnabled())
 	tc.filterContentTop.Store(int32(frame.ContentTop))
 	tc.filterScrollBottom.Store(int32(frame.Height))
+	tc.filterPaneXStart.Store(int32(frame.PaneXStart))
+	tc.filterTermWidth.Store(int32(frame.Width))
 	tc.WriteString(layout.SetupSequence(frame, tc.SidebarEnabled()))
 	tc.drawStatusBar()
 }
@@ -909,6 +985,8 @@ func (tc *TerminalController) handleResize(width, height int) {
 	newFrame := layout.ComputeFrame(tc.width, tc.height, tc.SidebarEnabled())
 	tc.filterContentTop.Store(int32(newFrame.ContentTop))
 	tc.filterScrollBottom.Store(int32(newFrame.Height))
+	tc.filterPaneXStart.Store(int32(newFrame.PaneXStart))
+	tc.filterTermWidth.Store(int32(newFrame.Width))
 	_, _ = fmt.Fprint(os.Stdout, layout.ResizeSequenceWithCursor(newFrame, tc.SidebarEnabled(), false))
 	tc.mu.Unlock()
 
@@ -1101,4 +1179,122 @@ func isDECSLRMBytes(params []byte) bool {
 	}
 
 	return true
+}
+
+// --- Cursor coordinate translation helpers ---
+
+// parseTwoParams parses "row;col" from parameter bytes.
+// Missing or zero values default to 1 per ECMA-48.
+func parseTwoParams(params []byte) (p1, p2 int) {
+	semi := bytes.IndexByte(params, ';')
+	if semi < 0 {
+		p1 = parseParamBytes(params)
+		p2 = 1
+	} else {
+		p1 = parseParamBytes(params[:semi])
+		p2 = parseParamBytes(params[semi+1:])
+	}
+
+	if p1 == 0 {
+		p1 = 1
+	}
+
+	if p2 == 0 {
+		p2 = 1
+	}
+
+	return p1, p2
+}
+
+// parseOneParam parses a single numeric parameter. Default is 1 if empty or zero.
+func parseOneParam(params []byte) int {
+	v := parseParamBytes(params)
+	if v == 0 {
+		return 1
+	}
+
+	return v
+}
+
+// parseParamBytes converts ASCII digit bytes to an int. Returns 0 for empty input.
+func parseParamBytes(b []byte) int {
+	v := 0
+
+	for _, c := range b {
+		if c >= '0' && c <= '9' {
+			v = v*10 + int(c-'0')
+		}
+	}
+
+	return v
+}
+
+// clampInt clamps v to [low, high].
+func clampInt(v, low, high int) int {
+	if v < low {
+		return low
+	}
+
+	if v > high {
+		return high
+	}
+
+	return v
+}
+
+// buildCUP builds a CSI row;col <final> sequence (e.g. CSI 5;38 H).
+func buildCUP(row, col int, final byte) []byte {
+	var buf [20]byte // ESC [ <digits> ; <digits> <final> — max ~14 bytes
+
+	n := copy(buf[:], "\x1b[")
+	n += appendIntBytes(buf[n:], row)
+	buf[n] = ';'
+	n++
+	n += appendIntBytes(buf[n:], col)
+	buf[n] = final
+	n++
+
+	out := make([]byte, n)
+	copy(out, buf[:n])
+
+	return out
+}
+
+// buildSingleParam builds a CSI n <final> sequence (e.g. CSI 38 G).
+func buildSingleParam(n int, final byte) []byte {
+	var buf [12]byte // ESC [ <digits> <final> — max ~9 bytes
+
+	pos := copy(buf[:], "\x1b[")
+	pos += appendIntBytes(buf[pos:], n)
+	buf[pos] = final
+	pos++
+
+	out := make([]byte, pos)
+	copy(out, buf[:pos])
+
+	return out
+}
+
+// appendIntBytes writes the decimal representation of n into dst and returns
+// the number of bytes written. dst must have sufficient capacity.
+func appendIntBytes(dst []byte, n int) int {
+	if n == 0 {
+		dst[0] = '0'
+		return 1
+	}
+
+	// Write digits in reverse, then swap.
+	i := 0
+	for n > 0 {
+		dst[i] = byte('0' + n%10)
+		n /= 10
+		i++
+	}
+
+	// Reverse.
+	for l, r := 0, i-1; l < r; l, r = l+1, r-1 {
+		dst[l], dst[r] = dst[r], dst[l]
+	}
+
+	return i
 }
