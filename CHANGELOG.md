@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.6.0](https://github.com/musher-dev/mush/compare/v3.5.0...v3.6.0) (2026-03-02)
+
+
+### Features
+
+* **harness:** translate cursor-addressing sequences in sidebar output filter ([#78](https://github.com/musher-dev/mush/issues/78)) ([ac92911](https://github.com/musher-dev/mush/commit/ac92911507f1c96839c8fe86b81425b9f30f8051))
+
 ## [3.5.0](https://github.com/musher-dev/mush/compare/v3.4.0...v3.5.0) (2026-03-01)
 
 
