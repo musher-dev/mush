@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.5.0](https://github.com/musher-dev/mush/compare/v3.4.0...v3.5.0) (2026-03-01)
+
+
+### Features
+
+* **harness:** add sidebar output filter, executor capability interfaces, and tamper quarantine ([#76](https://github.com/musher-dev/mush/issues/76)) ([0f80488](https://github.com/musher-dev/mush/commit/0f804888baed6ac18653b579c8384cc8fe1f754f))
+
 ## [3.4.0](https://github.com/musher-dev/mush/compare/v3.3.0...v3.4.0) (2026-03-01)
 
 
