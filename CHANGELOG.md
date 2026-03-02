@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.7.0](https://github.com/musher-dev/mush/compare/v3.6.0...v3.7.0) (2026-03-02)
+
+
+### Features
+
+* **harness:** rewrite CSI K erase-in-line and debounce sidebar redraw on CSI J ([#83](https://github.com/musher-dev/mush/issues/83)) ([b3ae7c4](https://github.com/musher-dev/mush/commit/b3ae7c41932cefff825a69185b9a5819995a6f5f))
+
 ## [3.6.0](https://github.com/musher-dev/mush/compare/v3.5.0...v3.6.0) (2026-03-02)
 
 
