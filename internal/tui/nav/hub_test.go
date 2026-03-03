@@ -85,6 +85,7 @@ func TestHubSearchResultPopulatesList(t *testing.T) {
 	mdl := testModel()
 	mdl.activeScreen = screenHubExplore
 	mdl.hubExplore.loading = true
+	mdl.hubExplore.searchID = 1
 
 	msg := hubSearchResultMsg{
 		results: []client.HubBundleSummary{
@@ -94,6 +95,7 @@ func TestHubSearchResultPopulatesList(t *testing.T) {
 		nextCursor: "cur1",
 		hasMore:    true,
 		query:      "test",
+		searchID:   1,
 	}
 
 	mdl = updateModel(mdl, msg)
@@ -127,11 +129,13 @@ func TestHubSearchResultAppend(t *testing.T) {
 	mdl.hubExplore.results = []client.HubBundleSummary{
 		{Slug: "existing"},
 	}
+	mdl.hubExplore.searchID = 2
 
 	msg := hubSearchResultMsg{
 		results:    []client.HubBundleSummary{{Slug: "new-one"}},
 		appendMore: true,
 		query:      "",
+		searchID:   2,
 	}
 
 	mdl = updateModel(mdl, msg)
@@ -147,10 +151,12 @@ func TestHubSearchErrorSetsErrorMsg(t *testing.T) {
 	mdl := testModel()
 	mdl.activeScreen = screenHubExplore
 	mdl.hubExplore.loading = true
+	mdl.hubExplore.searchID = 1
 
 	msg := hubSearchErrorMsg{
-		err:   fmt.Errorf("network timeout"),
-		query: "test",
+		err:      fmt.Errorf("network timeout"),
+		query:    "test",
+		searchID: 1,
 	}
 
 	mdl = updateModel(mdl, msg)
@@ -586,6 +592,58 @@ func TestFormatCount(t *testing.T) {
 		if got != test.want {
 			t.Errorf("formatCount(%d) = %q, want %q", test.n, got, test.want)
 		}
+	}
+}
+
+func TestHubStaleSearchResultDiscarded(t *testing.T) {
+	t.Parallel()
+
+	mdl := testModel()
+	mdl.activeScreen = screenHubExplore
+	mdl.hubExplore.loading = true
+	mdl.hubExplore.searchID = 5
+
+	// Result from an older search (searchID=3) should be discarded.
+	msg := hubSearchResultMsg{
+		results:  []client.HubBundleSummary{{Slug: "stale"}},
+		query:    "old",
+		searchID: 3,
+	}
+
+	mdl = updateModel(mdl, msg)
+
+	if !mdl.hubExplore.loading {
+		t.Error("loading should remain true for stale search result")
+	}
+
+	if len(mdl.hubExplore.results) != 0 {
+		t.Errorf("results should be empty, got %d", len(mdl.hubExplore.results))
+	}
+}
+
+func TestHubStaleSearchErrorDiscarded(t *testing.T) {
+	t.Parallel()
+
+	mdl := testModel()
+	mdl.activeScreen = screenHubExplore
+	mdl.hubExplore.loading = true
+	mdl.hubExplore.searchID = 5
+
+	// Error from an older search (searchID=2) should be discarded.
+	msg := hubSearchErrorMsg{
+		err:      fmt.Errorf("old error"),
+		query:    "old",
+		searchID: 2,
+	}
+
+	mdl = updateModel(mdl, msg)
+
+	if !mdl.hubExplore.loading {
+		t.Error("loading should remain true for stale search error")
+	}
+
+	if mdl.hubExplore.errorMsg != "" {
+		t.Errorf("errorMsg should be empty, got %q", mdl.hubExplore.errorMsg)
 	}
 }
 

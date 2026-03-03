@@ -186,6 +186,7 @@ type hubExploreState struct {
 	query        string // committed search query
 	pendingQuery string // query awaiting debounce
 	debounceID   int    // monotonic counter for stale-tick invalidation
+	searchID     int    // monotonic counter to discard out-of-order results
 	nextCursor   string
 	hasMore      bool
 	results      []client.HubBundleSummary
@@ -645,6 +646,7 @@ func (m *model) activateMenuItem(idx int) (tea.Model, tea.Cmd) {
 			categoryCur: -1,
 			loading:     true,
 			spinner:     m.hubExplore.spinner,
+			searchID:    m.hubExplore.searchID + 1,
 		}
 
 		m.pushScreen(screenHubExplore)
@@ -653,7 +655,7 @@ func (m *model) activateMenuItem(idx int) (tea.Model, tea.Cmd) {
 
 		return m, tea.Batch(
 			m.hubExplore.spinner.Tick,
-			cmdSearchHub(baseURL, "", "", "trending", hubSearchLimit, "", false),
+			cmdSearchHub(baseURL, "", "", "trending", hubSearchLimit, "", false, m.hubExplore.searchID),
 			cmdListHubCategories(baseURL),
 		)
 

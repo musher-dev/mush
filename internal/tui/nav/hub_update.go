@@ -46,13 +46,14 @@ func (m *model) handleHubSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.hubExplore.results = nil
 		m.hubExplore.resultCur = 0
 		m.hubExplore.nextCursor = ""
+		m.hubExplore.searchID++
 
 		baseURL := m.apiBaseURL()
 		bundleType := m.hubSelectedCategory()
 
 		return m, tea.Batch(
 			m.hubExplore.spinner.Tick,
-			cmdSearchHub(baseURL, query, bundleType, "trending", hubSearchLimit, "", false),
+			cmdSearchHub(baseURL, query, bundleType, "trending", hubSearchLimit, "", false, m.hubExplore.searchID),
 		)
 	}
 
@@ -146,7 +147,11 @@ func (m *model) handleHubDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.hubInstallFromDetail()
 
 	case key.Matches(msg, m.keys.Down):
-		m.hubDetail.scrollOffset++
+		// Clamp to avoid scrolling past content.
+		maxScroll := m.hubDetailContentLineCount()
+		if m.hubDetail.scrollOffset < maxScroll {
+			m.hubDetail.scrollOffset++
+		}
 
 	case key.Matches(msg, m.keys.Up):
 		if m.hubDetail.scrollOffset > 0 {
@@ -165,6 +170,11 @@ func (m *model) handleHubDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // --- Hub message handlers ---
 
 func (m *model) handleHubSearchResult(msg hubSearchResultMsg) (tea.Model, tea.Cmd) {
+	// Discard out-of-order results from a stale search.
+	if msg.searchID != m.hubExplore.searchID {
+		return m, nil
+	}
+
 	m.hubExplore.loading = false
 	m.hubExplore.errorMsg = ""
 
@@ -183,6 +193,11 @@ func (m *model) handleHubSearchResult(msg hubSearchResultMsg) (tea.Model, tea.Cm
 }
 
 func (m *model) handleHubSearchError(msg hubSearchErrorMsg) (tea.Model, tea.Cmd) {
+	// Discard out-of-order errors from a stale search.
+	if msg.searchID != m.hubExplore.searchID {
+		return m, nil
+	}
+
 	m.hubExplore.loading = false
 	m.hubExplore.errorMsg = msg.err.Error()
 
@@ -226,17 +241,63 @@ func (m *model) handleHubDebounceTick(msg hubDebounceTickMsg) (tea.Model, tea.Cm
 	m.hubExplore.results = nil
 	m.hubExplore.resultCur = 0
 	m.hubExplore.nextCursor = ""
+	m.hubExplore.searchID++
 
 	baseURL := m.apiBaseURL()
 	bundleType := m.hubSelectedCategory()
 
 	return m, tea.Batch(
 		m.hubExplore.spinner.Tick,
-		cmdSearchHub(baseURL, msg.query, bundleType, "trending", hubSearchLimit, "", false),
+		cmdSearchHub(baseURL, msg.query, bundleType, "trending", hubSearchLimit, "", false, m.hubExplore.searchID),
 	)
 }
 
 // --- Hub helpers ---
+
+// hubDetailContentLineCount returns the approximate number of lines in the detail content.
+// Used to clamp scrollOffset.
+func (m *model) hubDetailContentLineCount() int {
+	if m.hubDetail.detail == nil {
+		return 0
+	}
+
+	// Count: name, ref+badge, blank, up to 5 meta rows, blank, desc, blank, button = ~12 lines.
+	// This is an approximation — we count the same fields renderHubDetailContent renders.
+	count := 3 // name + ref + blank
+
+	metaFields := []string{
+		m.hubDetail.detail.BundleType,
+		m.hubDetail.detail.LatestVersion,
+		m.hubDetail.detail.License,
+	}
+
+	for _, field := range metaFields {
+		if field != "" {
+			count++
+		}
+	}
+
+	if m.hubDetail.detail.StarsCount > 0 {
+		count++
+	}
+
+	if m.hubDetail.detail.DownloadsTotal > 0 {
+		count++
+	}
+
+	desc := m.hubDetail.detail.Description
+	if desc == "" {
+		desc = m.hubDetail.detail.Summary
+	}
+
+	if desc != "" {
+		count += 2 // blank + desc
+	}
+
+	count += 2 // blank + button
+
+	return count
+}
 
 // apiBaseURL returns the configured API base URL, with a fallback default.
 func (m *model) apiBaseURL() string {
@@ -262,6 +323,7 @@ func (m *model) hubApplyFilter() (tea.Model, tea.Cmd) {
 	m.hubExplore.results = nil
 	m.hubExplore.resultCur = 0
 	m.hubExplore.nextCursor = ""
+	m.hubExplore.searchID++
 
 	baseURL := m.apiBaseURL()
 	query := m.hubExplore.searchInput.Value()
@@ -269,7 +331,7 @@ func (m *model) hubApplyFilter() (tea.Model, tea.Cmd) {
 
 	return m, tea.Batch(
 		m.hubExplore.spinner.Tick,
-		cmdSearchHub(baseURL, query, bundleType, "trending", hubSearchLimit, "", false),
+		cmdSearchHub(baseURL, query, bundleType, "trending", hubSearchLimit, "", false, m.hubExplore.searchID),
 	)
 }
 
@@ -355,12 +417,13 @@ func (m *model) hubInstall(slug, version string) (tea.Model, tea.Cmd) {
 // hubLoadMore loads the next page of search results.
 func (m *model) hubLoadMore() (tea.Model, tea.Cmd) {
 	m.hubExplore.loading = true
+	m.hubExplore.searchID++
 
 	baseURL := m.apiBaseURL()
 	bundleType := m.hubSelectedCategory()
 
 	return m, tea.Batch(
 		m.hubExplore.spinner.Tick,
-		cmdSearchHub(baseURL, m.hubExplore.query, bundleType, "trending", hubSearchLimit, m.hubExplore.nextCursor, true),
+		cmdSearchHub(baseURL, m.hubExplore.query, bundleType, "trending", hubSearchLimit, m.hubExplore.nextCursor, true, m.hubExplore.searchID),
 	)
 }

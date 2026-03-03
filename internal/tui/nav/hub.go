@@ -271,6 +271,16 @@ func renderHubDetailContent(mdl *model) string {
 
 	lines = append(lines, "", renderButton(&mdl.styles, "Install Bundle", true))
 
+	// Apply scroll offset.
+	if mdl.hubDetail.scrollOffset > 0 {
+		off := mdl.hubDetail.scrollOffset
+		if off > len(lines) {
+			off = len(lines)
+		}
+
+		lines = lines[off:]
+	}
+
 	return strings.Join(lines, "\n")
 }
 

@@ -224,8 +224,8 @@ func downloadBundle(ctx context.Context, c *client.Client, resolved *client.Bund
 
 	// Atomically promote staging to final cache path.
 	if err := os.Rename(stagingDir, cachePath); err != nil {
-		// Another process may have won the race.
-		if bundle.IsCached(filepath.Dir(filepath.Dir(cachePath)), filepath.Base(filepath.Dir(cachePath)), filepath.Base(cachePath)) {
+		// Another process may have won the race — check if the final cache already exists.
+		if _, statErr := os.Stat(filepath.Join(cachePath, "manifest.json")); statErr == nil {
 			_ = os.RemoveAll(stagingDir)
 			stagingFailed = false
 

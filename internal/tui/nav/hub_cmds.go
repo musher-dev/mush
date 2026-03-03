@@ -18,12 +18,14 @@ type hubSearchResultMsg struct {
 	hasMore    bool
 	appendMore bool
 	query      string
+	searchID   int // monotonic ID to discard out-of-order results
 }
 
 // hubSearchErrorMsg carries a hub search error.
 type hubSearchErrorMsg struct {
-	err   error
-	query string
+	err      error
+	query    string
+	searchID int // monotonic ID to discard out-of-order results
 }
 
 // hubDetailLoadedMsg carries a loaded hub bundle detail.
@@ -60,14 +62,14 @@ const (
 // --- Hub commands ---
 
 // cmdSearchHub searches for bundles in the hub.
-func cmdSearchHub(baseURL, query, bundleType, sort string, limit int, cursor string, appendMore bool) tea.Cmd {
+func cmdSearchHub(baseURL, query, bundleType, sort string, limit int, cursor string, appendMore bool, searchID int) tea.Cmd {
 	return func() tea.Msg {
 		c := client.New(baseURL, "")
 		ctx := context.Background()
 
 		resp, err := c.SearchHubBundles(ctx, query, bundleType, sort, limit, cursor)
 		if err != nil {
-			return hubSearchErrorMsg{err: err, query: query}
+			return hubSearchErrorMsg{err: err, query: query, searchID: searchID}
 		}
 
 		return hubSearchResultMsg{
@@ -76,6 +78,7 @@ func cmdSearchHub(baseURL, query, bundleType, sort string, limit int, cursor str
 			hasMore:    resp.Meta.HasMore,
 			appendMore: appendMore,
 			query:      query,
+			searchID:   searchID,
 		}
 	}
 }
