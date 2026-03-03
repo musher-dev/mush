@@ -6,6 +6,8 @@ import (
 	"github.com/spf13/cobra"
 
 	clierrors "github.com/musher-dev/mush/internal/errors"
+	"github.com/musher-dev/mush/internal/output"
+	"github.com/musher-dev/mush/internal/tui/nav"
 )
 
 func unsupportedWatchModeError() error {
@@ -14,6 +16,11 @@ func unsupportedWatchModeError() error {
 		Hint:    "Run Mush on a Unix-like OS (macOS/Linux) to use 'mush worker start'",
 		Code:    clierrors.ExitUsage,
 	}
+}
+
+// handleWorkerNavResult is not supported on non-Unix platforms.
+func handleWorkerNavResult(_ *cobra.Command, _ *output.Writer, _ *nav.Result) error {
+	return unsupportedWatchModeError()
 }
 
 func newWorkerCmd() *cobra.Command {

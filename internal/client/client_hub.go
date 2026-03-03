@@ -1,0 +1,191 @@
+package client
+
+import (
+	"context"
+	"fmt"
+	"net/http"
+	neturl "net/url"
+	"time"
+)
+
+// HubPublisher represents a bundle publisher.
+type HubPublisher struct {
+	Handle      string `json:"handle"`
+	DisplayName string `json:"displayName"`
+	TrustTier   string `json:"trustTier"`
+	AvatarURL   string `json:"avatarUrl"`
+}
+
+// HubBundleSummary represents a bundle in hub search results.
+type HubBundleSummary struct {
+	ID             string       `json:"id"`
+	Publisher      HubPublisher `json:"publisher"`
+	Slug           string       `json:"slug"`
+	DisplayName    string       `json:"displayName"`
+	Summary        string       `json:"summary"`
+	BundleType     string       `json:"bundleType"`
+	Tags           []string     `json:"tags"`
+	Capabilities   []string     `json:"capabilities"`
+	License        string       `json:"license"`
+	LatestVersion  string       `json:"latestVersion"`
+	StarsCount     int          `json:"starsCount"`
+	DownloadsTotal int          `json:"downloadsTotal"`
+	Downloads30D   int          `json:"downloads30d"`
+	CreatedAt      time.Time    `json:"createdAt"`
+	UpdatedAt      time.Time    `json:"updatedAt"`
+}
+
+// HubSearchMeta contains pagination metadata for search results.
+type HubSearchMeta struct {
+	NextCursor string `json:"nextCursor"`
+	HasMore    bool   `json:"hasMore"`
+}
+
+// HubSearchResponse is the response from searching hub bundles.
+type HubSearchResponse struct {
+	Data []HubBundleSummary `json:"data"`
+	Meta HubSearchMeta      `json:"meta"`
+}
+
+// HubBundleVersion represents a specific version of a hub bundle.
+type HubBundleVersion struct {
+	Version           string    `json:"version"`
+	PublishedAt       time.Time `json:"publishedAt"`
+	IsDeprecated      bool      `json:"isDeprecated"`
+	DeprecatedMessage string    `json:"deprecatedMessage"`
+}
+
+// HubBundleDetail is the full detail for a hub bundle.
+type HubBundleDetail struct {
+	HubBundleSummary
+	Description    string             `json:"description"`
+	RepositoryURL  string             `json:"repositoryUrl"`
+	HomepageURL    string             `json:"homepageUrl"`
+	ReadmeContent  string             `json:"readmeContent"`
+	ReadmeFormat   string             `json:"readmeFormat"`
+	IsDeprecated   bool               `json:"isDeprecated"`
+	LoadCommand    string             `json:"loadCommand"`
+	InstallCommand string             `json:"installCommand"`
+	Versions       []HubBundleVersion `json:"versions"`
+}
+
+// HubCategory represents a bundle category.
+type HubCategory struct {
+	Slug        string `json:"slug"`
+	DisplayName string `json:"displayName"`
+	Description string `json:"description"`
+	BundleCount int    `json:"bundleCount"`
+}
+
+// SearchHubBundles searches for bundles in the hub (public, no auth required).
+func (c *Client) SearchHubBundles(ctx context.Context, query, bundleType, sort string, limit int, cursor string) (*HubSearchResponse, error) {
+	endpoint, err := neturl.Parse(c.baseURL + "/api/v1/hub/bundles")
+	if err != nil {
+		return nil, fmt.Errorf("parse hub search endpoint: %w", err)
+	}
+
+	params := endpoint.Query()
+
+	if query != "" {
+		params.Set("q", query)
+	}
+
+	if bundleType != "" {
+		params.Set("type", bundleType)
+	}
+
+	if sort != "" {
+		params.Set("sort", sort)
+	}
+
+	if limit > 0 {
+		params.Set("limit", fmt.Sprintf("%d", limit))
+	}
+
+	if cursor != "" {
+		params.Set("cursor", cursor)
+	}
+
+	endpoint.RawQuery = params.Encode()
+
+	req, err := c.newPublicRequest(ctx, "GET", endpoint.String(), http.NoBody)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.do(req, "/api/v1/hub/bundles")
+	if err != nil {
+		return nil, fmt.Errorf("search hub bundles: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, unexpectedStatus("search hub bundles", resp.StatusCode, resp.Body)
+	}
+
+	var result HubSearchResponse
+	if err := decodeJSON(resp.Body, &result, "failed to parse hub search response"); err != nil {
+		return nil, err
+	}
+
+	return &result, nil
+}
+
+// GetHubBundleDetail fetches full details for a hub bundle (public, no auth required).
+func (c *Client) GetHubBundleDetail(ctx context.Context, publisherHandle, bundleSlug string) (*HubBundleDetail, error) {
+	path := fmt.Sprintf("/api/v1/hub/bundles/%s/%s",
+		neturl.PathEscape(publisherHandle),
+		neturl.PathEscape(bundleSlug),
+	)
+
+	req, err := c.newPublicRequest(ctx, "GET", c.baseURL+path, http.NoBody)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.do(req, path)
+	if err != nil {
+		return nil, fmt.Errorf("get hub bundle detail: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, fmt.Errorf("bundle %s/%s not found", publisherHandle, bundleSlug)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, unexpectedStatus("get hub bundle detail", resp.StatusCode, resp.Body)
+	}
+
+	var result HubBundleDetail
+	if err := decodeJSON(resp.Body, &result, "failed to parse hub bundle detail"); err != nil {
+		return nil, err
+	}
+
+	return &result, nil
+}
+
+// ListHubCategories lists available hub categories (public, no auth required).
+func (c *Client) ListHubCategories(ctx context.Context) ([]HubCategory, error) {
+	req, err := c.newPublicRequest(ctx, "GET", c.baseURL+"/api/v1/hub/categories", http.NoBody)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.do(req, "/api/v1/hub/categories")
+	if err != nil {
+		return nil, fmt.Errorf("list hub categories: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, unexpectedStatus("list hub categories", resp.StatusCode, resp.Body)
+	}
+
+	var result []HubCategory
+	if err := decodeJSON(resp.Body, &result, "failed to parse hub categories"); err != nil {
+		return nil, err
+	}
+
+	return result, nil
+}

@@ -23,6 +23,7 @@ import (
 	"github.com/musher-dev/mush/internal/harness"
 	"github.com/musher-dev/mush/internal/observability"
 	"github.com/musher-dev/mush/internal/output"
+	"github.com/musher-dev/mush/internal/tui/nav"
 )
 
 func newWorkerCmd() *cobra.Command {
@@ -312,6 +313,63 @@ func runWatch(
 
 	if err := harness.Run(ctx, cfg); err != nil {
 		return clierrors.Wrap(clierrors.ExitExecution, "Watch harness failed", err)
+	}
+
+	return nil
+}
+
+// handleWorkerNavResult handles the ActionWorkerStart result from the TUI.
+func handleWorkerNavResult(cmd *cobra.Command, out *output.Writer, result *nav.Result) error {
+	logger := observability.FromContext(cmd.Context()).With(
+		slog.String("component", "worker"),
+		slog.String("event.type", "worker.start.nav"),
+	)
+
+	_, c, err := apiClientFactory()
+	if err != nil {
+		return err
+	}
+
+	identity, err := c.ValidateKey(cmd.Context())
+	if err != nil {
+		return clierrors.AuthFailed(err)
+	}
+
+	out.Print("Authenticated as: %s (Workspace: %s)\n", identity.CredentialName, identity.WorkspaceName)
+
+	var runnerConfig *client.RunnerConfigResponse
+
+	runnerConfig, err = c.GetRunnerConfig(cmd.Context())
+	if err != nil {
+		logger.Warn("runner config unavailable",
+			slog.String("event.type", "worker.runner_config.unavailable"),
+			slog.String("error", err.Error()))
+		out.Warning("Runner config unavailable, continuing without MCP provisioning: %v", err)
+	}
+
+	if !out.Terminal().IsTTY {
+		return &clierrors.CLIError{
+			Message: "Watch mode requires a terminal (TTY)",
+			Hint:    "Run this command directly in a terminal, not in a pipe or script",
+			Code:    clierrors.ExitUsage,
+		}
+	}
+
+	ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+	defer stop()
+
+	out.Print("Surface: watch\n")
+	out.Print("Harnesses: %s\n", strings.Join(result.SupportedHarnesses, ", "))
+	out.Print("Queue: %s (%s)\n", result.QueueName, result.QueueID)
+	out.Println()
+
+	watchErr := runWatch(ctx, c, result.HabitatID, result.QueueID, result.SupportedHarnesses, runnerConfig, &harness.BundleSummary{}, false)
+	if watchErr != nil {
+		logger.Error("worker watch runtime failed",
+			slog.String("event.type", "worker.error"),
+			slog.String("error", watchErr.Error()))
+
+		return watchErr
 	}
 
 	return nil

@@ -16,7 +16,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 
+	"github.com/musher-dev/mush/internal/auth"
 	"github.com/musher-dev/mush/internal/buildinfo"
+	"github.com/musher-dev/mush/internal/client"
 	"github.com/musher-dev/mush/internal/config"
 	clierrors "github.com/musher-dev/mush/internal/errors"
 	"github.com/musher-dev/mush/internal/observability"
@@ -138,7 +140,23 @@ Get started:  mush init`,
 		Args:          noArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if shouldShowTUI(interactive, out) {
-				return nav.Run(cmd.Context())
+				deps := buildTUIDeps()
+
+				result, err := nav.Run(cmd.Context(), deps)
+				if err != nil {
+					return clierrors.Wrap(clierrors.ExitGeneral, "Interactive TUI failed", err)
+				}
+
+				if result.Action == nav.ActionBundleLoad {
+					out.Success("Bundle %s v%s ready at %s (harness: %s)",
+						result.BundleSlug, result.BundleVer, result.CachePath, result.Harness)
+				}
+
+				if result.Action == nav.ActionWorkerStart {
+					return handleWorkerNavResult(cmd, out, result)
+				}
+
+				return nil
 			}
 
 			return cmd.Help()
@@ -421,6 +439,26 @@ func validateAPIURL(raw string) (string, error) {
 func isInteractiveCommand(path string) bool {
 	return path == "mush worker start" || strings.HasPrefix(path, "mush worker start ") ||
 		path == "mush bundle load" || strings.HasPrefix(path, "mush bundle load ")
+}
+
+// buildTUIDeps creates the Dependencies struct for the TUI from available auth/config.
+func buildTUIDeps() *nav.Dependencies {
+	cfg := config.Load()
+	deps := &nav.Dependencies{
+		Config: cfg,
+	}
+
+	// Check if we have credentials to build a client.
+	source, apiKey := auth.GetCredentials()
+	if source != auth.SourceNone && apiKey != "" {
+		deps.Client = client.New(cfg.APIURL(), apiKey)
+	}
+
+	if wd, err := os.Getwd(); err == nil {
+		deps.WorkDir = wd
+	}
+
+	return deps
 }
 
 // shouldShowTUI returns true if the interactive TUI should be launched
