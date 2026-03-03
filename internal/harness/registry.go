@@ -23,7 +23,7 @@ type Info struct {
 }
 
 var (
-	registryMu sync.Mutex
+	registryMu sync.RWMutex
 	registry   = map[string]Info{}
 )
 
@@ -41,8 +41,8 @@ func Register(info Info) {
 
 // Lookup returns the Info for a registered harness type.
 func Lookup(name string) (Info, bool) {
-	registryMu.Lock()
-	defer registryMu.Unlock()
+	registryMu.RLock()
+	defer registryMu.RUnlock()
 
 	info, ok := registry[name]
 
@@ -51,8 +51,8 @@ func Lookup(name string) (Info, bool) {
 
 // RegisteredNames returns all registered harness type names in sorted order.
 func RegisteredNames() []string {
-	registryMu.Lock()
-	defer registryMu.Unlock()
+	registryMu.RLock()
+	defer registryMu.RUnlock()
 
 	names := make([]string, 0, len(registry))
 	for name := range registry {
@@ -66,8 +66,8 @@ func RegisteredNames() []string {
 
 // AvailableNames returns harness type names where Available() == true, sorted.
 func AvailableNames() []string {
-	registryMu.Lock()
-	defer registryMu.Unlock()
+	registryMu.RLock()
+	defer registryMu.RUnlock()
 
 	names := make([]string, 0, len(registry))
 	for name, info := range registry {

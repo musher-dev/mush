@@ -1,0 +1,119 @@
+package nav
+
+import (
+	"context"
+	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/musher-dev/mush/internal/client"
+)
+
+// --- Hub message types ---
+
+// hubSearchResultMsg carries a successful hub search result.
+type hubSearchResultMsg struct {
+	results    []client.HubBundleSummary
+	nextCursor string
+	hasMore    bool
+	appendMore bool
+	query      string
+}
+
+// hubSearchErrorMsg carries a hub search error.
+type hubSearchErrorMsg struct {
+	err   error
+	query string
+}
+
+// hubDetailLoadedMsg carries a loaded hub bundle detail.
+type hubDetailLoadedMsg struct {
+	detail *client.HubBundleDetail
+}
+
+// hubDetailErrorMsg carries a hub bundle detail error.
+type hubDetailErrorMsg struct {
+	err       error
+	publisher string
+	slug      string
+}
+
+// hubCategoriesLoadedMsg carries loaded hub categories.
+type hubCategoriesLoadedMsg struct {
+	categories []client.HubCategory
+}
+
+// hubDebounceTickMsg is sent after the debounce delay to trigger a search.
+type hubDebounceTickMsg struct {
+	id    int
+	query string
+}
+
+// --- Hub constants ---
+
+const (
+	hubSearchLimit  = 20
+	hubDebounceMs   = 300
+	hubDebounceWait = hubDebounceMs * time.Millisecond
+)
+
+// --- Hub commands ---
+
+// cmdSearchHub searches for bundles in the hub.
+func cmdSearchHub(baseURL, query, bundleType, sort string, limit int, cursor string, appendMore bool) tea.Cmd {
+	return func() tea.Msg {
+		c := client.New(baseURL, "")
+		ctx := context.Background()
+
+		resp, err := c.SearchHubBundles(ctx, query, bundleType, sort, limit, cursor)
+		if err != nil {
+			return hubSearchErrorMsg{err: err, query: query}
+		}
+
+		return hubSearchResultMsg{
+			results:    resp.Data,
+			nextCursor: resp.Meta.NextCursor,
+			hasMore:    resp.Meta.HasMore,
+			appendMore: appendMore,
+			query:      query,
+		}
+	}
+}
+
+// cmdGetHubDetail fetches full details for a hub bundle.
+func cmdGetHubDetail(baseURL, publisher, slug string) tea.Cmd {
+	return func() tea.Msg {
+		c := client.New(baseURL, "")
+		ctx := context.Background()
+
+		detail, err := c.GetHubBundleDetail(ctx, publisher, slug)
+		if err != nil {
+			return hubDetailErrorMsg{err: err, publisher: publisher, slug: slug}
+		}
+
+		return hubDetailLoadedMsg{detail: detail}
+	}
+}
+
+// cmdListHubCategories fetches hub categories.
+func cmdListHubCategories(baseURL string) tea.Cmd {
+	return func() tea.Msg {
+		c := client.New(baseURL, "")
+		ctx := context.Background()
+
+		cats, err := c.ListHubCategories(ctx)
+		if err != nil {
+			// Non-fatal: categories are optional.
+			return hubCategoriesLoadedMsg{categories: nil}
+		}
+
+		return hubCategoriesLoadedMsg{categories: cats}
+	}
+}
+
+// cmdHubDebounceTick schedules a debounce tick for search.
+func cmdHubDebounceTick(id int, query string) tea.Cmd {
+	return tea.Tick(hubDebounceWait, func(_ time.Time) tea.Msg {
+		return hubDebounceTickMsg{id: id, query: query}
+	})
+}

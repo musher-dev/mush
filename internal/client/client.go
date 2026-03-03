@@ -458,6 +458,19 @@ func (c *Client) newRequest(ctx context.Context, method, url string, body io.Rea
 	return req, nil
 }
 
+// newPublicRequest creates a request without the Authorization header (for public endpoints).
+func (c *Client) newPublicRequest(ctx context.Context, method, url string, body io.Reader) (*http.Request, error) {
+	req, err := http.NewRequestWithContext(ctx, method, url, body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", "mush/"+buildinfo.Version)
+
+	return req, nil
+}
+
 func (c *Client) do(req *http.Request, route string) (*http.Response, error) {
 	logger := observability.FromContext(req.Context()).With(
 		slog.String("component", "client"),

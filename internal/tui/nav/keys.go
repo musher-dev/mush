@@ -4,11 +4,17 @@ import "github.com/charmbracelet/bubbles/key"
 
 // keyMap defines all key bindings for the TUI navigation.
 type keyMap struct {
-	Up     key.Binding
-	Down   key.Binding
-	Select key.Binding
-	Quit   key.Binding
-	Back   key.Binding
+	Up       key.Binding
+	Down     key.Binding
+	Select   key.Binding
+	Quit     key.Binding
+	Back     key.Binding
+	Tab      key.Binding
+	Retry    key.Binding
+	Help     key.Binding
+	Search   key.Binding
+	Install  key.Binding
+	LoadMore key.Binding
 }
 
 // defaultKeyMap returns the standard key bindings (vim-aware + arrows).
@@ -33,6 +39,30 @@ func defaultKeyMap() keyMap {
 		Back: key.NewBinding(
 			key.WithKeys("esc"),
 			key.WithHelp("esc", "back"),
+		),
+		Tab: key.NewBinding(
+			key.WithKeys("tab"),
+			key.WithHelp("tab", "switch focus"),
+		),
+		Retry: key.NewBinding(
+			key.WithKeys("r"),
+			key.WithHelp("r", "retry"),
+		),
+		Help: key.NewBinding(
+			key.WithKeys("?"),
+			key.WithHelp("?", "help"),
+		),
+		Search: key.NewBinding(
+			key.WithKeys("/"),
+			key.WithHelp("/", "search"),
+		),
+		Install: key.NewBinding(
+			key.WithKeys("i"),
+			key.WithHelp("i", "install"),
+		),
+		LoadMore: key.NewBinding(
+			key.WithKeys("l"),
+			key.WithHelp("l", "load more"),
 		),
 	}
 }
