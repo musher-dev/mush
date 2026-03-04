@@ -172,15 +172,7 @@ func (m *model) handleWorkerConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // handleWorkerErrorKey processes key events on the worker error screen.
 func (m *model) handleWorkerErrorKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch {
-	case key.Matches(msg, m.keys.Back):
-		m.popScreen()
-
-	case key.Matches(msg, m.keys.Retry), key.Matches(msg, m.keys.Select):
-		return m.retryWorker()
-	}
-
-	return m, nil
+	return m.handleErrorScreenKey(msg, &m.workerError.buttonIdx, m.retryWorker)
 }
 
 // retryWorker retries the failed worker step based on retryAction.

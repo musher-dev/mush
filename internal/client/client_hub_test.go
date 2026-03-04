@@ -186,10 +186,10 @@ func TestListHubCategoriesHappyPath(t *testing.T) {
 				t.Fatalf("path = %q, want /api/v1/hub/categories", r.URL.Path)
 			}
 
-			return bundleJSONResponse(http.StatusOK, `[
+			return bundleJSONResponse(http.StatusOK, `{"data":[
 				{"slug":"agents","displayName":"Agents","bundleCount":10},
 				{"slug":"tools","displayName":"Tools","bundleCount":25}
-			]`), nil
+			]}`), nil
 		}),
 	}
 
@@ -222,7 +222,7 @@ func TestListHubCategoriesNoAuthHeader(t *testing.T) {
 				t.Fatalf("Authorization header = %q, want empty for public endpoint", got)
 			}
 
-			return bundleJSONResponse(http.StatusOK, `[]`), nil
+			return bundleJSONResponse(http.StatusOK, `{"data":[]}`), nil
 		}),
 	}
 

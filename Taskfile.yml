@@ -88,7 +88,7 @@ tasks:
   # ===========================================================================
 
   check:
-    desc: Run all checks (fmt + mod + lint + vuln + shell + workflows + errorf + prompt-fd + no-exit + output-context + force-noinput + testutil-prod + test + install)
+    desc: Run all checks (fmt + mod + lint + vuln + shell + workflows + errorf + prompt-fd + no-exit + output-context + force-noinput + testutil-prod + contracts + docs snippets + test + install)
     cmds:
       - task: check:fmt
       - task: check:mod
@@ -102,6 +102,8 @@ tasks:
       - task: check:output-context
       - task: check:force-noinput
       - task: check:testutil-prod
+      - task: check:contracts
+      - task: check:docs-snippets
       - task: check:test
       - task: check:install
 
@@ -120,6 +122,8 @@ tasks:
       - task: check:output-context
       - task: check:force-noinput
       - task: check:testutil-prod
+      - task: check:contracts
+      - task: check:docs-snippets
       - task: check:test-cover
       - task: check:compile
 
@@ -291,6 +295,21 @@ tasks:
     desc: Run tests with race detection
     cmds:
       - go test -v -race ./...
+
+  check:contracts:
+    desc: Run CLI/API contract tests
+    cmds:
+      - go test -v ./internal/client -run '^TestContract'
+
+  check:docs-snippets:
+    desc: Validate documented snippet commands
+    cmds:
+      - ./scripts/check-doc-snippets.sh
+
+  check:canary:
+    desc: Run synthetic canary golden-path checks (requires canary env vars)
+    cmds:
+      - go test -v ./test/canary -run '^TestGoldenPathCanary|TestCanaryHealthProbeBudget$'
 
   check:test:packages:
     desc: Run tests with race detection for specific packages

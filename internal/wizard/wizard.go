@@ -11,6 +11,7 @@ package wizard
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/musher-dev/mush/internal/auth"
 	"github.com/musher-dev/mush/internal/client"
@@ -24,14 +25,18 @@ type Wizard struct {
 	out      *output.Writer
 	prompter *prompt.Prompter
 	force    bool
+	apiKey   string
+	habitat  string
 }
 
 // New creates a new initialization wizard.
-func New(out *output.Writer, force bool) *Wizard {
+func New(out *output.Writer, force bool, apiKey, habitat string) *Wizard {
 	return &Wizard{
 		out:      out,
 		prompter: prompt.New(out),
 		force:    force,
+		apiKey:   strings.TrimSpace(apiKey),
+		habitat:  strings.TrimSpace(habitat),
 	}
 }
 
@@ -73,18 +78,6 @@ func (w *Wizard) Run(ctx context.Context) error {
 		w.out.Println()
 	}
 
-	// Check for non-interactive mode
-	if !w.prompter.CanPrompt() {
-		w.out.Failure("Cannot run init wizard in non-interactive mode")
-		w.out.Println()
-		w.out.Info("Either:")
-		w.out.Print("  1. Run without --no-input flag\n")
-		w.out.Print("  2. Set MUSH_API_KEY environment variable\n")
-		w.out.Print("  3. Run 'mush auth login' interactively\n")
-
-		return nil
-	}
-
 	// Get API key
 	w.out.Println("Step 1: Authentication")
 	w.out.Println("----------------------")
@@ -92,9 +85,32 @@ func (w *Wizard) Run(ctx context.Context) error {
 	w.out.Muted("Get your API key from the Musher Console.")
 	w.out.Println()
 
-	apiKey, err := w.prompter.Password("API Key")
-	if err != nil {
-		return fmt.Errorf("failed to read API key: %w", err)
+	apiKey := w.apiKey
+	if apiKey == "" {
+		if source == auth.SourceEnv {
+			apiKey = existingKey
+		}
+	}
+
+	if apiKey == "" {
+		// Check for non-interactive mode
+		if !w.prompter.CanPrompt() {
+			w.out.Failure("Cannot run init wizard in non-interactive mode")
+			w.out.Println()
+			w.out.Info("Either:")
+			w.out.Print("  1. Run without --no-input flag\n")
+			w.out.Print("  2. Set MUSH_API_KEY environment variable\n")
+			w.out.Print("  3. Pass --api-key or run 'mush auth login' interactively\n")
+
+			return nil
+		}
+
+		var err error
+
+		apiKey, err = w.prompter.Password("API Key")
+		if err != nil {
+			return fmt.Errorf("failed to read API key: %w", err)
+		}
 	}
 
 	if apiKey == "" {
@@ -108,7 +124,16 @@ func (w *Wizard) Run(ctx context.Context) error {
 	spin.Start()
 
 	cfg := config.Load()
-	apiClient := client.New(cfg.APIURL(), apiKey)
+
+	httpClient, clientErr := client.NewInstrumentedHTTPClient(cfg.CACertFile())
+	if clientErr != nil {
+		w.out.Failure("Client setup failed")
+		w.out.Muted("%s", clientErr.Error())
+
+		return nil
+	}
+
+	apiClient := client.NewWithHTTPClient(cfg.APIURL(), apiKey, httpClient)
 
 	identity, err := apiClient.ValidateKey(ctx)
 	if err != nil {
@@ -153,7 +178,7 @@ func (w *Wizard) Run(ctx context.Context) error {
 		spin.StopWithFailure("Failed to fetch habitats")
 		w.out.Muted("%s", err.Error())
 		w.out.Println()
-		w.out.Warning("You can select a habitat later with 'mush habitat select'")
+		w.out.Warning("You can choose a habitat later via 'mush worker start --habitat <slug>'")
 		w.showNextSteps()
 
 		return nil
@@ -164,16 +189,34 @@ func (w *Wizard) Run(ctx context.Context) error {
 	if len(habitats) == 0 {
 		w.out.Println()
 		w.out.Warning("No habitats found in your workspace")
-		w.out.Info("Create a habitat in the console first, then run 'mush habitat select'")
+		w.out.Info("Create a habitat in the console first, then run 'mush habitat list'")
 		w.showNextSteps()
 
 		return nil
 	}
 
 	// Select habitat
-	selected, err := prompt.SelectHabitat(habitats, w.out)
-	if err != nil {
-		return fmt.Errorf("failed to select habitat: %w", err)
+	var selected *client.HabitatSummary
+
+	if w.habitat != "" {
+		for i := range habitats {
+			if habitats[i].ID == w.habitat || habitats[i].Slug == w.habitat {
+				selected = &habitats[i]
+				break
+			}
+		}
+
+		if selected == nil {
+			w.out.Warning("Configured habitat %q not found; skipping habitat selection", w.habitat)
+			w.showNextSteps()
+
+			return nil
+		}
+	} else {
+		selected, err = prompt.SelectHabitat(habitats, w.out)
+		if err != nil {
+			return fmt.Errorf("failed to select habitat: %w", err)
+		}
 	}
 
 	// Save habitat to config

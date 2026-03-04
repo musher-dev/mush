@@ -7,8 +7,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/musher-dev/mush/internal/auth"
-	"github.com/musher-dev/mush/internal/client"
-	"github.com/musher-dev/mush/internal/config"
 	clierrors "github.com/musher-dev/mush/internal/errors"
 	"github.com/musher-dev/mush/internal/output"
 	"github.com/musher-dev/mush/internal/prompt"
@@ -73,8 +71,11 @@ You can also set the MUSH_API_KEY environment variable.`,
 			spin := out.Spinner("Validating API key")
 			spin.Start()
 
-			cfg := config.Load()
-			apiClient := client.New(cfg.APIURL(), apiKey)
+			apiClient, err := newAPIClientWithKey(apiKey)
+			if err != nil {
+				spin.StopWithFailure("Client setup failed")
+				return err
+			}
 
 			identity, err := apiClient.ValidateKey(cmd.Context())
 			if err != nil {
@@ -103,6 +104,8 @@ type AuthStatus struct {
 	Source     string `json:"source"`
 	Credential string `json:"credential"`
 	Workspace  string `json:"workspace"`
+	RequestID  string `json:"request_id,omitempty"`
+	TraceID    string `json:"trace_id,omitempty"`
 }
 
 func newAuthStatusCmd() *cobra.Command {
@@ -125,7 +128,7 @@ func newAuthStatusCmd() *cobra.Command {
 			spin := out.Spinner("Checking credentials")
 			spin.Start()
 
-			identity, err := apiClient.ValidateKey(cmd.Context())
+			identity, meta, err := apiClient.ValidateKeyWithMeta(cmd.Context())
 			if err != nil {
 				spin.StopWithFailure("Credentials invalid")
 				return clierrors.CredentialsInvalid(err)
@@ -133,11 +136,21 @@ func newAuthStatusCmd() *cobra.Command {
 
 			spin.StopWithSuccess("Authenticated")
 
+			requestID := ""
+			traceID := ""
+
+			if meta != nil {
+				requestID = meta.RequestID
+				traceID = meta.TraceID
+			}
+
 			if out.JSON {
 				if err := out.PrintJSON(AuthStatus{
 					Source:     string(source),
 					Credential: identity.CredentialName,
 					Workspace:  identity.WorkspaceName,
+					RequestID:  requestID,
+					TraceID:    traceID,
 				}); err != nil {
 					return clierrors.Wrap(clierrors.ExitGeneral, "Failed to write JSON output", err)
 				}
@@ -148,6 +161,14 @@ func newAuthStatusCmd() *cobra.Command {
 			out.Print("Source:     %s\n", source)
 			out.Print("Credential: %s\n", identity.CredentialName)
 			out.Print("Workspace:  %s\n", identity.WorkspaceName)
+
+			if requestID != "" {
+				out.Print("Request ID: %s\n", requestID)
+			}
+
+			if traceID != "" {
+				out.Print("Trace ID:   %s\n", traceID)
+			}
 
 			return nil
 		},

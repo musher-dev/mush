@@ -12,7 +12,7 @@ import (
 
 // CachedBundle is a locally cached bundle version.
 type CachedBundle struct {
-	Workspace  string
+	Namespace  string
 	Slug       string
 	Version    string
 	AssetCount int
@@ -33,14 +33,14 @@ func ListCached() ([]CachedBundle, error) {
 
 	var out []CachedBundle
 
-	for _, workspaceEntry := range entries {
-		if !workspaceEntry.IsDir() {
+	for _, nsEntry := range entries {
+		if !nsEntry.IsDir() {
 			continue
 		}
 
-		wsPath := filepath.Join(root, workspaceEntry.Name())
+		nsPath := filepath.Join(root, nsEntry.Name())
 
-		slugDirs, err := os.ReadDir(wsPath)
+		slugDirs, err := os.ReadDir(nsPath)
 		if err != nil {
 			continue
 		}
@@ -50,7 +50,7 @@ func ListCached() ([]CachedBundle, error) {
 				continue
 			}
 
-			slugPath := filepath.Join(wsPath, slugDir.Name())
+			slugPath := filepath.Join(nsPath, slugDir.Name())
 
 			versionDirs, err := os.ReadDir(slugPath)
 			if err != nil {
@@ -76,7 +76,7 @@ func ListCached() ([]CachedBundle, error) {
 				}
 
 				out = append(out, CachedBundle{
-					Workspace:  workspaceEntry.Name(),
+					Namespace:  nsEntry.Name(),
 					Slug:       slugDir.Name(),
 					Version:    versionDir.Name(),
 					AssetCount: len(manifest.Manifest.Layers),
@@ -86,8 +86,8 @@ func ListCached() ([]CachedBundle, error) {
 	}
 
 	sort.Slice(out, func(i, j int) bool {
-		if out[i].Workspace != out[j].Workspace {
-			return out[i].Workspace < out[j].Workspace
+		if out[i].Namespace != out[j].Namespace {
+			return out[i].Namespace < out[j].Namespace
 		}
 
 		if out[i].Slug != out[j].Slug {

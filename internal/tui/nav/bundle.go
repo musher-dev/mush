@@ -7,17 +7,113 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+// bundleHarnessPanelWidth is the fixed width for the right-hand harness panel in two-panel mode.
+// Matches menuWidthFull to avoid wrapping long harness descriptions.
+const bundleHarnessPanelWidth = 52
+
 // renderBundleInput renders the bundle slug input screen.
+// Wide terminals (>= layoutTwoPanel) get side-by-side panels; narrow terminals get the original single panel.
 func renderBundleInput(mdl *model) string {
+	if mdl.styles.layout >= layoutTwoPanel {
+		return renderBundleInputTwoPanel(mdl)
+	}
+
+	return renderBundleInputSinglePanel(mdl)
+}
+
+// renderBundleInputTwoPanel draws two side-by-side panels: "Select Bundle" (left) and "Select Harness" (right).
+func renderBundleInputTwoPanel(mdl *model) string {
+	crumbs := renderBreadcrumb(&mdl.styles, []string{"Home", "Load Bundle"})
+
+	// Left panel: bundle slug input + recent bundles placeholder.
+	slugTitle := mdl.styles.sectionTitle.Render("Bundle slug")
+	input := mdl.bundleInput.textInput.View()
+	recentTitle := mdl.styles.sectionTitle.Render("Recent bundles")
+	recentPlaceholder := mdl.styles.placeholder.Render("no recent bundles")
+
+	leftBody := lipgloss.JoinVertical(lipgloss.Left,
+		slugTitle,
+		input,
+		"",
+		recentTitle,
+		recentPlaceholder,
+	)
+
+	leftPanel := renderPanel(&mdl.styles, "Select Bundle", leftBody, mdl.styles.menuWidth, mdl.bundleInput.focusOnInput)
+
+	// Right panel: harness list.
+	rightBody := renderHarnessList(mdl)
+	rightPanel := renderPanel(&mdl.styles, "Select Harness", rightBody, bundleHarnessPanelWidth, !mdl.bundleInput.focusOnInput)
+
+	// Align panel heights so the horizontal join looks clean.
+	leftH := lipgloss.Height(leftPanel)
+	rightH := lipgloss.Height(rightPanel)
+
+	if leftH > rightH {
+		rightPanel = lipgloss.PlaceVertical(leftH, lipgloss.Top, rightPanel)
+	} else if rightH > leftH {
+		leftPanel = lipgloss.PlaceVertical(rightH, lipgloss.Top, leftPanel)
+	}
+
+	panels := lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, "  ", rightPanel)
+
+	footer := renderKeyHints(&mdl.styles, []hint{
+		{key: "tab", desc: "switch panel"},
+		{key: "enter", desc: "resolve"},
+		{key: "esc", desc: "back"},
+	})
+
+	content := lipgloss.JoinVertical(lipgloss.Center, crumbs, "", panels, "", footer)
+
+	return lipgloss.Place(
+		mdl.width, mdl.height,
+		lipgloss.Center, lipgloss.Center,
+		content,
+	)
+}
+
+// renderBundleInputSinglePanel draws the original combined panel for narrow terminals.
+func renderBundleInputSinglePanel(mdl *model) string {
 	crumbs := renderBreadcrumb(&mdl.styles, []string{"Home", "Load Bundle"})
 
 	title := mdl.styles.sectionTitle.Render("Bundle slug")
 	input := mdl.bundleInput.textInput.View()
 
-	// Harness selector.
 	harnessTitle := mdl.styles.sectionTitle.Render("Harness")
+	harnessList := renderHarnessList(mdl)
 
-	var harnessRows []string
+	focusHint := mdl.styles.placeholder.Render("tab to switch focus")
+
+	body := lipgloss.JoinVertical(lipgloss.Left,
+		title,
+		input,
+		"",
+		harnessTitle,
+		harnessList,
+		"",
+		focusHint,
+	)
+
+	panel := renderPanel(&mdl.styles, "Load Bundle", body, mdl.styles.menuWidth, true)
+
+	footer := renderKeyHints(&mdl.styles, []hint{
+		{key: "tab", desc: "switch focus"},
+		{key: "enter", desc: "resolve"},
+		{key: "esc", desc: "back"},
+	})
+
+	content := lipgloss.JoinVertical(lipgloss.Center, crumbs, "", panel, "", footer)
+
+	return lipgloss.Place(
+		mdl.width, mdl.height,
+		lipgloss.Center, lipgloss.Center,
+		content,
+	)
+}
+
+// renderHarnessList renders the harness selection rows, shared by both layout modes.
+func renderHarnessList(mdl *model) string {
+	var rows []string
 
 	for idx, h := range mdl.harnesses {
 		prefix := "  "
@@ -34,43 +130,10 @@ func renderBundleInput(mdl *model) string {
 		}
 
 		row := style.Render(prefix + h.name + "  " + mdl.styles.placeholder.Render(h.desc))
-		harnessRows = append(harnessRows, row)
+		rows = append(rows, row)
 	}
 
-	harnessList := strings.Join(harnessRows, "\n")
-
-	focusHint := mdl.styles.placeholder.Render("tab to switch focus")
-
-	body := lipgloss.JoinVertical(lipgloss.Left,
-		title,
-		input,
-		"",
-		harnessTitle,
-		harnessList,
-		"",
-		focusHint,
-	)
-
-	panel := renderPanel(&mdl.styles, "Load Bundle", body, mdl.styles.menuWidth, true)
-
-	hubHint := mdl.styles.placeholder.Render("Don't know the slug? Press ") +
-		mdl.styles.hintKey.Render("e") +
-		mdl.styles.placeholder.Render(" to explore the hub")
-
-	footer := renderKeyHints(&mdl.styles, []hint{
-		{key: "tab", desc: "switch focus"},
-		{key: "enter", desc: "resolve"},
-		{key: "e", desc: "explore hub"},
-		{key: "esc", desc: "back"},
-	})
-
-	content := lipgloss.JoinVertical(lipgloss.Center, crumbs, "", panel, "", hubHint, "", footer)
-
-	return lipgloss.Place(
-		mdl.width, mdl.height,
-		lipgloss.Center, lipgloss.Center,
-		content,
-	)
+	return strings.Join(rows, "\n")
 }
 
 // renderBundleResolving renders the resolving spinner screen.
@@ -79,7 +142,7 @@ func renderBundleResolving(mdl *model) string {
 
 	spinnerView := mdl.bundleResolve.spinner.View()
 
-	ref := mdl.bundleResolve.slug
+	ref := mdl.bundleResolve.namespace + "/" + mdl.bundleResolve.slug
 	if mdl.bundleResolve.version != "" {
 		ref += ":" + mdl.bundleResolve.version
 	}
@@ -112,7 +175,7 @@ func renderBundleConfirm(mdl *model) string {
 
 	lines := []string{
 		mdl.styles.sectionTitle.Render("Bundle"),
-		mdl.styles.progressText.Render(mdl.bundleConfirm.slug),
+		mdl.styles.progressText.Render(mdl.bundleConfirm.namespace + "/" + mdl.bundleConfirm.slug),
 		"",
 		mdl.styles.sectionTitle.Render("Version"),
 		mdl.styles.progressText.Render(mdl.bundleConfirm.version),
@@ -148,7 +211,7 @@ func renderBundleConfirm(mdl *model) string {
 func renderBundleProgress(mdl *model) string {
 	crumbs := renderBreadcrumb(&mdl.styles, []string{"Home", "Load Bundle", "Downloading"})
 
-	ref := mdl.bundleProgress.slug + " v" + mdl.bundleProgress.version
+	ref := mdl.bundleProgress.namespace + "/" + mdl.bundleProgress.slug + " v" + mdl.bundleProgress.version
 
 	// Progress bar.
 	pct := 0.0
@@ -194,7 +257,7 @@ func renderBundleComplete(mdl *model) string {
 		renderStatusDot(&mdl.styles.statusOK, "Bundle ready"),
 		"",
 		mdl.styles.sectionTitle.Render("Bundle"),
-		mdl.styles.progressText.Render(mdl.bundleComplete.slug + " v" + mdl.bundleComplete.version),
+		mdl.styles.progressText.Render(mdl.bundleComplete.namespace + "/" + mdl.bundleComplete.slug + " v" + mdl.bundleComplete.version),
 		"",
 		mdl.styles.sectionTitle.Render("Cached at"),
 		mdl.styles.placeholder.Render(mdl.bundleComplete.cachePath),
@@ -225,5 +288,6 @@ func renderBundleError(mdl *model) string {
 		[]string{"Home", "Load Bundle", "Error"},
 		mdl.bundleError.message,
 		mdl.bundleError.hint,
+		mdl.bundleError.buttonIdx,
 	)
 }

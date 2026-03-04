@@ -31,13 +31,13 @@ func CacheDir() string {
 }
 
 // CachePath returns the cache path for a specific bundle version.
-func CachePath(workspace, slug, version string) string {
-	return filepath.Join(CacheDir(), workspace, slug, version)
+func CachePath(namespace, slug, version string) string {
+	return filepath.Join(CacheDir(), namespace, slug, version)
 }
 
 // IsCached checks if a bundle version is already cached.
-func IsCached(workspace, slug, version string) bool {
-	manifestPath := filepath.Join(CachePath(workspace, slug, version), "manifest.json")
+func IsCached(namespace, slug, version string) bool {
+	manifestPath := filepath.Join(CachePath(namespace, slug, version), "manifest.json")
 	_, err := os.Stat(manifestPath)
 
 	return err == nil
@@ -65,7 +65,7 @@ func cleanStalePartials(cachePath string) {
 // Pull resolves, downloads, and caches a bundle version.
 // It tries OCI pull first (if oci_ref present), falling back to per-asset API download.
 // Returns the resolve response, the cache path, and any error.
-func Pull(ctx context.Context, c *client.Client, workspace, slug, version string, out *output.Writer) (*client.BundleResolveResponse, string, error) {
+func Pull(ctx context.Context, c *client.Client, namespace, slug, version string, out *output.Writer) (*client.BundleResolveResponse, string, error) {
 	logger := observability.FromContext(ctx).With(
 		slog.String("component", "bundle"),
 		slog.String("bundle.slug", slug),
@@ -80,7 +80,7 @@ func Pull(ctx context.Context, c *client.Client, workspace, slug, version string
 	spin := out.Spinner("Resolving bundle")
 	spin.Start()
 
-	resolved, err := c.ResolveBundle(ctx, slug, version)
+	resolved, err := c.ResolveBundle(ctx, namespace, slug, version)
 	if err != nil {
 		spin.StopWithFailure("Failed to resolve bundle")
 		logger.Error("bundle resolution failed", slog.String("event.type", "bundle.resolve.error"), slog.String("error", err.Error()))
@@ -97,8 +97,8 @@ func Pull(ctx context.Context, c *client.Client, workspace, slug, version string
 	spin.StopWithSuccess(fmt.Sprintf("Resolved %s v%s", slug, resolved.Version))
 
 	// 2. Check cache hit.
-	cachePath := CachePath(workspace, slug, resolved.Version)
-	if IsCached(workspace, slug, resolved.Version) {
+	cachePath := CachePath(namespace, slug, resolved.Version)
+	if IsCached(namespace, slug, resolved.Version) {
 		out.Success("Using cached bundle")
 		logger.Info("bundle cache hit", slog.String("event.type", "bundle.cache.hit"), slog.Bool("bundle.cache_hit", true))
 
@@ -231,7 +231,7 @@ func Pull(ctx context.Context, c *client.Client, workspace, slug, version string
 	// Atomically promote staging dir to final cache path.
 	if err := os.Rename(stagingDir, cachePath); err != nil {
 		// Another process may have won the race — if cache is valid, use it.
-		if IsCached(workspace, slug, resolved.Version) {
+		if IsCached(namespace, slug, resolved.Version) {
 			_ = os.RemoveAll(stagingDir)
 			stagingFailed = false
 

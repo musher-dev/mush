@@ -70,12 +70,16 @@ The worker will:
   1. Connect to the Musher platform
   2. Register with the selected habitat
   3. Poll for available jobs
-  4. Execute handlers locally using the appropriate harness (Claude, Bash)
+  4. Execute handlers locally using the appropriate harness (Claude Code, Codex, Cursor Agent, Copilot, Gemini, OpenCode)
   5. Report results back to the platform
 
 Harness Types:
   --harness claude  Only handle Claude Code jobs
-  --harness bash    Only handle Bash script jobs
+  --harness codex   Only handle Codex jobs
+  --harness cursor  Only handle Cursor Agent CLI jobs
+  --harness copilot Only handle GitHub Copilot CLI jobs
+  --harness gemini  Only handle Gemini CLI jobs
+  --harness opencode Only handle OpenCode CLI jobs
   (default)         Handle all supported harness types
 
 Press Ctrl+C once to interrupt Claude; press Ctrl+C again quickly to exit.
@@ -84,7 +88,7 @@ Press Ctrl+S to toggle copy mode (Esc to return to live input).`,
 		Example: `  mush worker start
   mush worker start --habitat prod --queue jobs
   mush worker start --harness claude
-  mush worker start --bundle my-kit:0.1.0
+  mush worker start --bundle acme/my-kit:0.1.0
   mush worker start --dry-run`,
 		Args: noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -201,7 +205,7 @@ Press Ctrl+S to toggle copy mode (Esc to return to live input).`,
 			if bundleRef != "" {
 				var bundleErr error
 
-				bundleSummary, bundleErr = resolveBundle(cmd.Context(), c, identity.WorkspaceID, bundleRef, supportedHarnesses, out)
+				bundleSummary, bundleErr = resolveBundle(cmd.Context(), c, bundleRef, supportedHarnesses, out)
 				if bundleErr != nil {
 					return bundleErr
 				}
@@ -279,8 +283,8 @@ Press Ctrl+S to toggle copy mode (Esc to return to live input).`,
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Verify connection without claiming jobs")
 	cmd.Flags().StringVar(&queue, "queue", "", "Filter jobs by queue slug or ID")
 	cmd.Flags().StringVar(&habitat, "habitat", "", "Habitat slug or ID to connect to")
-	cmd.Flags().StringVar(&harnessType, "harness", "", "Specific harness type: claude, bash (default: all)")
-	cmd.Flags().StringVar(&bundleRef, "bundle", "", "Bundle slug[:version] to install before starting")
+	cmd.Flags().StringVar(&harnessType, "harness", "", "Specific harness type: claude, codex, copilot, cursor, gemini, opencode (default: all)")
+	cmd.Flags().StringVar(&bundleRef, "bundle", "", "Bundle namespace/slug[:version] to install before starting")
 	cmd.Flags().BoolVar(&forceSidebar, "force-sidebar", false, "Skip terminal probe and force sidebar rendering")
 
 	return cmd
@@ -393,7 +397,6 @@ func defaultSupportedHarnesses() []string {
 func resolveBundle(
 	ctx context.Context,
 	c *client.Client,
-	workspaceKey string,
 	bundleFlag string,
 	supportedHarnesses []string,
 	out *output.Writer,
@@ -408,7 +411,7 @@ func resolveBundle(
 	if err != nil {
 		return emptySummary, &clierrors.CLIError{
 			Message: err.Error(),
-			Hint:    "Use format: <slug> or <slug>:<version>",
+			Hint:    "Use format: namespace/slug or namespace/slug:version",
 			Code:    clierrors.ExitUsage,
 		}
 	}
@@ -439,7 +442,7 @@ func resolveBundle(
 	spin := out.Spinner(fmt.Sprintf("Pulling bundle %s", ref.Slug))
 	spin.Start()
 
-	resolved, cachePath, err := bundle.Pull(ctx, c, workspaceKey, ref.Slug, ref.Version, out)
+	resolved, cachePath, err := bundle.Pull(ctx, c, ref.Namespace, ref.Slug, ref.Version, out)
 	if err != nil {
 		spin.StopWithFailure(fmt.Sprintf("Failed to pull bundle %s", ref.Slug))
 		logger.Error("bundle pull failed", slog.String("event.type", "worker.bundle.error"), slog.String("error", err.Error()))

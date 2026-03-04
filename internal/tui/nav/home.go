@@ -23,22 +23,57 @@ func renderHome(mdl *model) string {
 	return renderHomeSinglePanel(mdl)
 }
 
-// renderHomeTwoPanel draws the two-panel layout with menu left and context right.
+// renderHomeTwoPanel draws the stacked layout with menu and harness panel side-by-side, context below.
 func renderHomeTwoPanel(mdl *model) string {
+	menuActive := mdl.homeFocusArea == 0
 	leftContent := renderMenuContent(mdl)
-	leftPanel := renderPanel(&mdl.styles, "mush", leftContent, mdl.styles.menuWidth, true)
+	leftPanel := renderPanel(&mdl.styles, "mush", leftContent, mdl.styles.menuWidth, menuActive)
 
-	rightContent := renderContextContent(mdl)
-	rightPanel := renderPanel(&mdl.styles, "musher.dev", rightContent, mdl.styles.contextWidth, false)
+	// Build the top block: menu panel + optional harness panel side by side.
+	var topPanels string
 
-	panels := lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, "   ", rightPanel)
+	hpWidth := formatHarnessPanelWidth(mdl)
+	if len(mdl.homeHarness.statuses) > 0 || mdl.homeHarness.loading {
+		harnessActive := mdl.homeFocusArea == 1
+		hPanel := renderHarnessPanel(mdl, hpWidth, harnessActive)
+		topPanels = lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, "  ", hPanel)
+	} else {
+		topPanels = leftPanel
+	}
 
 	footer := renderHomeFooter(mdl)
-	content := lipgloss.JoinVertical(lipgloss.Left, panels, "", footer)
+
+	ctxWidth := mdl.styles.menuWidth + 16 //nolint:mnd // slightly wider than menu for two-column content
+	if maxW := mdl.width - 4; ctxWidth > maxW {
+		ctxWidth = maxW
+	}
+
+	rightContent := renderContextContent(mdl, ctxWidth)
+	musherTitle := hyperlink("https://musher.dev", "musher.dev")
+	contextPanel := renderPanel(&mdl.styles, musherTitle, rightContent, ctxWidth, false)
+
+	topBlock := lipgloss.JoinVertical(lipgloss.Center, topPanels, "", footer)
+
+	// Center the mush panel vertically in the space above the bottom context panel.
+	bottomMargin := 2
+	bottomHeight := lipgloss.Height(contextPanel)
+	topAreaHeight := mdl.height - bottomHeight - bottomMargin
+
+	if topAreaHeight < lipgloss.Height(topBlock) {
+		topAreaHeight = lipgloss.Height(topBlock)
+	}
+
+	centeredTop := lipgloss.Place(
+		0, topAreaHeight,
+		lipgloss.Center, lipgloss.Center,
+		topBlock,
+	)
+
+	content := lipgloss.JoinVertical(lipgloss.Center, centeredTop, contextPanel)
 
 	return lipgloss.Place(
 		mdl.width, mdl.height,
-		lipgloss.Center, lipgloss.Center,
+		lipgloss.Center, lipgloss.Top,
 		content,
 	)
 }
@@ -163,25 +198,9 @@ func renderDescription(mdl *model) string {
 	return mdl.styles.description.Render(mdl.items[mdl.cursor].description)
 }
 
-// renderContextContent renders the context sidebar sections.
-func renderContextContent(mdl *model) string {
-	var sections []string
-
-	// Workspace section.
-	wsTitle := mdl.styles.sectionTitle.Render("Workspace")
-	wsValue := mdl.styles.placeholder.Render("Loading...")
-
-	if !mdl.ctxInfo.loading {
-		if mdl.ctxInfo.workspaceName != "" {
-			wsValue = mdl.styles.progressText.Render(mdl.ctxInfo.workspaceName)
-		} else {
-			wsValue = mdl.styles.placeholder.Render("not linked")
-		}
-	}
-
-	sections = append(sections, wsTitle+"\n"+wsValue)
-
-	// Auth section.
+// renderContextContent renders auth and recent jobs in a two-column layout.
+func renderContextContent(mdl *model, panelWidth int) string {
+	// Left column: Auth status.
 	authTitle := mdl.styles.sectionTitle.Render("Auth")
 	authValue := mdl.styles.placeholder.Render("Loading...")
 
@@ -193,16 +212,18 @@ func renderContextContent(mdl *model) string {
 		}
 	}
 
-	sections = append(sections, authTitle+"\n"+authValue)
+	leftCol := authTitle + "\n" + authValue
 
-	// Recent sessions section.
+	// Right column: Recent jobs.
 	recentTitle := mdl.styles.sectionTitle.Render("Recent jobs")
+
+	var rightCol string
 
 	switch {
 	case mdl.ctxInfo.loading:
-		sections = append(sections, recentTitle+"\n"+mdl.styles.placeholder.Render("Loading..."))
+		rightCol = recentTitle + "\n" + mdl.styles.placeholder.Render("Loading...")
 	case len(mdl.ctxInfo.recentSessions) == 0:
-		sections = append(sections, recentTitle+"\n"+mdl.styles.placeholder.Render("no jobs yet"))
+		rightCol = recentTitle + "\n" + mdl.styles.placeholder.Render("no jobs yet")
 	default:
 		var sessionLines []string
 
@@ -217,11 +238,23 @@ func renderContextContent(mdl *model) string {
 			sessionLines = append(sessionLines, line)
 		}
 
-		sessions := strings.Join(sessionLines, "\n")
-		sections = append(sections, recentTitle+"\n"+sessions)
+		rightCol = recentTitle + "\n" + strings.Join(sessionLines, "\n")
 	}
 
-	return strings.Join(sections, "\n\n")
+	contentWidth := panelWidth - 6 //nolint:mnd // border(2)+padding(4)
+
+	columns := lipgloss.JoinHorizontal(lipgloss.Top, leftCol, "        ", rightCol)
+	columns = lipgloss.PlaceHorizontal(contentWidth, lipgloss.Center, columns)
+
+	// Social links row.
+	sep := lipgloss.NewStyle().Foreground(colorMuted).Render(" · ")
+	linkStyle := lipgloss.NewStyle().Foreground(colorAccent)
+	links := hyperlink("https://discord.gg/SaVMzMgX2c", linkStyle.Render("Discord")) + sep +
+		hyperlink("https://github.com/musher-dev", linkStyle.Render("GitHub")) + sep +
+		hyperlink("https://x.com/musherdev", linkStyle.Render("X"))
+	socialRow := lipgloss.PlaceHorizontal(contentWidth, lipgloss.Center, links)
+
+	return columns + "\n\n" + socialRow
 }
 
 // renderStatusLine renders a collapsed context line for single-panel mode.
@@ -249,11 +282,21 @@ func renderStatusLine(mdl *model) string {
 
 // renderHomeFooter returns the key-hint bar for the home screen.
 func renderHomeFooter(mdl *model) string {
-	return renderKeyHints(&mdl.styles, []hint{
+	hints := []hint{
 		{key: "j/k", desc: "navigate"},
-		{key: "enter", desc: "select"},
-		{key: "q", desc: "quit"},
-	})
+	}
+
+	// Show tab hint when harness panel is available in two-panel mode.
+	if mdl.styles.layout == layoutTwoPanel && len(mdl.homeHarness.statuses) > 0 {
+		hints = append(hints, hint{key: "tab", desc: "switch"})
+	}
+
+	hints = append(hints,
+		hint{key: "enter", desc: "select"},
+		hint{key: "q", desc: "quit"},
+	)
+
+	return renderKeyHints(&mdl.styles, hints)
 }
 
 // renderPlaceholder shows a centered "coming soon" screen for unimplemented items.

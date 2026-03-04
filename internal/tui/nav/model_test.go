@@ -124,40 +124,6 @@ func TestHotkeySelectsBundleInput(t *testing.T) {
 	}
 }
 
-func TestHotkeyPlaceholderScreens(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		hotkey rune
-		label  string
-		idx    int
-	}{
-		{hotkey: 'h', label: "View history", idx: 2},
-		{hotkey: 's', label: "Check status", idx: 3},
-	}
-
-	for _, test := range tests {
-		t.Run(string(test.hotkey), func(t *testing.T) {
-			t.Parallel()
-
-			mdl := testModel()
-			mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{test.hotkey}})
-
-			if mdl.activeScreen != screenPlaceholder {
-				t.Errorf("activeScreen = %d, want screenPlaceholder", mdl.activeScreen)
-			}
-
-			if mdl.placeholderText != test.label {
-				t.Errorf("placeholderText = %q, want %q", mdl.placeholderText, test.label)
-			}
-
-			if mdl.cursor != test.idx {
-				t.Errorf("cursor = %d, want %d", mdl.cursor, test.idx)
-			}
-		})
-	}
-}
-
 func TestHotkeyExploreHubScreen(t *testing.T) {
 	t.Parallel()
 
@@ -173,31 +139,12 @@ func TestHotkeyExploreHubScreen(t *testing.T) {
 	}
 }
 
-func TestSelectShowsPlaceholder(t *testing.T) {
-	t.Parallel()
-
-	mdl := testModel()
-
-	// Move to third item (View history) and select — it should show placeholder.
-	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyDown})
-	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyDown})
-	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyEnter})
-
-	if mdl.activeScreen != screenPlaceholder {
-		t.Errorf("activeScreen = %d, want screenPlaceholder", mdl.activeScreen)
-	}
-
-	if mdl.placeholderText != mdl.items[2].label {
-		t.Errorf("placeholderText = %q, want %q", mdl.placeholderText, mdl.items[2].label)
-	}
-}
-
 func TestEscReturnsHome(t *testing.T) {
 	t.Parallel()
 
 	mdl := testModel()
 
-	// Move to item 2, select, then esc.
+	// Move to item 2 (history), select, then esc.
 	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyDown})
 	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyDown})
 	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyEnter})
@@ -217,11 +164,8 @@ func TestEnterReturnsFromPlaceholder(t *testing.T) {
 	t.Parallel()
 
 	mdl := testModel()
-
-	// Move to third item (View history) so select goes to placeholder.
-	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyDown})
-	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyDown})
-	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyEnter})
+	mdl.placeholderText = "Test placeholder"
+	mdl.pushScreen(screenPlaceholder)
 
 	if mdl.activeScreen != screenPlaceholder {
 		t.Fatalf("expected placeholder screen")
@@ -269,11 +213,7 @@ func TestQuitFromPlaceholder(t *testing.T) {
 	t.Parallel()
 
 	mdl := testModel()
-
-	// Move to third item (View history) and enter placeholder screen.
-	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyDown})
-	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyDown})
-	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyEnter})
+	mdl.pushScreen(screenPlaceholder)
 
 	// q should quit even from placeholder.
 	_, cmd := mdl.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
@@ -348,19 +288,17 @@ func TestPlaceholderView(t *testing.T) {
 	t.Parallel()
 
 	mdl := testModel()
+	mdl.placeholderText = "Test Feature"
+	mdl.pushScreen(screenPlaceholder)
 
-	// Move to third item (View history) and select it (goes to placeholder).
-	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyDown})
-	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyDown})
-	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyEnter})
 	view := mdl.View()
 
 	if !strings.Contains(view, "coming soon") {
 		t.Error("placeholder view should contain 'coming soon'")
 	}
 
-	if !strings.Contains(view, mdl.items[2].label) {
-		t.Error("placeholder view should contain the selected item label")
+	if !strings.Contains(view, "Test Feature") {
+		t.Error("placeholder view should contain the placeholder text")
 	}
 
 	if !strings.Contains(view, "esc") {

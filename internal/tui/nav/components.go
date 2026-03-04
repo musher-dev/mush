@@ -7,6 +7,12 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
+// hyperlink wraps text with OSC 8 terminal hyperlink escape sequences.
+// Terminals that support OSC 8 render clickable links; others show plain text.
+func hyperlink(url, text string) string {
+	return ansi.SetHyperlink(url) + text + ansi.ResetHyperlink()
+}
+
 // hint pairs a key label with a short description for footer rendering.
 type hint struct {
 	key  string
@@ -113,11 +119,11 @@ func renderButton(styles *theme, label string, focused bool) string {
 }
 
 // renderErrorScreen renders a generic error screen with breadcrumb, message, hint, and retry/back buttons.
-func renderErrorScreen(mdl *model, crumbs []string, message, hintText string) string {
+func renderErrorScreen(mdl *model, crumbs []string, message, hintText string, buttonIdx int) string {
 	crumbLine := renderBreadcrumb(&mdl.styles, crumbs)
 
-	retryBtn := renderButton(&mdl.styles, "Retry", true)
-	backBtn := renderButton(&mdl.styles, "Back", false)
+	retryBtn := renderButton(&mdl.styles, "Retry", buttonIdx == 0)
+	backBtn := renderButton(&mdl.styles, "Back", buttonIdx == 1)
 	buttons := lipgloss.JoinHorizontal(lipgloss.Center, retryBtn, "  ", backBtn)
 
 	lines := []string{
@@ -136,6 +142,7 @@ func renderErrorScreen(mdl *model, crumbs []string, message, hintText string) st
 	panel := renderPanel(&mdl.styles, "Error", body, mdl.styles.menuWidth, true)
 
 	footer := renderKeyHints(&mdl.styles, []hint{
+		{key: "tab/\u2190\u2192", desc: "switch"},
 		{key: "r", desc: "retry"},
 		{key: "esc", desc: "back"},
 	})

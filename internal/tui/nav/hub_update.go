@@ -368,7 +368,7 @@ func (m *model) hubInstallSelected() (tea.Model, tea.Cmd) {
 
 	selected := m.hubExplore.results[m.hubExplore.resultCur]
 
-	return m.hubInstall(selected.Slug, selected.LatestVersion)
+	return m.hubInstall(selected.Publisher.Handle, selected.Slug, selected.LatestVersion)
 }
 
 // hubInstallFromDetail starts the install flow from the detail screen.
@@ -377,17 +377,18 @@ func (m *model) hubInstallFromDetail() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	return m.hubInstall(m.hubDetail.detail.Slug, m.hubDetail.detail.LatestVersion)
+	return m.hubInstall(m.hubDetail.detail.Publisher.Handle, m.hubDetail.detail.Slug, m.hubDetail.detail.LatestVersion)
 }
 
 // hubInstall bridges hub selection to the existing bundle resolve flow.
-func (m *model) hubInstall(slug, version string) (tea.Model, tea.Cmd) {
+func (m *model) hubInstall(namespace, slug, version string) (tea.Model, tea.Cmd) {
 	if m.deps == nil || m.deps.Client == nil {
 		m.bundleError = bundleErrorState{
-			message: "Not authenticated",
-			hint:    "Run 'mush auth login' to authenticate before installing",
-			slug:    slug,
-			version: version,
+			message:   "Not authenticated",
+			hint:      "Run 'mush auth login' to authenticate before installing",
+			namespace: namespace,
+			slug:      slug,
+			version:   version,
 		}
 
 		m.pushScreen(screenBundleError)
@@ -396,9 +397,10 @@ func (m *model) hubInstall(slug, version string) (tea.Model, tea.Cmd) {
 	}
 
 	m.bundleResolve = bundleResolveState{
-		spinner: m.bundleResolve.spinner,
-		slug:    slug,
-		version: version,
+		spinner:   m.bundleResolve.spinner,
+		namespace: namespace,
+		slug:      slug,
+		version:   version,
 	}
 
 	harness := "claude"
@@ -410,7 +412,7 @@ func (m *model) hubInstall(slug, version string) (tea.Model, tea.Cmd) {
 
 	return m, tea.Batch(
 		m.bundleResolve.spinner.Tick,
-		cmdResolveBundle(m.deps.Client, slug, version, harness),
+		cmdResolveBundle(m.deps.Client, namespace, slug, version, harness),
 	)
 }
 

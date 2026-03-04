@@ -299,7 +299,7 @@ func TestErrorMessages_Golden(t *testing.T) {
 		{"ClaudeSignalKilled", ClaudeSignalKilled()},
 		{"ClaudeNotFound", ClaudeNotFound()},
 		{"CodexNotFound", CodexNotFound()},
-		{"InvalidHarnessType", InvalidHarnessType("unknown", []string{"claude", "bash"})},
+		{"InvalidHarnessType", InvalidHarnessType("unknown", []string{"claude", "codex"})},
 		{"HarnessNotAvailable", HarnessNotAvailable("claude")},
 		{"BundleNotFound", BundleNotFound("my-bundle")},
 		{"BundleVersionNotFound", BundleVersionNotFound("my-bundle", "1.0.0")},

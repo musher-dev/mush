@@ -3,14 +3,14 @@
 // This package implements a check framework that validates:
 //   - API connectivity and response time
 //   - Authentication status and credential source
-//   - Claude CLI availability and version
 //   - CLI version against latest release
 package doctor
 
 import (
 	"context"
 	"fmt"
-	"os/exec"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -18,7 +18,6 @@ import (
 	"github.com/musher-dev/mush/internal/buildinfo"
 	"github.com/musher-dev/mush/internal/client"
 	"github.com/musher-dev/mush/internal/config"
-	"github.com/musher-dev/mush/internal/harness"
 	"github.com/musher-dev/mush/internal/update"
 )
 
@@ -61,8 +60,10 @@ func New() *Runner {
 
 	// Register default checks
 	r.AddCheck("API Connectivity", checkAPIConnectivity)
+	r.AddCheck("Clock Skew", checkClockSkew)
+	r.AddCheck("Proxy Environment", checkProxyEnvironment)
+	r.AddCheck("Custom CA Bundle", checkCustomCABundle)
 	r.AddCheck("Authentication", checkAuthentication)
-	r.AddCheck("Claude CLI", checkClaudeCLI)
 	r.AddCheck("CLI Version", checkCLIVersion)
 
 	return r
@@ -107,36 +108,18 @@ func checkAPIConnectivity(ctx context.Context) Result {
 	cfg := config.Load()
 	apiURL := cfg.APIURL()
 
-	start := time.Now()
-
-	// Create a simple HTTP client to test connectivity
-	c := client.New(apiURL, "test-key")
-
-	// We expect this to fail auth, but succeed at connecting
-	_, err := c.ValidateKey(ctx)
-	elapsed := time.Since(start)
-
-	// If we get an auth error, that means connectivity works
-	if err != nil && strings.Contains(err.Error(), "invalid") {
+	probe := client.ProbeHealth(ctx, apiURL)
+	if probe.Reachable {
 		return Result{
 			Status:  StatusPass,
-			Message: fmt.Sprintf("%s (%dms)", apiURL, elapsed.Milliseconds()),
+			Message: fmt.Sprintf("%s (%dms)", apiURL, probe.Latency.Milliseconds()),
 		}
 	}
 
-	// If we get a connection error, that's a failure
-	if err != nil {
-		return Result{
-			Status:  StatusFail,
-			Message: apiURL,
-			Detail:  err.Error(),
-		}
-	}
-
-	// Connection succeeded (shouldn't happen with test key, but handle it)
 	return Result{
-		Status:  StatusPass,
-		Message: fmt.Sprintf("%s (%dms)", apiURL, elapsed.Milliseconds()),
+		Status:  StatusFail,
+		Message: apiURL,
+		Detail:  probe.Error,
 	}
 }
 
@@ -154,7 +137,17 @@ func checkAuthentication(ctx context.Context) Result {
 
 	// Validate the key
 	cfg := config.Load()
-	c := client.New(cfg.APIURL(), apiKey)
+
+	httpClient, clientErr := client.NewInstrumentedHTTPClient(cfg.CACertFile())
+	if clientErr != nil {
+		return Result{
+			Status:  StatusFail,
+			Message: "HTTP client setup failed",
+			Detail:  clientErr.Error(),
+		}
+	}
+
+	c := client.NewWithHTTPClient(cfg.APIURL(), apiKey, httpClient)
 
 	identity, err := c.ValidateKey(ctx)
 	if err != nil {
@@ -171,42 +164,105 @@ func checkAuthentication(ctx context.Context) Result {
 	}
 }
 
-// checkClaudeCLI verifies Claude Code CLI is available.
-func checkClaudeCLI(ctx context.Context) Result {
-	if !harness.AvailableFunc("claude")() {
-		return Result{
-			Status:  StatusFail,
-			Message: "Not found in PATH",
-			Detail:  "Install from https://claude.ai/download",
-		}
-	}
+func checkClockSkew(ctx context.Context) Result {
+	cfg := config.Load()
 
-	// Try to get version
-	cmd := exec.CommandContext(ctx, "claude", "--version")
-
-	out, err := cmd.Output()
-	if err != nil {
+	probe := client.ProbeHealth(ctx, cfg.APIURL())
+	if !probe.Reachable {
 		return Result{
 			Status:  StatusWarn,
-			Message: "Found but version unknown",
+			Message: "Clock skew check skipped",
+			Detail:  "API not reachable",
 		}
 	}
 
-	version := strings.TrimSpace(string(out))
-	// Extract just the version number if there's extra output
-	if idx := strings.Index(version, "\n"); idx > 0 {
-		version = version[:idx]
+	if probe.ServerTime == nil {
+		return Result{
+			Status:  StatusWarn,
+			Message: "Clock skew unknown",
+			Detail:  "API response did not include a Date header",
+		}
 	}
 
-	// Get the path (we already know it exists from the check above)
-	path, err := exec.LookPath("claude")
-	if err != nil {
-		path = "(unknown path)"
+	skew := time.Since(*probe.ServerTime)
+	if skew < 0 {
+		skew = -skew
+	}
+
+	if skew > 2*time.Minute {
+		return Result{
+			Status:  StatusWarn,
+			Message: fmt.Sprintf("Clock skew detected (%s)", skew.Round(time.Second)),
+			Detail:  "Sync your system clock (NTP) to avoid auth token validity issues",
+		}
 	}
 
 	return Result{
 		Status:  StatusPass,
-		Message: fmt.Sprintf("%s at %s", version, path),
+		Message: fmt.Sprintf("Within tolerance (%s)", skew.Round(time.Second)),
+	}
+}
+
+func checkProxyEnvironment(context.Context) Result {
+	keys := []string{
+		"HTTPS_PROXY", "https_proxy",
+		"HTTP_PROXY", "http_proxy",
+		"NO_PROXY", "no_proxy",
+	}
+
+	var active []string
+
+	for _, key := range keys {
+		if strings.TrimSpace(os.Getenv(key)) != "" {
+			active = append(active, key)
+		}
+	}
+
+	if len(active) == 0 {
+		return Result{
+			Status:  StatusPass,
+			Message: "No proxy environment variables detected",
+		}
+	}
+
+	return Result{
+		Status:  StatusWarn,
+		Message: fmt.Sprintf("Proxy variables detected: %s", strings.Join(active, ", ")),
+		Detail:  "If requests fail with TLS errors, configure MUSH_NETWORK_CA_CERT_FILE with your corporate proxy CA bundle",
+	}
+}
+
+func checkCustomCABundle(context.Context) Result {
+	cfg := config.Load()
+
+	caPath := strings.TrimSpace(cfg.CACertFile())
+	if caPath == "" {
+		return Result{
+			Status:  StatusPass,
+			Message: "Not configured",
+		}
+	}
+
+	info, err := os.Stat(caPath)
+	if err != nil {
+		return Result{
+			Status:  StatusFail,
+			Message: "Configured file not readable",
+			Detail:  err.Error(),
+		}
+	}
+
+	if info.IsDir() {
+		return Result{
+			Status:  StatusFail,
+			Message: "Configured path is a directory",
+			Detail:  filepath.Clean(caPath),
+		}
+	}
+
+	return Result{
+		Status:  StatusPass,
+		Message: filepath.Clean(caPath),
 	}
 }
 

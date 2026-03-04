@@ -41,6 +41,7 @@ go install github.com/musher-dev/mush/cmd/mush@latest
 
 ```bash
 mush init              # Guided setup (authenticates + validates)
+mush init --force --api-key "$MUSH_API_KEY" --habitat <slug>   # Non-interactive bootstrap
 mush habitat list      # View available habitats
 mush worker start      # Start processing jobs
 ```
@@ -147,6 +148,8 @@ mush --api-url http://localhost:8080 doctor
 `--api-url` takes precedence over `MUSH_API_URL` and `api.url` from config for that process.
 
 `--api-key` is not a global flag. It is available as `mush auth login --api-key ...`, and `MUSH_API_KEY` is preferred for non-interactive usage.
+
+For enterprise TLS interception/proxy environments, set `MUSH_NETWORK_CA_CERT_FILE` to a PEM CA bundle trusted by your organization.
 
 ## How It Works
 

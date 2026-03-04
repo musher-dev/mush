@@ -1,16 +1,16 @@
 --- NotAuthenticated ---
 Message: Not authenticated
-Hint: Run 'mush auth login' to authenticate
+Hint: Run 'mush auth login' to authenticate. See: https://github.com/musher-dev/mush/blob/main/docs/errors.md#err-auth-001-authentication-failed
 Code: 2
 
 --- AuthFailed ---
 Message: Authentication failed
-Hint: Check your API key or run 'mush auth login'
+Hint: Check your API key or run 'mush auth login'. See: https://github.com/musher-dev/mush/blob/main/docs/errors.md#err-auth-001-authentication-failed
 Code: 2
 
 --- CredentialsInvalid ---
 Message: Credentials invalid
-Hint: Run 'mush auth login' to re-authenticate
+Hint: Run 'mush auth login' to re-authenticate. See: https://github.com/musher-dev/mush/blob/main/docs/errors.md#err-auth-001-authentication-failed
 Code: 2
 
 --- CannotPrompt ---
@@ -40,7 +40,7 @@ Code: 4
 
 --- NoInstructionsForQueue ---
 Message: No active instructions found for queue: My Queue (my-queue)
-Hint: Create and activate an instruction for this queue in the console, then rerun 'mush worker start'
+Hint: Create and activate an instruction for this queue in the console, then rerun 'mush worker start'. See: https://github.com/musher-dev/mush/blob/main/docs/errors.md#err-queue-001-no-active-queue-instruction
 Code: 4
 
 --- HabitatRequired ---
@@ -115,7 +115,7 @@ Code: 4
 
 --- InvalidHarnessType ---
 Message: Invalid harness type: unknown
-Hint: Supported harness types: claude, bash
+Hint: Supported harness types: claude, codex
 Code: 64
 
 --- HarnessNotAvailable ---

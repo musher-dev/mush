@@ -139,30 +139,6 @@ func TestWorkerStartDryRunPrintsMCPServers(t *testing.T) {
 	}
 }
 
-func TestWorkerStartDryRunBashHarnessOmitsMCPServers(t *testing.T) {
-	var outBuf bytes.Buffer
-
-	term := &terminal.Info{IsTTY: false}
-	out := output.NewWriter(&outBuf, io.Discard, term)
-	out.NoInput = true
-
-	withMockAPIClient(t, workerMockClient(t, `{"configVersion":"1","workspaceId":"ws-1","generatedAt":"2026-02-13T12:00:00Z","refreshAfterSeconds":300,"providers":{}}`))
-
-	cmd := newWorkerCmd()
-	cmd.SetArgs([]string{"start", "--dry-run", "--habitat", "local", "--queue", "q-1", "--harness", "bash"})
-
-	ctx := out.WithContext(t.Context())
-	cmd.SetContext(ctx)
-
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("dry-run should succeed, got error: %v", err)
-	}
-
-	if got := outBuf.String(); strings.Contains(got, "MCP servers:") {
-		t.Fatalf("output = %q, expected no MCP servers line for bash-only harness", got)
-	}
-}
-
 func TestWorkerStartLegacyAgentFlagRejected(t *testing.T) {
 	term := &terminal.Info{IsTTY: false}
 	out := output.NewWriter(io.Discard, io.Discard, term)

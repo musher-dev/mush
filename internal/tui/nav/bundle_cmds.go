@@ -19,6 +19,7 @@ import (
 
 // bundleResolvedMsg carries a successful resolve result.
 type bundleResolvedMsg struct {
+	namespace  string
 	slug       string
 	version    string
 	assetCount int
@@ -62,11 +63,11 @@ type bundleDownloadErrorMsg struct {
 // --- Commands ---
 
 // cmdResolveBundle resolves a bundle slug/version via the API.
-func cmdResolveBundle(c *client.Client, slug, version, harness string) tea.Cmd {
+func cmdResolveBundle(c *client.Client, namespace, slug, version, harness string) tea.Cmd {
 	return func() tea.Msg {
 		ctx := context.Background()
 
-		resolved, err := c.ResolveBundle(ctx, slug, version)
+		resolved, err := c.ResolveBundle(ctx, namespace, slug, version)
 		if err != nil {
 			return bundleResolveErrorMsg{
 				err:     err,
@@ -77,6 +78,7 @@ func cmdResolveBundle(c *client.Client, slug, version, harness string) tea.Cmd {
 		}
 
 		return bundleResolvedMsg{
+			namespace:  namespace,
 			slug:       slug,
 			version:    resolved.Version,
 			assetCount: len(resolved.Manifest.Layers),
@@ -88,7 +90,7 @@ func cmdResolveBundle(c *client.Client, slug, version, harness string) tea.Cmd {
 
 // cmdCheckBundleCache checks if the bundle is cached; if so, returns a cache hit.
 // Otherwise, starts downloading assets.
-func cmdCheckBundleCache(deps *Dependencies, slug, version, harness string) tea.Cmd {
+func cmdCheckBundleCache(deps *Dependencies, namespace, slug, version, harness string) tea.Cmd {
 	return func() tea.Msg {
 		if deps == nil || deps.Client == nil {
 			return bundleDownloadErrorMsg{
@@ -97,21 +99,10 @@ func cmdCheckBundleCache(deps *Dependencies, slug, version, harness string) tea.
 			}
 		}
 
-		workspace := ""
-
-		if deps.Client.IsAuthenticated() {
-			identityCtx := context.Background()
-
-			identity, identityErr := deps.Client.ValidateKey(identityCtx)
-			if identityErr == nil {
-				workspace = identity.WorkspaceID
-			}
-		}
-
 		// Check cache.
-		if bundle.IsCached(workspace, slug, version) {
+		if bundle.IsCached(namespace, slug, version) {
 			return bundleCacheHitMsg{
-				cachePath: bundle.CachePath(workspace, slug, version),
+				cachePath: bundle.CachePath(namespace, slug, version),
 				harness:   harness,
 			}
 		}
@@ -119,7 +110,7 @@ func cmdCheckBundleCache(deps *Dependencies, slug, version, harness string) tea.
 		// Need to download — resolve first to get manifest.
 		resolveCtx := context.Background()
 
-		resolved, err := deps.Client.ResolveBundle(resolveCtx, slug, version)
+		resolved, err := deps.Client.ResolveBundle(resolveCtx, namespace, slug, version)
 		if err != nil {
 			return bundleDownloadErrorMsg{
 				err:     fmt.Errorf("resolve bundle: %w", err),
@@ -129,7 +120,7 @@ func cmdCheckBundleCache(deps *Dependencies, slug, version, harness string) tea.
 
 		// Download assets inline (returns progress messages via a channel would
 		// be ideal, but for simplicity we do a blocking download and return completion).
-		cachePath := bundle.CachePath(workspace, slug, resolved.Version)
+		cachePath := bundle.CachePath(namespace, slug, resolved.Version)
 
 		if err := downloadBundle(resolveCtx, deps.Client, resolved, cachePath); err != nil {
 			return bundleDownloadErrorMsg{

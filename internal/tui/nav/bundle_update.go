@@ -2,7 +2,6 @@ package nav
 
 import (
 	"github.com/charmbracelet/bubbles/key"
-	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/musher-dev/mush/internal/bundle"
@@ -48,33 +47,6 @@ func (m *model) handleBundleInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	// When the text input is not focused, handle the explore hotkey.
-	if !m.bundleInput.focusOnInput && msg.Type == tea.KeyRunes && len(msg.Runes) == 1 && msg.Runes[0] == 'e' {
-		searchField := textinput.New()
-		searchField.Placeholder = "Search bundles..."
-		searchField.CharLimit = 128
-		searchField.Width = m.styles.hubWidth - 12 //nolint:mnd // panel padding + border
-		searchField.Focus()
-
-		m.hubExplore = hubExploreState{
-			searchInput: searchField,
-			categoryCur: -1,
-			loading:     true,
-			spinner:     m.hubExplore.spinner,
-			searchID:    m.hubExplore.searchID + 1,
-		}
-
-		m.pushScreen(screenHubExplore)
-
-		baseURL := m.apiBaseURL()
-
-		return m, tea.Batch(
-			m.hubExplore.spinner.Tick,
-			cmdSearchHub(baseURL, "", "", "trending", hubSearchLimit, "", false, m.hubExplore.searchID),
-			cmdListHubCategories(baseURL),
-		)
-	}
-
 	// Forward to text input if focused.
 	if m.bundleInput.focusOnInput {
 		var cmd tea.Cmd
@@ -95,7 +67,7 @@ func (m *model) submitBundleInput() (tea.Model, tea.Cmd) {
 	if err != nil {
 		m.bundleError = bundleErrorState{
 			message: err.Error(),
-			hint:    "Enter a bundle slug like 'my-bundle' or 'my-bundle:1.0.0'",
+			hint:    "Enter a bundle reference like 'namespace/slug' or 'namespace/slug:1.0.0'",
 			slug:    raw,
 			harness: m.harnesses[m.bundleInput.harnessCur].name,
 		}
@@ -108,11 +80,12 @@ func (m *model) submitBundleInput() (tea.Model, tea.Cmd) {
 	// Check if client is available.
 	if m.deps == nil || m.deps.Client == nil {
 		m.bundleError = bundleErrorState{
-			message: "Not authenticated",
-			hint:    "Run 'mush auth login' first to authenticate",
-			slug:    ref.Slug,
-			version: ref.Version,
-			harness: m.harnesses[m.bundleInput.harnessCur].name,
+			message:   "Not authenticated",
+			hint:      "Run 'mush auth login' first to authenticate",
+			namespace: ref.Namespace,
+			slug:      ref.Slug,
+			version:   ref.Version,
+			harness:   m.harnesses[m.bundleInput.harnessCur].name,
 		}
 
 		m.pushScreen(screenBundleError)
@@ -122,9 +95,10 @@ func (m *model) submitBundleInput() (tea.Model, tea.Cmd) {
 
 	// Start resolving.
 	m.bundleResolve = bundleResolveState{
-		spinner: m.bundleResolve.spinner,
-		slug:    ref.Slug,
-		version: ref.Version,
+		spinner:   m.bundleResolve.spinner,
+		namespace: ref.Namespace,
+		slug:      ref.Slug,
+		version:   ref.Version,
 	}
 
 	harness := m.harnesses[m.bundleInput.harnessCur].name
@@ -132,7 +106,7 @@ func (m *model) submitBundleInput() (tea.Model, tea.Cmd) {
 
 	return m, tea.Batch(
 		m.bundleResolve.spinner.Tick,
-		cmdResolveBundle(m.deps.Client, ref.Slug, ref.Version, harness),
+		cmdResolveBundle(m.deps.Client, ref.Namespace, ref.Slug, ref.Version, harness),
 	)
 }
 
@@ -175,20 +149,22 @@ func (m *model) handleBundleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // startBundleDownload begins the download/cache process.
 func (m *model) startBundleDownload() (tea.Model, tea.Cmd) {
+	namespace := m.bundleConfirm.namespace
 	slug := m.bundleConfirm.slug
 	ver := m.bundleConfirm.version
 	harness := m.bundleConfirm.harness
 
 	m.bundleProgress = bundleProgressState{
-		progress: m.bundleProgress.progress,
-		slug:     slug,
-		version:  ver,
-		label:    "Checking cache...",
+		progress:  m.bundleProgress.progress,
+		namespace: namespace,
+		slug:      slug,
+		version:   ver,
+		label:     "Checking cache...",
 	}
 
 	m.pushScreen(screenBundleProgress)
 
-	return m, cmdCheckBundleCache(m.deps, slug, ver, harness)
+	return m, cmdCheckBundleCache(m.deps, namespace, slug, ver, harness)
 }
 
 // handleBundleProgressKey processes key events on the progress screen.
@@ -223,22 +199,12 @@ func (m *model) handleBundleCompleteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // handleBundleErrorKey processes key events on the error screen.
 func (m *model) handleBundleErrorKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch {
-	case key.Matches(msg, m.keys.Back):
-		m.popScreen()
-
-	case key.Matches(msg, m.keys.Retry):
-		return m.retryBundleResolve()
-
-	case key.Matches(msg, m.keys.Select):
-		return m.retryBundleResolve()
-	}
-
-	return m, nil
+	return m.handleErrorScreenKey(msg, &m.bundleError.buttonIdx, m.retryBundleResolve)
 }
 
 // retryBundleResolve retries the resolve from the error screen.
 func (m *model) retryBundleResolve() (tea.Model, tea.Cmd) {
+	namespace := m.bundleError.namespace
 	slug := m.bundleError.slug
 	version := m.bundleError.version
 	harness := m.bundleError.harness
@@ -250,7 +216,13 @@ func (m *model) retryBundleResolve() (tea.Model, tea.Cmd) {
 	// Parse the slug in case it was the raw input.
 	ref, err := bundle.ParseRef(slug)
 	if err != nil {
-		return m, nil
+		// If the slug alone doesn't parse (e.g. raw input without namespace),
+		// try constructing a ref from the carried-forward namespace.
+		if namespace == "" {
+			return m, nil
+		}
+
+		ref = bundle.Ref{Namespace: namespace, Slug: slug}
 	}
 
 	if version != "" {
@@ -258,9 +230,10 @@ func (m *model) retryBundleResolve() (tea.Model, tea.Cmd) {
 	}
 
 	m.bundleResolve = bundleResolveState{
-		spinner: m.bundleResolve.spinner,
-		slug:    ref.Slug,
-		version: ref.Version,
+		spinner:   m.bundleResolve.spinner,
+		namespace: ref.Namespace,
+		slug:      ref.Slug,
+		version:   ref.Version,
 	}
 
 	// Replace the error screen with resolving.
@@ -268,13 +241,14 @@ func (m *model) retryBundleResolve() (tea.Model, tea.Cmd) {
 
 	return m, tea.Batch(
 		m.bundleResolve.spinner.Tick,
-		cmdResolveBundle(m.deps.Client, ref.Slug, ref.Version, harness),
+		cmdResolveBundle(m.deps.Client, ref.Namespace, ref.Slug, ref.Version, harness),
 	)
 }
 
 // handleBundleResolved processes a successful resolve.
-func (m *model) handleBundleResolved(msg bundleResolvedMsg) (tea.Model, tea.Cmd) {
+func (m *model) handleBundleResolved(msg *bundleResolvedMsg) (tea.Model, tea.Cmd) {
 	m.bundleConfirm = bundleConfirmState{
+		namespace:  msg.namespace,
 		slug:       msg.slug,
 		version:    msg.version,
 		assetCount: msg.assetCount,
@@ -291,11 +265,12 @@ func (m *model) handleBundleResolved(msg bundleResolvedMsg) (tea.Model, tea.Cmd)
 // handleBundleResolveError processes a resolve error.
 func (m *model) handleBundleResolveError(msg bundleResolveErrorMsg) (tea.Model, tea.Cmd) {
 	m.bundleError = bundleErrorState{
-		message: msg.err.Error(),
-		hint:    "Check the bundle slug and try again",
-		slug:    msg.slug,
-		version: msg.version,
-		harness: msg.harness,
+		message:   msg.err.Error(),
+		hint:      "Check the bundle reference and try again",
+		namespace: m.bundleResolve.namespace,
+		slug:      msg.slug,
+		version:   msg.version,
+		harness:   msg.harness,
 	}
 
 	// Replace resolving screen with error.
@@ -307,6 +282,7 @@ func (m *model) handleBundleResolveError(msg bundleResolveErrorMsg) (tea.Model, 
 // handleBundleCacheHit processes a cache hit.
 func (m *model) handleBundleCacheHit(msg bundleCacheHitMsg) (tea.Model, tea.Cmd) {
 	m.bundleComplete = bundleCompleteState{
+		namespace: m.bundleProgress.namespace,
 		slug:      m.bundleProgress.slug,
 		version:   m.bundleProgress.version,
 		harness:   msg.harness,
@@ -331,6 +307,7 @@ func (m *model) handleBundleDownloadProgress(msg bundleDownloadProgressMsg) (tea
 // handleBundleDownloadComplete processes download completion.
 func (m *model) handleBundleDownloadComplete(msg bundleDownloadCompleteMsg) (tea.Model, tea.Cmd) {
 	m.bundleComplete = bundleCompleteState{
+		namespace: m.bundleProgress.namespace,
 		slug:      m.bundleProgress.slug,
 		version:   m.bundleProgress.version,
 		harness:   msg.harness,
@@ -346,11 +323,12 @@ func (m *model) handleBundleDownloadComplete(msg bundleDownloadCompleteMsg) (tea
 // handleBundleDownloadError processes a download error.
 func (m *model) handleBundleDownloadError(msg bundleDownloadErrorMsg) (tea.Model, tea.Cmd) {
 	m.bundleError = bundleErrorState{
-		message: msg.err.Error(),
-		hint:    "Check your connection and try again",
-		slug:    m.bundleProgress.slug,
-		version: m.bundleProgress.version,
-		harness: msg.harness,
+		message:   msg.err.Error(),
+		hint:      "Check your connection and try again",
+		namespace: m.bundleProgress.namespace,
+		slug:      m.bundleProgress.slug,
+		version:   m.bundleProgress.version,
+		harness:   msg.harness,
 	}
 
 	// Replace progress screen with error.

@@ -120,7 +120,7 @@ func (c *Client) SearchHubBundles(ctx context.Context, query, bundleType, sort s
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, unexpectedStatus("search hub bundles", resp.StatusCode, resp.Body)
+		return nil, unexpectedStatus("search hub bundles", resp)
 	}
 
 	var result HubSearchResponse
@@ -154,7 +154,7 @@ func (c *Client) GetHubBundleDetail(ctx context.Context, publisherHandle, bundle
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, unexpectedStatus("get hub bundle detail", resp.StatusCode, resp.Body)
+		return nil, unexpectedStatus("get hub bundle detail", resp)
 	}
 
 	var result HubBundleDetail
@@ -179,13 +179,15 @@ func (c *Client) ListHubCategories(ctx context.Context) ([]HubCategory, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, unexpectedStatus("list hub categories", resp.StatusCode, resp.Body)
+		return nil, unexpectedStatus("list hub categories", resp)
 	}
 
-	var result []HubCategory
+	var result struct {
+		Data []HubCategory `json:"data"`
+	}
 	if err := decodeJSON(resp.Body, &result, "failed to parse hub categories"); err != nil {
 		return nil, err
 	}
 
-	return result, nil
+	return result.Data, nil
 }

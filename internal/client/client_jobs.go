@@ -72,7 +72,7 @@ func (c *Client) ClaimJob(ctx context.Context, habitatID, queueID string, waitTi
 		return &job, nil
 	}
 
-	return nil, unexpectedStatus("claim job", resp.StatusCode, resp.Body)
+	return nil, unexpectedStatus("claim job", resp)
 }
 
 // StartJob marks a claimed job as running.
@@ -110,7 +110,7 @@ func (c *Client) CompleteJob(ctx context.Context, jobID string, output map[strin
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return unexpectedStatus("complete job", resp.StatusCode, resp.Body)
+		return unexpectedStatus("complete job", resp)
 	}
 
 	return nil
@@ -143,7 +143,7 @@ func (c *Client) FailJob(ctx context.Context, jobID, errorCode, errorMsg string,
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return unexpectedStatus("fail job", resp.StatusCode, resp.Body)
+		return unexpectedStatus("fail job", resp)
 	}
 
 	return nil
@@ -165,7 +165,7 @@ func (c *Client) ReleaseJob(ctx context.Context, jobID string) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return unexpectedStatus("release job", resp.StatusCode, resp.Body)
+		return unexpectedStatus("release job", resp)
 	}
 
 	return nil
@@ -186,7 +186,7 @@ func (c *Client) updateJobStatus(ctx context.Context, jobID, endpointAction, ope
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, unexpectedStatus(operation, resp.StatusCode, resp.Body)
+		return nil, unexpectedStatus(operation, resp)
 	}
 
 	var job Job

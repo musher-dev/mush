@@ -546,30 +546,6 @@ func TestHubDetailViewLoading(t *testing.T) {
 	}
 }
 
-func TestHubExploreFromBundleInput(t *testing.T) {
-	t.Parallel()
-
-	mdl := testModel()
-
-	// Go to bundle input and switch to harness list.
-	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}})
-	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyTab})
-
-	// Press 'e' to explore hub.
-	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
-
-	if mdl.activeScreen != screenHubExplore {
-		t.Errorf("activeScreen = %d, want screenHubExplore from bundle input", mdl.activeScreen)
-	}
-
-	// Esc should go back to bundle input.
-	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyEscape})
-
-	if mdl.activeScreen != screenBundleInput {
-		t.Errorf("activeScreen = %d, want screenBundleInput after esc from hub", mdl.activeScreen)
-	}
-}
-
 func TestFormatCount(t *testing.T) {
 	t.Parallel()
 

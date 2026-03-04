@@ -214,5 +214,6 @@ func renderWorkerError(mdl *model) string {
 		[]string{"Home", "Start Worker", "Error"},
 		mdl.workerError.message,
 		mdl.workerError.hint,
+		mdl.workerError.buttonIdx,
 	)
 }

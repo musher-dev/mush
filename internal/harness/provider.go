@@ -23,6 +23,7 @@ type ProviderSpec struct {
 	CLI         *CLIFlags      `yaml:"cli,omitempty"`
 	Assets      *AssetPaths    `yaml:"assets,omitempty"`
 	MCP         *MCPDef        `yaml:"mcp,omitempty"`
+	Status      *StatusSpec    `yaml:"status,omitempty"`
 }
 
 // Directories describes harness-specific config directory paths.
@@ -53,6 +54,21 @@ type AssetPaths struct {
 type MCPDef struct {
 	Format     string `yaml:"format"`     // "json" or "toml"
 	ConfigPath string `yaml:"configPath"` // relative path for MCP config file
+}
+
+// StatusSpec describes health-check and install metadata for a harness provider.
+type StatusSpec struct {
+	VersionArgs    []string   `yaml:"versionArgs,omitempty"`
+	InstallHint    string     `yaml:"installHint,omitempty"`
+	InstallCommand []string   `yaml:"installCommand,omitempty"`
+	ConfigDir      string     `yaml:"configDir,omitempty"`
+	AuthCheck      *AuthCheck `yaml:"authCheck,omitempty"`
+}
+
+// AuthCheck describes a file-based credential check for a harness provider.
+type AuthCheck struct {
+	Path        string `yaml:"path"`
+	Description string `yaml:"description"`
 }
 
 // providerSpecs is loaded at package init time from embedded YAML files.

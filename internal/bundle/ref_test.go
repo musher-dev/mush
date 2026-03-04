@@ -10,19 +10,19 @@ func TestParseRef(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name: "slug only",
-			arg:  "my-bundle",
-			want: Ref{Slug: "my-bundle", Version: ""},
+			name: "namespace/slug only",
+			arg:  "acme/my-bundle",
+			want: Ref{Namespace: "acme", Slug: "my-bundle", Version: ""},
 		},
 		{
-			name: "slug with version",
-			arg:  "my-bundle:0.1.0",
-			want: Ref{Slug: "my-bundle", Version: "0.1.0"},
+			name: "namespace/slug with version",
+			arg:  "acme/my-bundle:0.1.0",
+			want: Ref{Namespace: "acme", Slug: "my-bundle", Version: "0.1.0"},
 		},
 		{
-			name: "slug with whitespace",
-			arg:  "  my-bundle  ",
-			want: Ref{Slug: "my-bundle", Version: ""},
+			name: "with whitespace",
+			arg:  "  acme/my-bundle  ",
+			want: Ref{Namespace: "acme", Slug: "my-bundle", Version: ""},
 		},
 		{
 			name:    "empty string",
@@ -36,18 +36,43 @@ func TestParseRef(t *testing.T) {
 		},
 		{
 			name:    "empty version after colon",
-			arg:     "my-bundle:",
+			arg:     "acme/my-bundle:",
 			wantErr: true,
 		},
 		{
 			name: "version with dots",
-			arg:  "my-bundle:1.2.3",
-			want: Ref{Slug: "my-bundle", Version: "1.2.3"},
+			arg:  "acme/my-bundle:1.2.3",
+			want: Ref{Namespace: "acme", Slug: "my-bundle", Version: "1.2.3"},
 		},
 		{
 			name: "version with hash",
-			arg:  "my-bundle:abc123",
-			want: Ref{Slug: "my-bundle", Version: "abc123"},
+			arg:  "acme/my-bundle:abc123",
+			want: Ref{Namespace: "acme", Slug: "my-bundle", Version: "abc123"},
+		},
+		{
+			name:    "bare slug without namespace",
+			arg:     "my-bundle",
+			wantErr: true,
+		},
+		{
+			name:    "bare slug with version without namespace",
+			arg:     "my-bundle:1.0.0",
+			wantErr: true,
+		},
+		{
+			name:    "empty namespace",
+			arg:     "/my-bundle",
+			wantErr: true,
+		},
+		{
+			name:    "empty slug",
+			arg:     "acme/",
+			wantErr: true,
+		},
+		{
+			name:    "empty slug with version",
+			arg:     "acme/:1.0.0",
+			wantErr: true,
 		},
 	}
 
@@ -78,8 +103,8 @@ func TestRefString(t *testing.T) {
 		ref  Ref
 		want string
 	}{
-		{Ref{Slug: "my-bundle"}, "my-bundle"},
-		{Ref{Slug: "my-bundle", Version: "0.1.0"}, "my-bundle:0.1.0"},
+		{Ref{Namespace: "acme", Slug: "my-bundle"}, "acme/my-bundle"},
+		{Ref{Namespace: "acme", Slug: "my-bundle", Version: "0.1.0"}, "acme/my-bundle:0.1.0"},
 	}
 
 	for _, tc := range tests {

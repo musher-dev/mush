@@ -1,0 +1,19 @@
+{
+  "job": {
+    "id": "job_123",
+    "workspaceId": "ws_123",
+    "jobType": "event",
+    "ceType": "com.example.created",
+    "ceSource": "example",
+    "priority": "normal",
+    "status": "claimed",
+    "attemptNumber": 1,
+    "maxAttempts": 3,
+    "createdAt": "2026-03-01T12:00:00Z"
+  },
+  "execution": {
+    "harnessType": "claude",
+    "renderedInstruction": "Handle event",
+    "timeoutMs": 300000
+  }
+}

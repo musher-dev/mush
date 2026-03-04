@@ -5,6 +5,7 @@ package harness
 import (
 	"encoding/json"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -206,5 +207,221 @@ func TestLoadedMCPServers_ExportedWrapper(t *testing.T) {
 	names := LoadedMCPServers(cfg, now)
 	if len(names) != 1 || names[0] != "linear" {
 		t.Fatalf("LoadedMCPServers = %#v, want [linear]", names)
+	}
+}
+
+func TestBuildOpenCodeMCPConfig(t *testing.T) {
+	specs := []MCPProviderSpec{
+		{
+			Name:      "linear",
+			URL:       "https://mcp.linear.app/mcp",
+			TokenType: "bearer",
+			Token:     "tok_linear",
+		},
+		{
+			Name:      "github",
+			URL:       "https://api.githubcopilot.com/mcp",
+			TokenType: "basic",
+			Token:     "tok_gh",
+		},
+	}
+
+	data, err := BuildOpenCodeMCPConfig(specs)
+	if err != nil {
+		t.Fatalf("BuildOpenCodeMCPConfig() error = %v", err)
+	}
+
+	var parsed map[string]any
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		t.Fatalf("unmarshal config: %v", err)
+	}
+
+	schema, _ := parsed["$schema"].(string)
+	if schema != "https://opencode.ai/config.json" {
+		t.Fatalf("$schema = %q, want https://opencode.ai/config.json", schema)
+	}
+
+	mcp, ok := parsed["mcp"].(map[string]any)
+	if !ok {
+		t.Fatal("missing mcp object")
+	}
+
+	linear, ok := mcp["linear"].(map[string]any)
+	if !ok {
+		t.Fatal("missing linear provider")
+	}
+
+	headers, _ := linear["headers"].(map[string]any)
+
+	auth, _ := headers["Authorization"].(string)
+	if auth != "Bearer tok_linear" {
+		t.Fatalf("linear Authorization = %q, want %q", auth, "Bearer tok_linear")
+	}
+
+	github, ok := mcp["github"].(map[string]any)
+	if !ok {
+		t.Fatal("missing github provider")
+	}
+
+	ghHeaders, _ := github["headers"].(map[string]any)
+
+	ghAuth, _ := ghHeaders["Authorization"].(string)
+	if ghAuth != "Basic tok_gh" {
+		t.Fatalf("github Authorization = %q, want %q", ghAuth, "Basic tok_gh")
+	}
+}
+
+func TestBuildOpenCodeMCPConfig_Empty(t *testing.T) {
+	data, err := BuildOpenCodeMCPConfig(nil)
+	if err != nil {
+		t.Fatalf("BuildOpenCodeMCPConfig(nil) error = %v", err)
+	}
+
+	if len(data) != 0 {
+		t.Fatalf("expected empty config for nil specs, got %q", strings.TrimSpace(string(data)))
+	}
+}
+
+func TestBuildGeminiMCPConfig(t *testing.T) {
+	specs := []MCPProviderSpec{
+		{
+			Name:      "linear",
+			URL:       "https://mcp.linear.app/mcp",
+			TokenType: "bearer",
+			Token:     "tok_linear",
+		},
+		{
+			Name:      "github",
+			URL:       "https://api.githubcopilot.com/mcp",
+			TokenType: "basic",
+			Token:     "tok_gh",
+		},
+	}
+
+	data, err := BuildGeminiMCPConfig(specs)
+	if err != nil {
+		t.Fatalf("BuildGeminiMCPConfig() error = %v", err)
+	}
+
+	var parsed map[string]any
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		t.Fatalf("unmarshal config: %v", err)
+	}
+
+	mcpServers, ok := parsed["mcpServers"].(map[string]any)
+	if !ok {
+		t.Fatal("missing mcpServers object")
+	}
+
+	linear, ok := mcpServers["linear"].(map[string]any)
+	if !ok {
+		t.Fatal("missing linear provider")
+	}
+
+	linearURL, _ := linear["httpUrl"].(string)
+	if linearURL != "https://mcp.linear.app/mcp" {
+		t.Fatalf("linear.httpUrl = %q, want https://mcp.linear.app/mcp", linearURL)
+	}
+
+	headers, _ := linear["headers"].(map[string]any)
+
+	auth, _ := headers["Authorization"].(string)
+	if auth != "Bearer tok_linear" {
+		t.Fatalf("linear Authorization = %q, want %q", auth, "Bearer tok_linear")
+	}
+
+	github, ok := mcpServers["github"].(map[string]any)
+	if !ok {
+		t.Fatal("missing github provider")
+	}
+
+	ghHeaders, _ := github["headers"].(map[string]any)
+
+	ghAuth, _ := ghHeaders["Authorization"].(string)
+	if ghAuth != "Basic tok_gh" {
+		t.Fatalf("github Authorization = %q, want %q", ghAuth, "Basic tok_gh")
+	}
+}
+
+func TestBuildGeminiMCPConfig_Empty(t *testing.T) {
+	data, err := BuildGeminiMCPConfig(nil)
+	if err != nil {
+		t.Fatalf("BuildGeminiMCPConfig(nil) error = %v", err)
+	}
+
+	if len(data) != 0 {
+		t.Fatalf("expected empty config for nil specs, got %q", strings.TrimSpace(string(data)))
+	}
+}
+
+func TestBuildCursorMCPConfig(t *testing.T) {
+	specs := []MCPProviderSpec{
+		{
+			Name:      "linear",
+			URL:       "https://mcp.linear.app/mcp",
+			TokenType: "bearer",
+			Token:     "tok_linear",
+		},
+		{
+			Name:      "github",
+			URL:       "https://api.githubcopilot.com/mcp",
+			TokenType: "basic",
+			Token:     "tok_gh",
+		},
+	}
+
+	data, err := BuildCursorMCPConfig(specs)
+	if err != nil {
+		t.Fatalf("BuildCursorMCPConfig() error = %v", err)
+	}
+
+	var parsed map[string]any
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		t.Fatalf("unmarshal config: %v", err)
+	}
+
+	mcpServers, ok := parsed["mcpServers"].(map[string]any)
+	if !ok {
+		t.Fatal("missing mcpServers object")
+	}
+
+	linear, ok := mcpServers["linear"].(map[string]any)
+	if !ok {
+		t.Fatal("missing linear provider")
+	}
+
+	linearURL, _ := linear["url"].(string)
+	if linearURL != "https://mcp.linear.app/mcp" {
+		t.Fatalf("linear.url = %q, want https://mcp.linear.app/mcp", linearURL)
+	}
+
+	headers, _ := linear["httpHeaders"].(map[string]any)
+
+	auth, _ := headers["Authorization"].(string)
+	if auth != "Bearer tok_linear" {
+		t.Fatalf("linear Authorization = %q, want %q", auth, "Bearer tok_linear")
+	}
+
+	github, ok := mcpServers["github"].(map[string]any)
+	if !ok {
+		t.Fatal("missing github provider")
+	}
+
+	ghHeaders, _ := github["httpHeaders"].(map[string]any)
+
+	ghAuth, _ := ghHeaders["Authorization"].(string)
+	if ghAuth != "Basic tok_gh" {
+		t.Fatalf("github Authorization = %q, want %q", ghAuth, "Basic tok_gh")
+	}
+}
+
+func TestBuildCursorMCPConfig_Empty(t *testing.T) {
+	data, err := BuildCursorMCPConfig(nil)
+	if err != nil {
+		t.Fatalf("BuildCursorMCPConfig(nil) error = %v", err)
+	}
+
+	if len(data) != 0 {
+		t.Fatalf("expected empty config for nil specs, got %q", strings.TrimSpace(string(data)))
 	}
 }

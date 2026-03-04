@@ -22,6 +22,8 @@ const (
 	ActionBundleLoad
 	// ActionWorkerStart means the user completed the worker entry flow.
 	ActionWorkerStart
+	// ActionHarnessInstall means the user wants to install missing harnesses.
+	ActionHarnessInstall
 )
 
 // Result carries the TUI's chosen action and associated parameters back to the caller.
@@ -37,4 +39,7 @@ type Result struct {
 	QueueID            string
 	QueueName          string
 	SupportedHarnesses []string
+
+	// Harness install fields
+	InstallCommands [][]string
 }

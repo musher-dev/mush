@@ -10,6 +10,14 @@ import (
 	"strings"
 )
 
+const (
+	errorDocsBaseURL = "https://github.com/musher-dev/mush/blob/main/docs/errors.md"
+	authDocURL       = errorDocsBaseURL + "#err-auth-001-authentication-failed"
+	tlsDocURL        = errorDocsBaseURL + "#err-net-001-tls-certificate-trust-failure"
+	clockDocURL      = errorDocsBaseURL + "#err-net-002-clock-skew"
+	queueDocURL      = errorDocsBaseURL + "#err-queue-001-no-active-queue-instruction"
+)
+
 // Exit codes for CLI errors.
 const (
 	ExitSuccess   = 0  // Successful execution
@@ -35,6 +43,15 @@ type CLIError struct {
 
 	// Code is the exit code for the CLI.
 	Code int
+
+	// ErrorCode is a stable, machine-readable identifier.
+	ErrorCode string
+
+	// RequestID is the HTTP request correlation ID when available.
+	RequestID string
+
+	// TraceID is the distributed trace identifier when available.
+	TraceID string
 }
 
 // Error implements the error interface.
@@ -53,24 +70,42 @@ func (e *CLIError) Unwrap() error {
 
 // New creates a new CLIError with the given message and exit code.
 func New(code int, message string) *CLIError {
-	return &CLIError{
+	return enrichFromCause(&CLIError{
 		Message: message,
 		Code:    code,
-	}
+	})
 }
 
 // Wrap wraps an existing error with a CLIError.
 func Wrap(code int, message string, cause error) *CLIError {
-	return &CLIError{
+	return enrichFromCause(&CLIError{
 		Message: message,
 		Cause:   cause,
 		Code:    code,
-	}
+	})
 }
 
 // WithHint adds a hint to the error.
 func (e *CLIError) WithHint(hint string) *CLIError {
 	e.Hint = hint
+	return e
+}
+
+// WithErrorCode adds a stable machine-readable error code.
+func (e *CLIError) WithErrorCode(code string) *CLIError {
+	e.ErrorCode = strings.TrimSpace(code)
+	return e
+}
+
+// WithTraceID attaches a trace ID for support/debugging.
+func (e *CLIError) WithTraceID(traceID string) *CLIError {
+	e.TraceID = strings.TrimSpace(traceID)
+	return e
+}
+
+// WithRequestID attaches a request correlation ID.
+func (e *CLIError) WithRequestID(requestID string) *CLIError {
+	e.RequestID = strings.TrimSpace(requestID)
 	return e
 }
 
@@ -84,30 +119,67 @@ func As(err error, target **CLIError) bool {
 // NotAuthenticated returns an error indicating missing credentials.
 func NotAuthenticated() *CLIError {
 	return &CLIError{
-		Message: "Not authenticated",
-		Hint:    "Run 'mush auth login' to authenticate",
-		Code:    ExitAuth,
+		Message:   "Not authenticated",
+		Hint:      fmt.Sprintf("Run 'mush auth login' to authenticate. See: %s", authDocURL),
+		Code:      ExitAuth,
+		ErrorCode: "ERR-AUTH-001",
 	}
 }
 
 // AuthFailed returns an error for failed authentication.
 func AuthFailed(cause error) *CLIError {
-	return &CLIError{
-		Message: "Authentication failed",
-		Hint:    "Check your API key or run 'mush auth login'",
-		Cause:   cause,
-		Code:    ExitAuth,
+	hint := "Check your API key or run 'mush auth login'"
+	errorCode := "ERR-AUTH-001"
+
+	switch {
+	case containsAny(strings.ToLower(errorString(cause)), "certificate", "x509", "tls"):
+		hint = fmt.Sprintf(
+			"TLS trust failed. If you are behind a corporate proxy, set MUSH_NETWORK_CA_CERT_FILE to your CA bundle. See: %s",
+			tlsDocURL,
+		)
+		errorCode = "ERR-NET-001"
+	case containsAny(strings.ToLower(errorString(cause)), "not yet valid", "clock", "expired"):
+		hint = fmt.Sprintf("Your system clock may be skewed. Sync your clock and retry. See: %s", clockDocURL)
+		errorCode = "ERR-NET-002"
+	default:
+		hint = fmt.Sprintf("%s. See: %s", hint, authDocURL)
 	}
+
+	return enrichFromCause(&CLIError{
+		Message:   "Authentication failed",
+		Hint:      hint,
+		Cause:     cause,
+		Code:      ExitAuth,
+		ErrorCode: errorCode,
+	})
 }
 
 // CredentialsInvalid returns an error for invalid stored credentials.
 func CredentialsInvalid(cause error) *CLIError {
-	return &CLIError{
-		Message: "Credentials invalid",
-		Hint:    "Run 'mush auth login' to re-authenticate",
-		Cause:   cause,
-		Code:    ExitAuth,
+	hint := "Run 'mush auth login' to re-authenticate"
+	errorCode := "ERR-AUTH-001"
+
+	switch {
+	case containsAny(strings.ToLower(errorString(cause)), "certificate", "x509", "tls"):
+		hint = fmt.Sprintf(
+			"TLS trust failed. If you are behind a corporate proxy, set MUSH_NETWORK_CA_CERT_FILE to your CA bundle. See: %s",
+			tlsDocURL,
+		)
+		errorCode = "ERR-NET-001"
+	case containsAny(strings.ToLower(errorString(cause)), "not yet valid", "clock", "expired"):
+		hint = fmt.Sprintf("Your system clock may be skewed. Sync your clock and retry. See: %s", clockDocURL)
+		errorCode = "ERR-NET-002"
+	default:
+		hint = fmt.Sprintf("%s. See: %s", hint, authDocURL)
 	}
+
+	return enrichFromCause(&CLIError{
+		Message:   "Credentials invalid",
+		Hint:      hint,
+		Cause:     cause,
+		Code:      ExitAuth,
+		ErrorCode: errorCode,
+	})
 }
 
 // CannotPrompt returns an error when interactive prompts are unavailable.
@@ -171,9 +243,10 @@ func NoInstructionsForQueue(queueName, queueSlug string) *CLIError {
 	}
 
 	return &CLIError{
-		Message: fmt.Sprintf("No active instructions found for queue: %s", label),
-		Hint:    "Create and activate an instruction for this queue in the console, then rerun 'mush worker start'",
-		Code:    ExitConfig,
+		Message:   fmt.Sprintf("No active instructions found for queue: %s", label),
+		Hint:      fmt.Sprintf("Create and activate an instruction for this queue in the console, then rerun 'mush worker start'. See: %s", queueDocURL),
+		Code:      ExitConfig,
+		ErrorCode: "ERR-QUEUE-001",
 	}
 }
 
@@ -206,12 +279,12 @@ func APIKeyEmpty() *CLIError {
 
 // ConfigFailed returns an error for configuration save failures.
 func ConfigFailed(operation string, cause error) *CLIError {
-	return &CLIError{
+	return enrichFromCause(&CLIError{
 		Message: fmt.Sprintf("Failed to %s", operation),
 		Hint:    "Check file permissions for your Mush config directory or run 'mush doctor'",
 		Cause:   cause,
 		Code:    ExitConfig,
-	}
+	})
 }
 
 // JobNotFound returns an error for an unknown job.
@@ -225,12 +298,12 @@ func JobNotFound(jobID string) *CLIError {
 
 // WorkerRegistrationFailed returns an error when worker registration fails.
 func WorkerRegistrationFailed(cause error) *CLIError {
-	return &CLIError{
+	return enrichFromCause(&CLIError{
 		Message: "Failed to register worker",
 		Hint:    "Check your network connection and API credentials",
 		Cause:   cause,
 		Code:    ExitNetwork,
-	}
+	})
 }
 
 // ExecutionTimedOut returns an error for execution timeout with context.
@@ -398,4 +471,36 @@ func containsAny(s string, substrings ...string) bool {
 	}
 
 	return false
+}
+
+func errorString(err error) string {
+	if err == nil {
+		return ""
+	}
+
+	return err.Error()
+}
+
+type requestIDCause interface {
+	RequestIDValue() string
+}
+
+type traceIDCause interface {
+	TraceIDValue() string
+}
+
+func enrichFromCause(err *CLIError) *CLIError {
+	if err == nil || err.Cause == nil {
+		return err
+	}
+
+	if reqCause, ok := err.Cause.(requestIDCause); ok {
+		err.RequestID = strings.TrimSpace(reqCause.RequestIDValue())
+	}
+
+	if traceCause, ok := err.Cause.(traceIDCause); ok {
+		err.TraceID = strings.TrimSpace(traceCause.TraceIDValue())
+	}
+
+	return err
 }

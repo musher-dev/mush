@@ -21,7 +21,7 @@ func TestBundleLoadRequiresHarness(t *testing.T) {
 	out.NoInput = true
 
 	cmd := newBundleLoadCmd()
-	cmd.SetArgs([]string{"my-bundle"})
+	cmd.SetArgs([]string{"acme/my-bundle"})
 	cmd.SetContext(out.WithContext(t.Context()))
 
 	err := cmd.Execute()
@@ -40,7 +40,7 @@ func TestBundleLoadRequiresTTY(t *testing.T) {
 	out.NoInput = true
 
 	cmd := newBundleLoadCmd()
-	cmd.SetArgs([]string{"my-bundle", "--harness", "bash"})
+	cmd.SetArgs([]string{"acme/my-bundle", "--harness", "claude"})
 	cmd.SetContext(out.WithContext(t.Context()))
 
 	err := cmd.Execute()
@@ -93,7 +93,7 @@ func TestBundleInstallAnonymousFallbackShowsAuthHint(t *testing.T) {
 	out.NoInput = true
 
 	cmd := newBundleInstallCmd()
-	cmd.SetArgs([]string{"private-bundle:1.0.0", "--harness", "claude"})
+	cmd.SetArgs([]string{"pub/private-bundle:1.0.0", "--harness", "claude"})
 	cmd.SetContext(out.WithContext(t.Context()))
 
 	err := cmd.Execute()
@@ -136,7 +136,7 @@ func TestBundleInstallAnonymousNon403ErrorNoAuthHint(t *testing.T) {
 	out.NoInput = true
 
 	cmd := newBundleInstallCmd()
-	cmd.SetArgs([]string{"some-bundle:1.0.0", "--harness", "claude"})
+	cmd.SetArgs([]string{"pub/some-bundle:1.0.0", "--harness", "claude"})
 	cmd.SetContext(out.WithContext(t.Context()))
 
 	err := cmd.Execute()
