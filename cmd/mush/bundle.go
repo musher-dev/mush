@@ -85,6 +85,15 @@ into a temporary directory. The session is interactive — exit the harness
 				}
 			}
 
+			// Check for TTY before anything else — it's the most fundamental requirement.
+			if !out.Terminal().IsTTY {
+				return &clierrors.CLIError{
+					Message: "Bundle load requires a terminal (TTY)",
+					Hint:    "Run this command directly in a terminal, not in a pipe or script",
+					Code:    clierrors.ExitUsage,
+				}
+			}
+
 			normalized, err := normalizeHarnessType(harnessType)
 			if err != nil {
 				return err
@@ -93,15 +102,6 @@ into a temporary directory. The session is interactive — exit the harness
 			info, ok := harness.Lookup(normalized)
 			if !ok || !info.Available() {
 				return clierrors.HarnessNotAvailable(normalized)
-			}
-
-			// Check for TTY.
-			if !out.Terminal().IsTTY {
-				return &clierrors.CLIError{
-					Message: "Bundle load requires a terminal (TTY)",
-					Hint:    "Run this command directly in a terminal, not in a pipe or script",
-					Code:    clierrors.ExitUsage,
-				}
 			}
 
 			// Authenticate (anonymous fallback for public bundles).
