@@ -24,6 +24,7 @@ import (
 	clierrors "github.com/musher-dev/mush/internal/errors"
 	"github.com/musher-dev/mush/internal/observability"
 	"github.com/musher-dev/mush/internal/output"
+	"github.com/musher-dev/mush/internal/prompt"
 	"github.com/musher-dev/mush/internal/tui/nav"
 	"github.com/musher-dev/mush/internal/update"
 )
@@ -150,7 +151,7 @@ func renderHealthProbe(out *output.Writer, cliErr *clierrors.CLIError) {
 	apiURL := cfg.APIURL()
 
 	// Use Background context — the command context may already be canceled.
-	result := client.ProbeHealth(context.Background(), apiURL)
+	result := client.ProbeHealth(context.Background(), apiURL, cfg.CACertFile())
 
 	if result.Reachable {
 		if cliErr.Hint != "" {
@@ -671,12 +672,48 @@ func showUpdateNotice(out *output.Writer, currentVersion string) {
 	}
 }
 
-// handleHarnessInstall runs install commands for missing harnesses.
+// handleHarnessInstall runs install commands for missing harnesses after user confirmation.
 func handleHarnessInstall(ctx context.Context, out *output.Writer, result *nav.Result) error {
+	if len(result.InstallCommands) == 0 {
+		return nil
+	}
+
+	out.Print("\nThe following commands will be run to install the harness:\n")
+
 	for _, args := range result.InstallCommands {
+		if len(args) == 0 {
+			continue
+		}
+
+		out.Print("  %s\n", strings.Join(args, " "))
+	}
+
+	out.Print("\n")
+
+	p := prompt.New(out)
+	if !p.CanPrompt() {
+		out.Muted("Non-interactive mode — run the commands above manually to install.")
+		return nil
+	}
+
+	ok, promptErr := p.Confirm("Run these install commands?", false)
+	if promptErr != nil {
+		return fmt.Errorf("install confirmation: %w", promptErr) //nolint:rawerror // not a CLIError context
+	}
+
+	if !ok {
+		out.Muted("Install skipped. Run the commands above manually to install.")
+		return nil
+	}
+
+	for _, args := range result.InstallCommands {
+		if len(args) == 0 {
+			continue
+		}
+
 		out.Info("Installing: %s", strings.Join(args, " "))
 
-		cmd := exec.CommandContext(ctx, args[0], args[1:]...) //nolint:gosec // args from embedded YAML
+		cmd := exec.CommandContext(ctx, args[0], args[1:]...) //nolint:gosec // args from embedded provider YAML
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 

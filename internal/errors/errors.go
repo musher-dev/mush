@@ -494,11 +494,13 @@ func enrichFromCause(err *CLIError) *CLIError {
 		return err
 	}
 
-	if reqCause, ok := err.Cause.(requestIDCause); ok {
+	var reqCause requestIDCause
+	if errors.As(err.Cause, &reqCause) {
 		err.RequestID = strings.TrimSpace(reqCause.RequestIDValue())
 	}
 
-	if traceCause, ok := err.Cause.(traceIDCause); ok {
+	var traceCause traceIDCause
+	if errors.As(err.Cause, &traceCause) {
 		err.TraceID = strings.TrimSpace(traceCause.TraceIDValue())
 	}
 

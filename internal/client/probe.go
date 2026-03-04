@@ -2,11 +2,14 @@ package client
 
 import (
 	"context"
+	"crypto/tls"
 	"crypto/x509"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 )
@@ -38,7 +41,10 @@ type ProbeResult struct {
 // Any HTTP response (including 4xx/5xx) counts as reachable — only
 // network-level failures (DNS, TCP, TLS) are treated as unreachable.
 // The probe uses its own http.Client with no auth and a short timeout.
-func ProbeHealth(ctx context.Context, baseURL string) *ProbeResult {
+// An optional caCertFile can be provided to honor custom CA bundles
+// (e.g. from network.ca_cert_file config), ensuring probe TLS behavior
+// matches the main API client.
+func ProbeHealth(ctx context.Context, baseURL string, caCertFile ...string) *ProbeResult {
 	parsed, err := url.Parse(baseURL)
 	if err != nil {
 		return &ProbeResult{
@@ -63,9 +69,20 @@ func ProbeHealth(ctx context.Context, baseURL string) *ProbeResult {
 		}
 	}
 
+	cloned := transport.Clone()
+
+	if len(caCertFile) > 0 {
+		caPath := strings.TrimSpace(caCertFile[0])
+		if caPath != "" {
+			if tlsCfg, tlsErr := buildProbeTLSConfig(caPath); tlsErr == nil {
+				cloned.TLSClientConfig = tlsCfg
+			}
+		}
+	}
+
 	httpClient := &http.Client{
 		Timeout:   probeTimeout,
-		Transport: transport.Clone(),
+		Transport: cloned,
 		CheckRedirect: func(*http.Request, []*http.Request) error {
 			return http.ErrUseLastResponse
 		},
@@ -165,4 +182,25 @@ func summarizeNetworkError(err error) string {
 	}
 
 	return msg
+}
+
+// buildProbeTLSConfig creates a TLS config that appends custom CA certs
+// to the system pool — mirroring what NewInstrumentedHTTPClient does.
+func buildProbeTLSConfig(caPath string) (*tls.Config, error) {
+	pemData, err := os.ReadFile(caPath) //nolint:gosec // path is user-provided config
+	if err != nil {
+		return nil, fmt.Errorf("read probe CA cert: %w", err)
+	}
+
+	pool, err := x509.SystemCertPool()
+	if err != nil || pool == nil {
+		pool = x509.NewCertPool()
+	}
+
+	pool.AppendCertsFromPEM(pemData)
+
+	return &tls.Config{
+		MinVersion: tls.VersionTLS12,
+		RootCAs:    pool,
+	}, nil
 }

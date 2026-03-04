@@ -108,7 +108,7 @@ func checkAPIConnectivity(ctx context.Context) Result {
 	cfg := config.Load()
 	apiURL := cfg.APIURL()
 
-	probe := client.ProbeHealth(ctx, apiURL)
+	probe := client.ProbeHealth(ctx, apiURL, cfg.CACertFile())
 	if probe.Reachable {
 		return Result{
 			Status:  StatusPass,
@@ -167,7 +167,7 @@ func checkAuthentication(ctx context.Context) Result {
 func checkClockSkew(ctx context.Context) Result {
 	cfg := config.Load()
 
-	probe := client.ProbeHealth(ctx, cfg.APIURL())
+	probe := client.ProbeHealth(ctx, cfg.APIURL(), cfg.CACertFile())
 	if !probe.Reachable {
 		return Result{
 			Status:  StatusWarn,
