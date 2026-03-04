@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"time"
 
 	"github.com/musher-dev/mush/internal/client"
 )
@@ -16,6 +17,7 @@ type CachedBundle struct {
 	Slug       string
 	Version    string
 	AssetCount int
+	ModTime    time.Time // modification time of the cache directory
 }
 
 // ListCached returns all cached bundle versions.
@@ -75,11 +77,17 @@ func ListCached() ([]CachedBundle, error) {
 					continue
 				}
 
+				var modTime time.Time
+				if info, statErr := os.Stat(versionPath); statErr == nil {
+					modTime = info.ModTime()
+				}
+
 				out = append(out, CachedBundle{
 					Namespace:  nsEntry.Name(),
 					Slug:       slugDir.Name(),
 					Version:    versionDir.Name(),
 					AssetCount: len(manifest.Manifest.Layers),
+					ModTime:    modTime,
 				})
 			}
 		}
@@ -98,4 +106,19 @@ func ListCached() ([]CachedBundle, error) {
 	})
 
 	return out, nil
+}
+
+// ListCachedByRecency returns cached bundles sorted by directory modification
+// time (most recent first).
+func ListCachedByRecency() ([]CachedBundle, error) {
+	all, err := ListCached()
+	if err != nil {
+		return nil, err
+	}
+
+	sort.Slice(all, func(i, j int) bool {
+		return all[i].ModTime.After(all[j].ModTime)
+	})
+
+	return all, nil
 }

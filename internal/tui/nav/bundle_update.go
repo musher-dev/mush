@@ -2,13 +2,33 @@ package nav
 
 import (
 	"github.com/charmbracelet/bubbles/key"
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/musher-dev/mush/internal/bundle"
 )
 
+// handleBundleListLoaded processes the async-loaded recent/installed bundle lists.
+func (m *model) handleBundleListLoaded(msg bundleListLoadedMsg) (tea.Model, tea.Cmd) {
+	m.bundleInput.recentBundles = msg.recent
+	m.bundleInput.installedBundles = msg.installed
+	m.bundleInput.listLoaded = true
+
+	return m, nil
+}
+
 // handleBundleInputKey processes key events on the bundle input screen.
 func (m *model) handleBundleInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Hotkeys only work when text input is NOT focused.
+	if m.bundleInput.focusArea != bundleFocusInput && msg.Type == tea.KeyRunes && len(msg.Runes) == 1 {
+		switch msg.Runes[0] {
+		case 'f':
+			return m.activateBundleHubLink()
+		case 'n':
+			return m.activateBareRun()
+		}
+	}
+
 	switch {
 	case key.Matches(msg, m.keys.Back):
 		m.popScreen()
@@ -16,20 +36,37 @@ func (m *model) handleBundleInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case key.Matches(msg, m.keys.Tab):
-		m.bundleInput.focusOnInput = !m.bundleInput.focusOnInput
-		if m.bundleInput.focusOnInput {
-			m.bundleInput.textInput.Focus()
-		} else {
+		// Cycle: input → list → harness → input.
+		switch m.bundleInput.focusArea {
+		case bundleFocusInput:
+			m.bundleInput.focusArea = bundleFocusList
 			m.bundleInput.textInput.Blur()
+		case bundleFocusList:
+			m.bundleInput.focusArea = bundleFocusHarness
+		default:
+			m.bundleInput.focusArea = bundleFocusInput
+			m.bundleInput.textInput.Focus()
 		}
 
 		return m, nil
 
 	case key.Matches(msg, m.keys.Select):
-		return m.submitBundleInput()
+		return m.submitBundleSelection()
 
 	case key.Matches(msg, m.keys.Down):
-		if !m.bundleInput.focusOnInput {
+		switch m.bundleInput.focusArea {
+		case bundleFocusList:
+			maxIdx := bundleListLen(m) - 1
+			if maxIdx < 0 {
+				maxIdx = 0
+			}
+
+			if m.bundleInput.listCursor < maxIdx {
+				m.bundleInput.listCursor++
+			}
+
+			return m, nil
+		case bundleFocusHarness:
 			if m.bundleInput.harnessCur < len(m.harnesses)-1 {
 				m.bundleInput.harnessCur++
 			}
@@ -38,7 +75,14 @@ func (m *model) handleBundleInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case key.Matches(msg, m.keys.Up):
-		if !m.bundleInput.focusOnInput {
+		switch m.bundleInput.focusArea {
+		case bundleFocusList:
+			if m.bundleInput.listCursor > 0 {
+				m.bundleInput.listCursor--
+			}
+
+			return m, nil
+		case bundleFocusHarness:
 			if m.bundleInput.harnessCur > 0 {
 				m.bundleInput.harnessCur--
 			}
@@ -48,7 +92,7 @@ func (m *model) handleBundleInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	// Forward to text input if focused.
-	if m.bundleInput.focusOnInput {
+	if m.bundleInput.focusArea == bundleFocusInput {
 		var cmd tea.Cmd
 
 		m.bundleInput.textInput, cmd = m.bundleInput.textInput.Update(msg)
@@ -57,6 +101,93 @@ func (m *model) handleBundleInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
+}
+
+// submitBundleSelection handles enter on the bundle input screen.
+// Delegates to the appropriate handler depending on what's selected.
+func (m *model) submitBundleSelection() (tea.Model, tea.Cmd) {
+	// If text input is focused, submit the typed slug.
+	if m.bundleInput.focusArea == bundleFocusInput {
+		return m.submitBundleInput()
+	}
+
+	// Otherwise, check what list item is selected.
+	cursor := m.bundleInput.listCursor
+	recentLen := len(m.bundleInput.recentBundles)
+	installedLen := len(m.bundleInput.installedBundles)
+
+	// Recent bundle selected.
+	if cursor < recentLen {
+		r := m.bundleInput.recentBundles[cursor]
+		m.bundleInput.textInput.SetValue(r.namespace + "/" + r.slug + ":" + r.version)
+		m.bundleInput.focusArea = bundleFocusInput
+		m.bundleInput.textInput.Focus()
+
+		return m.submitBundleInput()
+	}
+
+	cursor -= recentLen
+
+	// Installed bundle selected.
+	if cursor < installedLen {
+		b := m.bundleInput.installedBundles[cursor]
+		m.bundleInput.textInput.SetValue(b.slug)
+		m.bundleInput.focusArea = bundleFocusInput
+		m.bundleInput.textInput.Focus()
+
+		return m.submitBundleInput()
+	}
+
+	cursor -= installedLen
+
+	// Action links.
+	if cursor == 0 {
+		return m.activateBundleHubLink()
+	}
+
+	return m.activateBareRun()
+}
+
+// activateBundleHubLink navigates to the hub explore screen from the bundle input.
+func (m *model) activateBundleHubLink() (tea.Model, tea.Cmd) {
+	searchField := textinput.New()
+	searchField.Placeholder = "Search bundles..."
+	searchField.CharLimit = 128
+	searchField.Width = m.styles.hubWidth - 12 //nolint:mnd // panel padding + border
+	searchField.Focus()
+
+	m.hubExplore = hubExploreState{
+		searchInput: searchField,
+		categoryCur: -1,
+		loading:     true,
+		spinner:     m.hubExplore.spinner,
+		searchID:    m.hubExplore.searchID + 1,
+	}
+
+	m.pushScreen(screenHubExplore)
+
+	baseURL := m.apiBaseURL()
+
+	return m, tea.Batch(
+		m.hubExplore.spinner.Tick,
+		cmdSearchHub(baseURL, "", "", "trending", hubSearchLimit, "", false, m.hubExplore.searchID),
+		cmdListHubCategories(baseURL),
+	)
+}
+
+// activateBareRun exits the TUI with a bare harness run (no bundle).
+func (m *model) activateBareRun() (tea.Model, tea.Cmd) {
+	harness := ""
+	if len(m.harnesses) > 0 {
+		harness = m.harnesses[m.bundleInput.harnessCur].name
+	}
+
+	m.result = &Result{
+		Action:  ActionBareRun,
+		Harness: harness,
+	}
+
+	return m, tea.Quit
 }
 
 // submitBundleInput validates the input and starts the resolve flow.

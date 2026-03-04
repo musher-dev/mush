@@ -25,8 +25,8 @@ func TestHistoryHotkeyActivatesScreen(t *testing.T) {
 		t.Error("history.loading should be true after hotkey activation")
 	}
 
-	if mdl.cursor != 2 {
-		t.Errorf("cursor = %d, want 2", mdl.cursor)
+	if mdl.cursor != 5 {
+		t.Errorf("cursor = %d, want 5 (View history)", mdl.cursor)
 	}
 }
 

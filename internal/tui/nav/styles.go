@@ -82,6 +82,9 @@ type theme struct {
 	panelBorder       lipgloss.Style
 	panelBorderActive lipgloss.Style
 
+	// Section headers (menu dividers)
+	sectionHeader lipgloss.Style
+
 	// Context panel
 	sectionTitle lipgloss.Style
 
@@ -228,6 +231,10 @@ func newTheme(width int) theme {
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(colorBorderAct).
 			Padding(1, 2),
+
+		sectionHeader: lipgloss.NewStyle().
+			Foreground(colorMuted).
+			Bold(true),
 
 		sectionTitle: lipgloss.NewStyle().
 			Foreground(colorTextSec).

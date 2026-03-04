@@ -23,12 +23,12 @@ func TestNewModel(t *testing.T) {
 
 	mdl := testModel()
 
-	if mdl.cursor != 0 {
-		t.Errorf("cursor = %d, want 0", mdl.cursor)
+	if mdl.cursor != 1 {
+		t.Errorf("cursor = %d, want 1 (skip first section header)", mdl.cursor)
 	}
 
-	if len(mdl.items) != 5 {
-		t.Errorf("items = %d, want 5", len(mdl.items))
+	if len(mdl.items) != 6 {
+		t.Errorf("items = %d, want 6 (4 selectable + 2 section headers)", len(mdl.items))
 	}
 
 	if mdl.activeScreen != screenHome {
@@ -49,20 +49,31 @@ func TestNavigateDown(t *testing.T) {
 
 	mdl := testModel()
 
-	// Move down through all items.
-	for idx := 0; idx < len(mdl.items)-1; idx++ {
-		mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyDown})
+	// Cursor starts at 1 (first selectable item, "Run harness").
+	// Down should go to 2 ("Find a bundle"), then skip section header at 3, land on 4 ("Start runner"), then 5 ("View history").
+	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyDown})
+
+	if mdl.cursor != 2 {
+		t.Errorf("cursor = %d, want 2 (Find a bundle)", mdl.cursor)
 	}
 
-	if mdl.cursor != len(mdl.items)-1 {
-		t.Errorf("cursor = %d, want %d", mdl.cursor, len(mdl.items)-1)
+	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyDown})
+
+	if mdl.cursor != 4 {
+		t.Errorf("cursor = %d, want 4 (Start runner, skipped section header)", mdl.cursor)
+	}
+
+	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyDown})
+
+	if mdl.cursor != 5 {
+		t.Errorf("cursor = %d, want 5 (View history)", mdl.cursor)
 	}
 
 	// Pressing down again should not go past the last item.
 	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyDown})
 
-	if mdl.cursor != len(mdl.items)-1 {
-		t.Errorf("cursor should clamp at %d, got %d", len(mdl.items)-1, mdl.cursor)
+	if mdl.cursor != 5 {
+		t.Errorf("cursor should clamp at 5, got %d", mdl.cursor)
 	}
 }
 
@@ -71,19 +82,35 @@ func TestNavigateUp(t *testing.T) {
 
 	mdl := testModel()
 
-	// Pressing up at 0 should stay at 0.
+	// Cursor starts at 1. Pressing up should skip section header at 0, stay at 1.
 	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyUp})
 
-	if mdl.cursor != 0 {
-		t.Errorf("cursor = %d, want 0", mdl.cursor)
+	if mdl.cursor != 1 {
+		t.Errorf("cursor = %d, want 1 (no selectable item above)", mdl.cursor)
 	}
 
-	// Move down then back up.
+	// Move down to 2 ("Find a bundle"), then up to 1 ("Run harness").
 	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyDown})
 	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyUp})
 
-	if mdl.cursor != 0 {
-		t.Errorf("cursor = %d, want 0", mdl.cursor)
+	if mdl.cursor != 1 {
+		t.Errorf("cursor = %d, want 1", mdl.cursor)
+	}
+}
+
+func TestNavigateUpSkipsSection(t *testing.T) {
+	t.Parallel()
+
+	mdl := testModel()
+
+	// Move to "Start runner" (index 4, past the OPERATE section header at 3).
+	mdl.cursor = 4
+
+	// Up should skip section header at 3, land on 2 ("Find a bundle").
+	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyUp})
+
+	if mdl.cursor != 2 {
+		t.Errorf("cursor = %d, want 2 (skipped OPERATE section header)", mdl.cursor)
 	}
 }
 
@@ -92,50 +119,61 @@ func TestNavigateVimKeys(t *testing.T) {
 
 	mdl := testModel()
 
-	// j moves down.
+	// Cursor starts at 1. j moves down to 2.
 	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
 
-	if mdl.cursor != 1 {
-		t.Errorf("j: cursor = %d, want 1", mdl.cursor)
+	if mdl.cursor != 2 {
+		t.Errorf("j: cursor = %d, want 2", mdl.cursor)
 	}
 
-	// k moves up.
+	// k moves up to 1.
 	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
 
-	if mdl.cursor != 0 {
-		t.Errorf("k: cursor = %d, want 0", mdl.cursor)
+	if mdl.cursor != 1 {
+		t.Errorf("k: cursor = %d, want 1", mdl.cursor)
 	}
 }
 
-func TestHotkeySelectsBundleInput(t *testing.T) {
+func TestHotkeySelectsRunHarness(t *testing.T) {
 	t.Parallel()
 
 	mdl := testModel()
 
-	// 'b' should jump to bundle input screen.
-	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}})
+	// 'r' should jump to bundle input screen ("Run harness").
+	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
 
 	if mdl.activeScreen != screenBundleInput {
 		t.Errorf("activeScreen = %d, want screenBundleInput", mdl.activeScreen)
 	}
 
-	if mdl.cursor != 0 {
-		t.Errorf("cursor = %d, want 0 (bundle is first item)", mdl.cursor)
+	if mdl.cursor != 1 {
+		t.Errorf("cursor = %d, want 1 (Run harness)", mdl.cursor)
 	}
 }
 
-func TestHotkeyExploreHubScreen(t *testing.T) {
+func TestHotkeyFindABundle(t *testing.T) {
 	t.Parallel()
 
 	mdl := testModel()
-	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
 
 	if mdl.activeScreen != screenHubExplore {
 		t.Errorf("activeScreen = %d, want screenHubExplore", mdl.activeScreen)
 	}
 
-	if mdl.cursor != 4 {
-		t.Errorf("cursor = %d, want 4", mdl.cursor)
+	if mdl.cursor != 2 {
+		t.Errorf("cursor = %d, want 2 (Find a bundle)", mdl.cursor)
+	}
+}
+
+func TestHotkeyCommaOpensSettings(t *testing.T) {
+	t.Parallel()
+
+	mdl := testModel()
+	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{','}})
+
+	if mdl.activeScreen != screenStatus {
+		t.Errorf("activeScreen = %d, want screenStatus", mdl.activeScreen)
 	}
 }
 
@@ -144,19 +182,17 @@ func TestEscReturnsHome(t *testing.T) {
 
 	mdl := testModel()
 
-	// Move to item 2 (history), select, then esc.
-	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyDown})
-	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyDown})
-	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyEnter})
+	// Navigate to "View history" (index 5) via hotkey, then esc.
+	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'h'}})
 	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyEscape})
 
 	if mdl.activeScreen != screenHome {
 		t.Errorf("activeScreen = %d, want screenHome", mdl.activeScreen)
 	}
 
-	// Cursor position should be preserved.
-	if mdl.cursor != 2 {
-		t.Errorf("cursor = %d, want 2 (preserved)", mdl.cursor)
+	// Cursor position should be preserved at history item.
+	if mdl.cursor != 5 {
+		t.Errorf("cursor = %d, want 5 (preserved at View history)", mdl.cursor)
 	}
 }
 
@@ -385,11 +421,34 @@ func TestMenuItemHotkeys(t *testing.T) {
 
 	mdl := testModel()
 
-	expected := []rune{'b', 'w', 'h', 's', 'e'}
+	// Section headers have zero-value hotkey (0), selectable items have their hotkey.
+	expected := []rune{0, 'r', 'f', 0, 'w', 'h'}
 	for idx, item := range mdl.items {
 		if item.hotkey != expected[idx] {
 			t.Errorf("item %d hotkey = %c, want %c", idx, item.hotkey, expected[idx])
 		}
+	}
+}
+
+func TestSectionHeadersAreMarked(t *testing.T) {
+	t.Parallel()
+
+	mdl := testModel()
+
+	if !mdl.items[0].isSection {
+		t.Error("item 0 should be a section header (DEVELOP)")
+	}
+
+	if mdl.items[1].isSection {
+		t.Error("item 1 should not be a section header (Run harness)")
+	}
+
+	if !mdl.items[3].isSection {
+		t.Error("item 3 should be a section header (OPERATE)")
+	}
+
+	if mdl.items[4].isSection {
+		t.Error("item 4 should not be a section header (Start runner)")
 	}
 }
 

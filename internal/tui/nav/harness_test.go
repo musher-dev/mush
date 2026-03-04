@@ -32,8 +32,8 @@ func TestHarnessPanelRendersInTwoPanel(t *testing.T) {
 	mdl := testModelWithHarnesses()
 	view := mdl.View()
 
-	if !strings.Contains(view, "Harnesses") {
-		t.Error("two-panel view should contain 'Harnesses' panel title")
+	if !strings.Contains(view, "Available harnesses") {
+		t.Error("two-panel view should contain 'Available harnesses' panel title")
 	}
 
 	if !strings.Contains(view, "Claude Code") {
@@ -54,8 +54,8 @@ func TestHarnessPanelHiddenInSinglePanel(t *testing.T) {
 
 	view := mdl.View()
 
-	if strings.Contains(view, "Harnesses") {
-		t.Error("single-panel view should not contain 'Harnesses' panel")
+	if strings.Contains(view, "Available harnesses") {
+		t.Error("single-panel view should not contain 'Available harnesses' panel")
 	}
 }
 
@@ -67,8 +67,8 @@ func TestHarnessPanelHiddenWhenNoStatuses(t *testing.T) {
 
 	view := mdl.View()
 
-	if strings.Contains(view, "Harnesses") {
-		t.Error("view should not contain 'Harnesses' panel when no statuses")
+	if strings.Contains(view, "Available harnesses") {
+		t.Error("view should not contain 'Available harnesses' panel when no statuses")
 	}
 }
 
@@ -417,8 +417,8 @@ func TestMenuHotkeysWorkFromHarnessFocus(t *testing.T) {
 	mdl := testModelWithHarnesses()
 	mdl.homeFocusArea = 1
 
-	// 'b' should still activate bundle input even when harness panel is focused.
-	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}})
+	// 'r' should still activate bundle input (Run harness) even when harness panel is focused.
+	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
 
 	if mdl.activeScreen != screenBundleInput {
 		t.Errorf("activeScreen = %d, want screenBundleInput", mdl.activeScreen)

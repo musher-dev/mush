@@ -9,7 +9,7 @@ import (
 
 // renderHubExplore renders the hub exploration screen.
 func renderHubExplore(mdl *model) string {
-	crumbs := renderBreadcrumb(&mdl.styles, []string{"Home", "Explore Hub"})
+	crumbs := renderBreadcrumb(&mdl.styles, []string{"Home", "Find a Bundle"})
 
 	// Search input.
 	searchLabel := mdl.styles.hintKey.Render("/") + " "
@@ -40,7 +40,7 @@ func renderHubExplore(mdl *model) string {
 		resultsView,
 	)
 
-	panel := renderPanel(&mdl.styles, "Explore Hub", body, mdl.styles.hubWidth, true)
+	panel := renderPanel(&mdl.styles, "Find a Bundle", body, mdl.styles.hubWidth, true)
 
 	footer := renderKeyHints(&mdl.styles, []hint{
 		{key: "/", desc: "search"},
@@ -170,7 +170,7 @@ func renderHubResultItem(mdl *model, idx int) string {
 
 // renderHubDetail renders the hub bundle detail screen.
 func renderHubDetail(mdl *model) string {
-	crumbs := []string{"Home", "Explore Hub"}
+	crumbs := []string{"Home", "Find a Bundle"}
 
 	if mdl.hubDetail.detail != nil {
 		name := mdl.hubDetail.detail.DisplayName

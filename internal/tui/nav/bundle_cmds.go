@@ -60,7 +60,52 @@ type bundleDownloadErrorMsg struct {
 	harness string
 }
 
+// bundleListLoadedMsg carries the async-loaded recent and installed bundle lists.
+type bundleListLoadedMsg struct {
+	recent    []recentBundleEntry
+	installed []installedBundleEntry
+}
+
 // --- Commands ---
+
+// cmdLoadBundleLists loads recent cached bundles and installed bundles in the working directory.
+func cmdLoadBundleLists(workDir string) tea.Cmd {
+	return func() tea.Msg {
+		var recent []recentBundleEntry
+
+		cached, err := bundle.ListCachedByRecency()
+		if err == nil {
+			for _, c := range cached {
+				recent = append(recent, recentBundleEntry{
+					namespace: c.Namespace,
+					slug:      c.Slug,
+					version:   c.Version,
+					timeAgo:   formatTimeAgo(c.ModTime),
+				})
+			}
+		}
+
+		var installed []installedBundleEntry
+
+		if workDir != "" {
+			bundles, loadErr := bundle.LoadInstalled(workDir)
+			if loadErr == nil {
+				for _, b := range bundles {
+					installed = append(installed, installedBundleEntry{
+						slug:    b.Slug,
+						version: b.Version,
+						harness: b.Harness,
+					})
+				}
+			}
+		}
+
+		return bundleListLoadedMsg{
+			recent:    recent,
+			installed: installed,
+		}
+	}
+}
 
 // cmdResolveBundle resolves a bundle slug/version via the API.
 func cmdResolveBundle(c *client.Client, namespace, slug, version, harness string) tea.Cmd {

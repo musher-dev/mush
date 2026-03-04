@@ -14,7 +14,7 @@ func TestStatusHotkeyActivatesScreen(t *testing.T) {
 	t.Parallel()
 
 	mdl := testModel()
-	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{','}})
 
 	if mdl.activeScreen != screenStatus {
 		t.Errorf("activeScreen = %d, want screenStatus", mdl.activeScreen)
@@ -28,8 +28,9 @@ func TestStatusHotkeyActivatesScreen(t *testing.T) {
 		t.Error("status.harnessLoading should be true after hotkey activation")
 	}
 
-	if mdl.cursor != 3 {
-		t.Errorf("cursor = %d, want 3", mdl.cursor)
+	// Comma hotkey activates status screen without changing cursor position.
+	if mdl.cursor != 1 {
+		t.Errorf("cursor = %d, want 1 (unchanged by comma hotkey)", mdl.cursor)
 	}
 }
 

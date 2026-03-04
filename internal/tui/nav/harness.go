@@ -18,7 +18,7 @@ const harnessExpandIndicator = "\u25BC " // ▼
 func renderHarnessPanel(mdl *model, width int, active bool) string {
 	content := renderHarnessPanelContent(mdl, width)
 
-	return renderPanel(&mdl.styles, "Harnesses", content, width, active)
+	return renderPanel(&mdl.styles, "Available harnesses", content, width, active)
 }
 
 // renderHarnessPanelContent renders the inner content of the harness panel.
@@ -193,21 +193,6 @@ func harnessInstallCommands(name string) [][]string {
 	return [][]string{spec.Status.InstallCommand}
 }
 
-// harnessPanelWidth computes the width of the harness panel for two-panel mode.
-func harnessPanelWidth(totalWidth, menuWidth int) int {
-	// Gap of 2 between menu and harness panel.
-	available := totalWidth - menuWidth - 6 //nolint:mnd // gap(2) + centering margin(4)
-	if available < 30 {
-		return 30
-	}
-
-	if available > 52 {
-		return 52
-	}
-
-	return available
-}
-
 // harnessQuickStatusVersion returns a cleaned version string for display.
 // Handles outputs like "Claude Code 2.1.68 (Claude Code)" → "2.1.68"
 // and "codex-cli 0.106.0" → "0.106.0".
@@ -229,8 +214,4 @@ func harnessQuickStatusVersion(raw string) string {
 	}
 
 	return v
-}
-
-func formatHarnessPanelWidth(mdl *model) int {
-	return harnessPanelWidth(mdl.width, mdl.styles.menuWidth)
 }

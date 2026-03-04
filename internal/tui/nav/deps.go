@@ -24,6 +24,8 @@ const (
 	ActionWorkerStart
 	// ActionHarnessInstall means the user wants to install missing harnesses.
 	ActionHarnessInstall
+	// ActionBareRun means the user wants to run a harness without a bundle.
+	ActionBareRun
 )
 
 // Result carries the TUI's chosen action and associated parameters back to the caller.

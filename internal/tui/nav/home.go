@@ -30,9 +30,10 @@ func renderHomeTwoPanel(mdl *model) string {
 	leftPanel := renderPanel(&mdl.styles, "mush", leftContent, mdl.styles.menuWidth, menuActive)
 
 	// Build the top block: menu panel + optional harness panel side by side.
+	// Both panels use the same width for visual alignment.
 	var topPanels string
 
-	hpWidth := formatHarnessPanelWidth(mdl)
+	hpWidth := mdl.styles.menuWidth
 	if len(mdl.homeHarness.statuses) > 0 || mdl.homeHarness.loading {
 		harnessActive := mdl.homeFocusArea == 1
 		hPanel := renderHarnessPanel(mdl, hpWidth, harnessActive)
@@ -43,7 +44,8 @@ func renderHomeTwoPanel(mdl *model) string {
 
 	footer := renderHomeFooter(mdl)
 
-	ctxWidth := mdl.styles.menuWidth + 16 //nolint:mnd // slightly wider than menu for two-column content
+	// Context panel spans the full width of both panels + gap.
+	ctxWidth := mdl.styles.menuWidth*2 + 2 //nolint:mnd // two panels + gap
 	if maxW := mdl.width - 4; ctxWidth > maxW {
 		ctxWidth = maxW
 	}
@@ -122,13 +124,17 @@ func renderMenuContent(mdl *model) string {
 	var rows []string
 
 	for idx, item := range mdl.items {
-		rows = append(rows, renderMenuItem(mdl, idx, item))
+		if item.isSection {
+			rows = append(rows, renderSectionHeader(mdl, idx, item))
+		} else {
+			rows = append(rows, renderMenuItem(mdl, idx, item))
+		}
 	}
 
 	inner := lipgloss.JoinVertical(lipgloss.Left, rows...)
 
 	// Add description below items.
-	if mdl.cursor >= 0 && mdl.cursor < len(mdl.items) {
+	if mdl.cursor >= 0 && mdl.cursor < len(mdl.items) && !mdl.items[mdl.cursor].isSection {
 		desc := mdl.styles.description.Render(mdl.items[mdl.cursor].description)
 		inner = lipgloss.JoinVertical(lipgloss.Left, inner, "", desc)
 	}
@@ -141,12 +147,28 @@ func renderMenu(mdl *model) string {
 	var rows []string
 
 	for idx, item := range mdl.items {
-		rows = append(rows, renderMenuItem(mdl, idx, item))
+		if item.isSection {
+			rows = append(rows, renderSectionHeader(mdl, idx, item))
+		} else {
+			rows = append(rows, renderMenuItem(mdl, idx, item))
+		}
 	}
 
 	inner := lipgloss.JoinVertical(lipgloss.Left, rows...)
 
 	return mdl.styles.menuBox.Render(inner)
+}
+
+// renderSectionHeader renders a section divider label (e.g. "DEVELOP", "OPERATE").
+func renderSectionHeader(mdl *model, idx int, item menuItem) string {
+	header := mdl.styles.sectionHeader.Render(item.label)
+
+	// Add blank line before all section headers except the first.
+	if idx > 0 {
+		return "\n" + header
+	}
+
+	return header
 }
 
 // renderMenuItem renders a single menu row: "❯ Label              [b]" or "  Label              [b]".
@@ -293,6 +315,7 @@ func renderHomeFooter(mdl *model) string {
 
 	hints = append(hints,
 		hint{key: "enter", desc: "select"},
+		hint{key: ",", desc: "settings"},
 		hint{key: "q", desc: "quit"},
 	)
 

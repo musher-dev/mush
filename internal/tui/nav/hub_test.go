@@ -16,7 +16,7 @@ func TestHubExploreFromHome(t *testing.T) {
 	mdl := testModel()
 
 	// 'e' should go to hub explore.
-	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
 
 	if mdl.activeScreen != screenHubExplore {
 		t.Errorf("activeScreen = %d, want screenHubExplore", mdl.activeScreen)
@@ -33,7 +33,7 @@ func TestHubExploreEscGoesBack(t *testing.T) {
 	mdl := testModel()
 
 	// Go to hub explore.
-	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
 
 	if mdl.activeScreen != screenHubExplore {
 		t.Fatalf("expected hub explore screen")
@@ -51,7 +51,7 @@ func TestHubExploreTabCyclesFocus(t *testing.T) {
 	t.Parallel()
 
 	mdl := testModel()
-	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
 
 	if mdl.hubExplore.focusArea != 0 {
 		t.Fatalf("focusArea = %d, want 0 (search)", mdl.hubExplore.focusArea)
@@ -454,7 +454,7 @@ func TestHubExploreView(t *testing.T) {
 	mdl.activeScreen = screenHubExplore
 
 	view := mdl.View()
-	if !strings.Contains(view, "Explore Hub") {
+	if !strings.Contains(view, "Find a Bundle") {
 		t.Error("hub explore view should contain 'Explore Hub'")
 	}
 
