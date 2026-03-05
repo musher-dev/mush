@@ -23,7 +23,7 @@ func (c *Client) ListHabitats(ctx context.Context) ([]HabitatSummary, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, unexpectedStatus("list habitats", resp.StatusCode, resp.Body)
+		return nil, unexpectedStatus("list habitats", resp)
 	}
 
 	var habitats []HabitatSummary
@@ -63,7 +63,7 @@ func (c *Client) ListQueues(ctx context.Context, habitatID string) ([]QueueSumma
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, unexpectedStatus("list queues", resp.StatusCode, resp.Body)
+		return nil, unexpectedStatus("list queues", resp)
 	}
 
 	var response queueListResponse
@@ -94,7 +94,7 @@ func (c *Client) GetQueueInstructionAvailability(ctx context.Context, queueID st
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, unexpectedStatus("get instruction availability", resp.StatusCode, resp.Body)
+		return nil, unexpectedStatus("get instruction availability", resp)
 	}
 
 	var availability InstructionAvailability

@@ -16,7 +16,7 @@ func TestHubExploreFromHome(t *testing.T) {
 	mdl := testModel()
 
 	// 'e' should go to hub explore.
-	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
 
 	if mdl.activeScreen != screenHubExplore {
 		t.Errorf("activeScreen = %d, want screenHubExplore", mdl.activeScreen)
@@ -33,7 +33,7 @@ func TestHubExploreEscGoesBack(t *testing.T) {
 	mdl := testModel()
 
 	// Go to hub explore.
-	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
 
 	if mdl.activeScreen != screenHubExplore {
 		t.Fatalf("expected hub explore screen")
@@ -51,7 +51,7 @@ func TestHubExploreTabCyclesFocus(t *testing.T) {
 	t.Parallel()
 
 	mdl := testModel()
-	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
 
 	if mdl.hubExplore.focusArea != 0 {
 		t.Fatalf("focusArea = %d, want 0 (search)", mdl.hubExplore.focusArea)
@@ -427,8 +427,8 @@ func TestHubInstallWithoutClientShowsError(t *testing.T) {
 		t.Errorf("activeScreen = %d, want screenBundleError (no client)", mdl.activeScreen)
 	}
 
-	if !strings.Contains(mdl.bundleError.message, "Not authenticated") {
-		t.Errorf("error message = %q, want to contain 'Not authenticated'", mdl.bundleError.message)
+	if !strings.Contains(mdl.bundleError.message, "Unable to connect") {
+		t.Errorf("error message = %q, want to contain 'Unable to connect'", mdl.bundleError.message)
 	}
 }
 
@@ -454,7 +454,7 @@ func TestHubExploreView(t *testing.T) {
 	mdl.activeScreen = screenHubExplore
 
 	view := mdl.View()
-	if !strings.Contains(view, "Explore Hub") {
+	if !strings.Contains(view, "Find a Bundle") {
 		t.Error("hub explore view should contain 'Explore Hub'")
 	}
 
@@ -543,30 +543,6 @@ func TestHubDetailViewLoading(t *testing.T) {
 
 	if !strings.Contains(view, "Loading") {
 		t.Error("hub detail view should contain 'Loading' while loading")
-	}
-}
-
-func TestHubExploreFromBundleInput(t *testing.T) {
-	t.Parallel()
-
-	mdl := testModel()
-
-	// Go to bundle input and switch to harness list.
-	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}})
-	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyTab})
-
-	// Press 'e' to explore hub.
-	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
-
-	if mdl.activeScreen != screenHubExplore {
-		t.Errorf("activeScreen = %d, want screenHubExplore from bundle input", mdl.activeScreen)
-	}
-
-	// Esc should go back to bundle input.
-	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyEscape})
-
-	if mdl.activeScreen != screenBundleInput {
-		t.Errorf("activeScreen = %d, want screenBundleInput after esc from hub", mdl.activeScreen)
 	}
 }
 

@@ -17,8 +17,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/musher-dev/mush/internal/buildinfo"
 	"github.com/musher-dev/mush/internal/observability"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const (
@@ -39,11 +41,52 @@ type Client struct {
 type HTTPStatusError struct {
 	Operation string
 	Status    int
+	RequestID string
+	TraceID   string
 }
 
 func (e *HTTPStatusError) Error() string {
-	return fmt.Sprintf("%s failed with status %d", e.Operation, e.Status)
+	var extras []string
+	if e.RequestID != "" {
+		extras = append(extras, "request_id="+e.RequestID)
+	}
+
+	if e.TraceID != "" {
+		extras = append(extras, "trace_id="+e.TraceID)
+	}
+
+	if len(extras) == 0 {
+		return fmt.Sprintf("%s failed with status %d", e.Operation, e.Status)
+	}
+
+	return fmt.Sprintf("%s failed with status %d (%s)", e.Operation, e.Status, strings.Join(extras, ", "))
 }
+
+// RequestIDValue returns the request correlation ID when available.
+func (e *HTTPStatusError) RequestIDValue() string { return e.RequestID }
+
+// TraceIDValue returns the distributed trace ID when available.
+func (e *HTTPStatusError) TraceIDValue() string { return e.TraceID }
+
+// RequestError represents a transport-level request failure.
+type RequestError struct {
+	Operation string
+	RequestID string
+	Cause     error
+}
+
+func (e *RequestError) Error() string {
+	if e.RequestID == "" {
+		return fmt.Sprintf("%s: %v", e.Operation, e.Cause)
+	}
+
+	return fmt.Sprintf("%s (request_id=%s): %v", e.Operation, e.RequestID, e.Cause)
+}
+
+func (e *RequestError) Unwrap() error { return e.Cause }
+
+// RequestIDValue returns the request correlation ID when available.
+func (e *RequestError) RequestIDValue() string { return e.RequestID }
 
 // Identity represents the authenticated service account identity.
 type Identity struct {
@@ -53,6 +96,12 @@ type Identity struct {
 	RunnerID       string `json:"runnerId"`
 	WorkspaceID    string `json:"workspaceId"`
 	WorkspaceName  string `json:"workspaceName"`
+}
+
+// ResponseMeta contains correlation metadata from an API response.
+type ResponseMeta struct {
+	RequestID string `json:"requestId,omitempty"`
+	TraceID   string `json:"traceId,omitempty"`
 }
 
 // RunnerConfigResponse is the generic runner configuration payload.
@@ -199,7 +248,7 @@ type ClaudeConfig struct {
 // ExecutionConfig contains everything needed to execute a job.
 // The server renders the Jinja2 template and provides the fully prepared instruction.
 type ExecutionConfig struct {
-	// HarnessType specifies which harness to use ("claude", "bash").
+	// HarnessType specifies which harness to use ("claude", "codex").
 	HarnessType string `json:"harnessType,omitempty"`
 
 	// RenderedInstruction is the fully rendered prompt/command (template already applied).
@@ -377,35 +426,47 @@ func (c *Client) BaseURL() string {
 
 // ValidateKey validates the API key and returns the service account identity.
 func (c *Client) ValidateKey(ctx context.Context) (*Identity, error) {
+	identity, _, err := c.ValidateKeyWithMeta(ctx)
+	return identity, err
+}
+
+// ValidateKeyWithMeta validates the API key and returns identity plus
+// request/trace metadata from the response headers.
+func (c *Client) ValidateKeyWithMeta(ctx context.Context) (*Identity, *ResponseMeta, error) {
 	req, err := c.newRequest(ctx, "GET", c.baseURL+"/api/v1/runner/me", http.NoBody)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	resp, err := c.do(req, "/api/v1/runner/me")
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to API: %w", err)
+		return nil, nil, fmt.Errorf("failed to connect to API: %w", err)
 	}
 	defer resp.Body.Close()
 
+	meta := &ResponseMeta{
+		RequestID: strings.TrimSpace(resp.Header.Get("X-Request-Id")),
+		TraceID:   responseTraceID(resp),
+	}
+
 	if resp.StatusCode == http.StatusUnauthorized {
-		return nil, fmt.Errorf("invalid or expired API key")
+		return nil, meta, fmt.Errorf("invalid or expired API key")
 	}
 
 	if resp.StatusCode == http.StatusForbidden {
-		return nil, fmt.Errorf("API key does not have runner permissions")
+		return nil, meta, fmt.Errorf("API key does not have runner permissions")
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, unexpectedStatus("validate key", resp.StatusCode, resp.Body)
+		return nil, meta, unexpectedStatus("validate key", resp)
 	}
 
 	var identity Identity
 	if err := decodeJSON(resp.Body, &identity, "failed to parse identity"); err != nil {
-		return nil, err
+		return nil, meta, err
 	}
 
-	return &identity, nil
+	return &identity, meta, nil
 }
 
 // GetRunnerConfig fetches runner runtime configuration for startup provisioning.
@@ -422,7 +483,7 @@ func (c *Client) GetRunnerConfig(ctx context.Context) (*RunnerConfigResponse, er
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, unexpectedStatus("runner config", resp.StatusCode, resp.Body)
+		return nil, unexpectedStatus("runner config", resp)
 	}
 
 	var cfg RunnerConfigResponse
@@ -439,6 +500,17 @@ func (c *Client) IsAuthenticated() bool {
 }
 
 func (c *Client) setRequestHeaders(req *http.Request) {
+	requestID := req.Header.Get("X-Request-Id")
+	if requestID == "" {
+		requestID = uuid.NewString()
+		req.Header.Set("X-Request-Id", requestID)
+	}
+
+	spanCtx := trace.SpanContextFromContext(req.Context())
+	if spanCtx.IsValid() {
+		req.Header.Set("X-Trace-Id", spanCtx.TraceID().String())
+	}
+
 	if c.apiKey != "" {
 		req.Header.Set("Authorization", "Bearer "+c.apiKey)
 	}
@@ -467,15 +539,23 @@ func (c *Client) newPublicRequest(ctx context.Context, method, url string, body 
 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "mush/"+buildinfo.Version)
+	req.Header.Set("X-Request-Id", uuid.NewString())
+
+	spanCtx := trace.SpanContextFromContext(req.Context())
+	if spanCtx.IsValid() {
+		req.Header.Set("X-Trace-Id", spanCtx.TraceID().String())
+	}
 
 	return req, nil
 }
 
 func (c *Client) do(req *http.Request, route string) (*http.Response, error) {
+	requestID := strings.TrimSpace(req.Header.Get("X-Request-Id"))
 	logger := observability.FromContext(req.Context()).With(
 		slog.String("component", "client"),
 		slog.String("http.request.method", req.Method),
 		slog.String("http.route", route),
+		slog.String("request.id", requestID),
 	)
 
 	start := time.Now()
@@ -493,7 +573,16 @@ func (c *Client) do(req *http.Request, route string) (*http.Response, error) {
 			slog.String("error", err.Error()),
 		)
 
-		return nil, fmt.Errorf("http request: %w", err)
+		return nil, &RequestError{
+			Operation: "http request",
+			RequestID: requestID,
+			Cause:     err,
+		}
+	}
+
+	traceID := responseTraceID(resp)
+	if traceID != "" {
+		logger = logger.With(slog.String("trace.id", traceID))
 	}
 
 	logger.Debug(
@@ -501,6 +590,7 @@ func (c *Client) do(req *http.Request, route string) (*http.Response, error) {
 		slog.String("event.type", "http.request.finish"),
 		slog.Int("http.response.status_code", resp.StatusCode),
 		slog.Int64("duration_ms", durationMS),
+		slog.String("trace.id", traceID),
 	)
 
 	return resp, nil
@@ -528,11 +618,44 @@ func emptyJSONBody() io.Reader {
 }
 
 // unexpectedStatus creates a formatted error from an unexpected HTTP status code.
-func unexpectedStatus(operation string, statusCode int, body io.Reader) error {
-	_, _ = io.Copy(io.Discard, body)
+func unexpectedStatus(operation string, resp *http.Response) error {
+	statusCode := 0
+	requestID := ""
+	traceID := ""
+
+	if resp != nil {
+		statusCode = resp.StatusCode
+		requestID = strings.TrimSpace(resp.Header.Get("X-Request-Id"))
+		traceID = responseTraceID(resp)
+		_, _ = io.Copy(io.Discard, resp.Body)
+	}
 
 	return &HTTPStatusError{
 		Operation: operation,
 		Status:    statusCode,
+		RequestID: requestID,
+		TraceID:   traceID,
 	}
+}
+
+func responseTraceID(resp *http.Response) string {
+	if resp == nil {
+		return ""
+	}
+
+	if direct := strings.TrimSpace(resp.Header.Get("X-Trace-Id")); direct != "" {
+		return direct
+	}
+
+	traceparent := strings.TrimSpace(resp.Header.Get("traceparent"))
+	if traceparent == "" {
+		return ""
+	}
+
+	parts := strings.Split(traceparent, "-")
+	if len(parts) < 4 {
+		return ""
+	}
+
+	return parts[1]
 }

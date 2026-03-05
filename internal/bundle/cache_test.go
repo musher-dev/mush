@@ -42,7 +42,7 @@ func TestPullFailsWhenResolveLacksDownloadMetadata(t *testing.T) {
 	c := client.NewWithHTTPClient("https://example.test", "test-key", clientHTTP)
 	out := output.NewWriter(&bytes.Buffer{}, &bytes.Buffer{}, &terminal.Info{IsTTY: false})
 
-	_, _, err := Pull(t.Context(), c, "workspace-1", "my-bundle", "", out)
+	_, _, err := Pull(t.Context(), c, "acme", "my-bundle", "", out)
 	if err == nil {
 		t.Fatal("Pull() expected error, got nil")
 	}
@@ -125,13 +125,13 @@ func TestPullCleanupOnFailure(t *testing.T) {
 	c := client.NewWithHTTPClient("https://example.test", "test-key", clientHTTP)
 	out := output.NewWriter(&bytes.Buffer{}, &bytes.Buffer{}, &terminal.Info{IsTTY: false})
 
-	_, _, err := Pull(t.Context(), c, "workspace-1", "my-bundle", "", out)
+	_, _, err := Pull(t.Context(), c, "acme", "my-bundle", "", out)
 	if err == nil {
 		t.Fatal("Pull() expected error, got nil")
 	}
 
 	// Verify no partial staging directories remain.
-	versionDir := filepath.Join(cacheRoot, "mush", "cache", "workspace-1", "my-bundle")
+	versionDir := filepath.Join(cacheRoot, "mush", "cache", "acme", "my-bundle")
 
 	entries, readErr := os.ReadDir(versionDir)
 	if readErr != nil {

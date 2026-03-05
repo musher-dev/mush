@@ -1,0 +1,29 @@
+name: opencode
+displayName: OpenCode CLI
+description: Open source AI coding agent CLI
+binary: opencode
+
+directories:
+  project: .opencode
+  user: ~/.config/opencode
+
+bundleDir:
+  mode: cwd
+
+assets:
+  skillDir: .opencode/skills
+  agentDir: .opencode/agents
+  toolConfigFile: opencode.json
+
+mcp:
+  format: json
+  configPath: opencode.json
+
+status:
+  versionArgs: ["--version"]
+  installHint: "npm install -g opencode-ai"
+  installCommand: ["npm", "install", "-g", "opencode-ai"]
+  configDir: "~/.config/opencode"
+  authCheck:
+    path: "~/.local/share/opencode/auth.json"
+    description: "Credentials"

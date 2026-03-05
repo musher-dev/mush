@@ -23,6 +23,7 @@ type PathsInfo struct {
 	BundleCache string `json:"bundle_cache"`
 	UpdateState string `json:"update_state"`
 	APIURL      string `json:"api_url"`
+	CACertFile  string `json:"ca_cert_file"`
 	AuthSource  string `json:"auth_source"`
 }
 
@@ -58,6 +59,7 @@ state, cache, and credential files are stored on this system.`,
 			out.Print("Update state:   %s\n", info.UpdateState)
 			out.Print("\n")
 			out.Print("API URL:        %s\n", info.APIURL)
+			out.Print("CA cert file:   %s\n", info.CACertFile)
 			out.Print("Auth source:    %s\n", info.AuthSource)
 
 			return nil
@@ -84,7 +86,13 @@ func resolvePathsInfo() PathsInfo {
 	}
 
 	cfg := config.Load()
+
 	info.APIURL = cfg.APIURL()
+	if cfg.CACertFile() == "" {
+		info.CACertFile = "not configured"
+	} else {
+		info.CACertFile = cfg.CACertFile()
+	}
 
 	source, _ := auth.GetCredentials()
 	if source == auth.SourceNone {

@@ -6,20 +6,30 @@ import (
 	"strings"
 )
 
-// Ref is a parsed bundle reference (slug with optional version).
+// Ref is a parsed bundle reference (namespace/slug with optional version).
 type Ref struct {
-	Slug    string
-	Version string // empty = "latest"
+	Namespace string
+	Slug      string
+	Version   string // empty = "latest"
 }
 
-// ParseRef parses a bundle reference string of the form "slug" or "slug:version".
+// ParseRef parses a bundle reference string of the form "namespace/slug" or "namespace/slug:version".
 func ParseRef(arg string) (Ref, error) {
 	arg = strings.TrimSpace(arg)
 	if arg == "" {
 		return Ref{}, fmt.Errorf("bundle reference cannot be empty")
 	}
 
-	parts := strings.SplitN(arg, ":", 2)
+	namespace, remainder, hasSlash := strings.Cut(arg, "/")
+	if !hasSlash {
+		return Ref{}, fmt.Errorf("bundle reference must include namespace: namespace/slug[:version]")
+	}
+
+	if namespace == "" {
+		return Ref{}, fmt.Errorf("bundle namespace cannot be empty")
+	}
+
+	parts := strings.SplitN(remainder, ":", 2)
 	slug := parts[0]
 
 	if slug == "" {
@@ -34,14 +44,15 @@ func ParseRef(arg string) (Ref, error) {
 		}
 	}
 
-	return Ref{Slug: slug, Version: version}, nil
+	return Ref{Namespace: namespace, Slug: slug, Version: version}, nil
 }
 
 // String returns the string representation of a Ref.
 func (r Ref) String() string {
+	base := r.Namespace + "/" + r.Slug
 	if r.Version == "" {
-		return r.Slug
+		return base
 	}
 
-	return r.Slug + ":" + r.Version
+	return base + ":" + r.Version
 }

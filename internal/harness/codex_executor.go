@@ -284,28 +284,7 @@ func (e *CodexExecutor) Teardown() {
 	e.waitDoneCh = nil
 	e.mu.Unlock()
 
-	if ptmx != nil {
-		_ = ptmx.Close()
-	}
-
-	if cmd == nil || cmd.Process == nil {
-		return
-	}
-
-	sendSignal(cmd.Process.Pid, pgid, syscall.SIGTERM)
-
-	select {
-	case <-waitDoneCh:
-	case <-time.After(2 * time.Second):
-		sendSignal(cmd.Process.Pid, pgid, syscall.SIGKILL)
-
-		if waitDoneCh != nil {
-			select {
-			case <-waitDoneCh:
-			case <-time.After(2 * time.Second):
-			}
-		}
-	}
+	stopInteractiveProcess(cmd, ptmx, pgid, waitDoneCh)
 }
 
 // Ensure CodexExecutor satisfies the required interfaces.

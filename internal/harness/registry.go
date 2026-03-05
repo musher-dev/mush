@@ -8,7 +8,7 @@ import (
 
 // Info describes a registered harness type.
 type Info struct {
-	// Name is the harness type identifier (e.g., "claude", "bash", "codex").
+	// Name is the harness type identifier (e.g., "claude", "codex").
 	Name string
 
 	// Available reports whether the harness runtime is installed.

@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/url"
 	"os"
+	"os/exec"
 	"strings"
 	"sync"
 	"time"
@@ -23,6 +24,7 @@ import (
 	clierrors "github.com/musher-dev/mush/internal/errors"
 	"github.com/musher-dev/mush/internal/observability"
 	"github.com/musher-dev/mush/internal/output"
+	"github.com/musher-dev/mush/internal/prompt"
 	"github.com/musher-dev/mush/internal/tui/nav"
 	"github.com/musher-dev/mush/internal/update"
 )
@@ -70,8 +72,22 @@ func handleError(out *output.Writer, err error) int {
 		// CLIErrors are our custom errors - print with styled output
 		out.Failure("%s", cliErr.Message)
 
-		if cliErr.Hint != "" {
+		if shouldProbeHealth(cliErr, out) {
+			renderHealthProbe(out, cliErr)
+		} else if cliErr.Hint != "" {
 			out.Info("%s", cliErr.Hint)
+		}
+
+		if cliErr.ErrorCode != "" {
+			out.Muted("Error code: %s", cliErr.ErrorCode)
+		}
+
+		if cliErr.RequestID != "" {
+			out.Muted("Request ID: %s", cliErr.RequestID)
+		}
+
+		if cliErr.TraceID != "" {
+			out.Muted("Trace ID: %s", cliErr.TraceID)
 		}
 
 		return cliErr.Code
@@ -109,19 +125,65 @@ func handleError(out *output.Writer, err error) int {
 	return clierrors.ExitGeneral
 }
 
+// shouldProbeHealth returns true if a health probe should be shown for this error.
+// It triggers only for API-related errors that actually attempted an API call.
+func shouldProbeHealth(cliErr *clierrors.CLIError, out *output.Writer) bool {
+	if cliErr.Cause == nil {
+		return false // No underlying error means no API call was attempted (e.g. NotAuthenticated)
+	}
+
+	if cliErr.Code != clierrors.ExitAuth && cliErr.Code != clierrors.ExitNetwork {
+		return false
+	}
+
+	if out.Quiet || out.JSON {
+		return false
+	}
+
+	return true
+}
+
+// renderHealthProbe runs a connectivity check against the API and renders the result.
+// When the API is reachable, the original hint is shown followed by the status.
+// When unreachable, the status is shown and the hint is overridden with connectivity guidance.
+func renderHealthProbe(out *output.Writer, cliErr *clierrors.CLIError) {
+	cfg := config.Load()
+	apiURL := cfg.APIURL()
+
+	// Use Background context — the command context may already be canceled.
+	result := client.ProbeHealth(context.Background(), apiURL, cfg.CACertFile())
+
+	if result.Reachable {
+		if cliErr.Hint != "" {
+			out.Info("%s", cliErr.Hint)
+		}
+
+		out.Print("\n")
+		out.Muted("  API Status")
+		out.Success("  %s is reachable (%dms)", result.Host, result.Latency.Milliseconds())
+	} else {
+		out.Print("\n")
+		out.Muted("  API Status")
+		out.Failure("  %s is not reachable", result.Host)
+		out.Muted("    %s", result.Error)
+		out.Print("\n")
+		out.Info("The API may be down — try again later or run 'mush doctor'")
+	}
+}
+
 func newRootCmd() *cobra.Command {
 	var (
-		jsonOutput  bool
-		quiet       bool
-		noColor     bool
-		noInput     bool
-		interactive bool
-		logLevel    string
-		logFormat   string
-		logFile     string
-		logStderr   string
-		apiURL      string
-		apiKey      string
+		jsonOutput bool
+		quiet      bool
+		noColor    bool
+		noInput    bool
+		noTUI      bool
+		logLevel   string
+		logFormat  string
+		logFile    string
+		logStderr  string
+		apiURL     string
+		apiKey     string
 	)
 
 	out := output.Default()
@@ -134,12 +196,12 @@ your local agent runtime, with full access to your dev
 environment.
 
 Get started:  mush init`,
-		Example:       `  mush --interactive`,
+		Example:       `  mush`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		Args:          noArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if shouldShowTUI(interactive, out) {
+			if shouldShowTUI(noTUI, out) {
 				deps := buildTUIDeps()
 
 				result, err := nav.Run(cmd.Context(), deps)
@@ -148,12 +210,19 @@ Get started:  mush init`,
 				}
 
 				if result.Action == nav.ActionBundleLoad {
-					out.Success("Bundle %s v%s ready at %s (harness: %s)",
-						result.BundleSlug, result.BundleVer, result.CachePath, result.Harness)
+					return handleBundleLoadNavResult(cmd, out, result)
+				}
+
+				if result.Action == nav.ActionBareRun {
+					return handleBareRunNavResult(cmd, out, result)
 				}
 
 				if result.Action == nav.ActionWorkerStart {
 					return handleWorkerNavResult(cmd, out, result)
+				}
+
+				if result.Action == nav.ActionHarnessInstall {
+					return handleHarnessInstall(cmd.Context(), out, result)
 				}
 
 				return nil
@@ -283,7 +352,7 @@ Get started:  mush init`,
 	rootCmd.PersistentFlags().BoolVar(&quiet, "quiet", false, "Minimal output (for CI)")
 	rootCmd.PersistentFlags().BoolVar(&noColor, "no-color", false, "Disable colored output")
 	rootCmd.PersistentFlags().BoolVar(&noInput, "no-input", false, "Disable interactive prompts")
-	rootCmd.PersistentFlags().BoolVar(&interactive, "interactive", false, "Launch interactive TUI navigation")
+	rootCmd.PersistentFlags().BoolVar(&noTUI, "no-tui", false, "Disable interactive TUI navigation")
 	rootCmd.PersistentFlags().StringVar(&logLevel, "log-level", "", "Log level: error, warn, info, debug")
 	rootCmd.PersistentFlags().StringVar(&logFormat, "log-format", "", "Log format: json, text")
 	rootCmd.PersistentFlags().StringVar(&logFile, "log-file", "", "Optional structured log file path")
@@ -448,10 +517,16 @@ func buildTUIDeps() *nav.Dependencies {
 		Config: cfg,
 	}
 
-	// Check if we have credentials to build a client.
+	// Build API client — use credentials if available, otherwise create
+	// an anonymous client so public bundle access works without auth.
 	source, apiKey := auth.GetCredentials()
-	if source != auth.SourceNone && apiKey != "" {
-		deps.Client = client.New(cfg.APIURL(), apiKey)
+	if source == auth.SourceNone || apiKey == "" {
+		apiKey = ""
+	}
+
+	httpClient, err := client.NewInstrumentedHTTPClient(cfg.CACertFile())
+	if err == nil {
+		deps.Client = client.NewWithHTTPClient(cfg.APIURL(), apiKey, httpClient)
 	}
 
 	if wd, err := os.Getwd(); err == nil {
@@ -463,7 +538,7 @@ func buildTUIDeps() *nav.Dependencies {
 
 // shouldShowTUI returns true if the interactive TUI should be launched
 // instead of showing help text for the bare `mush` command.
-func shouldShowTUI(flagValue bool, out *output.Writer) bool {
+func shouldShowTUI(noTUI bool, out *output.Writer) bool {
 	if out.JSON || out.Quiet || out.NoInput {
 		return false
 	}
@@ -472,11 +547,11 @@ func shouldShowTUI(flagValue bool, out *output.Writer) bool {
 		return false
 	}
 
-	if pickBoolFlagOrEnv(flagValue, "MUSH_INTERACTIVE") {
-		return true
+	if pickBoolFlagOrEnv(noTUI, "MUSH_NO_TUI") {
+		return false
 	}
 
-	return config.Load().Interactive()
+	return config.Load().TUI()
 }
 
 // VersionInfo represents version information for JSON output.
@@ -601,4 +676,63 @@ func showUpdateNotice(out *output.Writer, currentVersion string) {
 		out.Info("A new version of mush is available: v%s → v%s", currentVersion, state.LatestVersion)
 		out.Muted("  Run 'mush update' to update")
 	}
+}
+
+// handleHarnessInstall runs install commands for missing harnesses after user confirmation.
+func handleHarnessInstall(ctx context.Context, out *output.Writer, result *nav.Result) error {
+	if len(result.InstallCommands) == 0 {
+		return nil
+	}
+
+	out.Print("\nThe following commands will be run to install the harness:\n")
+
+	for _, args := range result.InstallCommands {
+		if len(args) == 0 {
+			continue
+		}
+
+		out.Print("  %s\n", strings.Join(args, " "))
+	}
+
+	out.Print("\n")
+
+	p := prompt.New(out)
+	if !p.CanPrompt() {
+		out.Muted("Non-interactive mode — run the commands above manually to install.")
+		return nil
+	}
+
+	ok, promptErr := p.Confirm("Run these install commands?", false)
+	if promptErr != nil {
+		return fmt.Errorf("install confirmation: %w", promptErr) //nolint:rawerror // not a CLIError context
+	}
+
+	if !ok {
+		out.Muted("Install skipped. Run the commands above manually to install.")
+		return nil
+	}
+
+	for _, args := range result.InstallCommands {
+		if len(args) == 0 {
+			continue
+		}
+
+		out.Info("Installing: %s", strings.Join(args, " "))
+
+		cmd := exec.CommandContext(ctx, args[0], args[1:]...) //nolint:gosec // args from embedded provider YAML
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+
+		if err := cmd.Run(); err != nil {
+			return &clierrors.CLIError{
+				Message: fmt.Sprintf("Install failed: %s", strings.Join(args, " ")),
+				Hint:    "Check your network and package manager, then try again",
+				Code:    clierrors.ExitGeneral,
+			}
+		}
+
+		out.Success("Installed successfully")
+	}
+
+	return nil
 }

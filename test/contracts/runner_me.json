@@ -1,0 +1,8 @@
+{
+  "credentialType": "service_account",
+  "credentialId": "cred_123",
+  "credentialName": "ci-runner",
+  "runnerId": "runner_123",
+  "workspaceId": "ws_123",
+  "workspaceName": "Acme Workspace"
+}

@@ -135,7 +135,7 @@ func TestSaveInstalledAtomic(t *testing.T) {
 	bundle := &InstalledBundle{
 		Slug:      "test",
 		Version:   "1.0.0",
-		Harness:   "bash",
+		Harness:   "claude",
 		Assets:    []string{"script.sh"},
 		Timestamp: time.Now().UTC(),
 	}

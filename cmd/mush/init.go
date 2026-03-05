@@ -8,7 +8,11 @@ import (
 )
 
 func newInitCmd() *cobra.Command {
-	var force bool
+	var (
+		force   bool
+		apiKey  string
+		habitat string
+	)
 
 	cmd := &cobra.Command{
 		Use:   "init",
@@ -27,13 +31,15 @@ If credentials already exist, use --force to overwrite them.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := output.FromContext(cmd.Context())
 
-			w := wizard.New(out, force)
+			w := wizard.New(out, force, apiKey, habitat)
 
 			return w.Run(cmd.Context())
 		},
 	}
 
 	cmd.Flags().BoolVarP(&force, "force", "f", false, "Overwrite existing credentials without prompting")
+	cmd.Flags().StringVar(&apiKey, "api-key", "", "API key to use for non-interactive initialization")
+	cmd.Flags().StringVar(&habitat, "habitat", "", "Habitat slug or ID to select during initialization")
 
 	return cmd
 }

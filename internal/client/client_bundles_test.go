@@ -48,7 +48,7 @@ func TestAnonymousClientSkipsAuthHeader(t *testing.T) {
 		t.Fatal("IsAuthenticated() = true, want false for anonymous client")
 	}
 
-	resolved, err := c.ResolveBundle(t.Context(), "public-bundle", "1.0.0")
+	resolved, err := c.ResolveBundle(t.Context(), "pub", "public-bundle", "1.0.0")
 	if err != nil {
 		t.Fatalf("ResolveBundle() error = %v", err)
 	}
@@ -77,7 +77,7 @@ func TestAuthenticatedClientSendsAuthHeader(t *testing.T) {
 		t.Fatal("IsAuthenticated() = false, want true for authenticated client")
 	}
 
-	resolved, err := c.ResolveBundle(t.Context(), "private-bundle", "2.0.0")
+	resolved, err := c.ResolveBundle(t.Context(), "priv", "private-bundle", "2.0.0")
 	if err != nil {
 		t.Fatalf("ResolveBundle() error = %v", err)
 	}
@@ -96,6 +96,10 @@ func TestResolveBundleUsesBundlesResolveEndpoint(t *testing.T) {
 				t.Fatalf("path = %q, want /api/v1/bundles:resolve", r.URL.Path)
 			}
 
+			if got := r.URL.Query().Get("namespace"); got != "acme" {
+				t.Fatalf("namespace = %q, want acme", got)
+			}
+
 			if got := r.URL.Query().Get("bundle_slug"); got != "my-bundle" {
 				t.Fatalf("bundle_slug = %q, want my-bundle", got)
 			}
@@ -104,13 +108,13 @@ func TestResolveBundleUsesBundlesResolveEndpoint(t *testing.T) {
 				t.Fatalf("version = %q, want 1.2.3", got)
 			}
 
-			return bundleJSONResponse(http.StatusOK, `{"bundleId":"b1","versionId":"v1","version":"1.2.3","state":"published","ociRef":"registry.example/ws/my-bundle:1.2.3","ociDigest":"sha256:abc"}`), nil
+			return bundleJSONResponse(http.StatusOK, `{"bundleId":"b1","versionId":"v1","version":"1.2.3","namespace":"acme","slug":"my-bundle","ref":"acme/my-bundle:1.2.3","state":"published","ociRef":"registry.example/acme/my-bundle:1.2.3","ociDigest":"sha256:abc"}`), nil
 		}),
 	}
 
 	c := NewWithHTTPClient("https://example.test", "test-key", clientHTTP)
 
-	resolved, err := c.ResolveBundle(t.Context(), "my-bundle", "1.2.3")
+	resolved, err := c.ResolveBundle(t.Context(), "acme", "my-bundle", "1.2.3")
 	if err != nil {
 		t.Fatalf("ResolveBundle() error = %v", err)
 	}
@@ -133,6 +137,10 @@ func TestResolveBundleWithoutVersionUsesLatest(t *testing.T) {
 				t.Fatalf("path = %q, want /api/v1/bundles:resolve", r.URL.Path)
 			}
 
+			if got := r.URL.Query().Get("namespace"); got != "acme" {
+				t.Fatalf("namespace = %q, want acme", got)
+			}
+
 			if got := r.URL.Query().Get("bundle_slug"); got != "my-bundle" {
 				t.Fatalf("bundle_slug = %q, want my-bundle", got)
 			}
@@ -141,13 +149,13 @@ func TestResolveBundleWithoutVersionUsesLatest(t *testing.T) {
 				t.Fatalf("version = %q, want empty", got)
 			}
 
-			return bundleJSONResponse(http.StatusOK, `{"bundleId":"b3","versionId":"v3","version":"9.9.9","state":"published","ociRef":"registry.example/ws/my-bundle:9.9.9","ociDigest":"sha256:def"}`), nil
+			return bundleJSONResponse(http.StatusOK, `{"bundleId":"b3","versionId":"v3","version":"9.9.9","state":"published","ociRef":"registry.example/acme/my-bundle:9.9.9","ociDigest":"sha256:def"}`), nil
 		}),
 	}
 
 	c := NewWithHTTPClient("https://example.test", "test-key", clientHTTP)
 
-	resolved, err := c.ResolveBundle(t.Context(), "my-bundle", "")
+	resolved, err := c.ResolveBundle(t.Context(), "acme", "my-bundle", "")
 	if err != nil {
 		t.Fatalf("ResolveBundle() error = %v", err)
 	}
@@ -168,7 +176,7 @@ func TestResolveBundleReturnsBadRequestError(t *testing.T) {
 
 	c := NewWithHTTPClient("https://example.test", "test-key", clientHTTP)
 
-	_, err := c.ResolveBundle(t.Context(), "my-bundle", "")
+	_, err := c.ResolveBundle(t.Context(), "acme", "my-bundle", "")
 	if err == nil {
 		t.Fatal("ResolveBundle() expected error, got nil")
 	}

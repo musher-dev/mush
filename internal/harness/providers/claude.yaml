@@ -22,3 +22,12 @@ assets:
 mcp:
   format: json
   configPath: .mcp.json
+
+status:
+  versionArgs: ["--version"]
+  installHint: "npm install -g @anthropic-ai/claude-code"
+  installCommand: ["npm", "install", "-g", "@anthropic-ai/claude-code"]
+  configDir: "~/.claude"
+  authCheck:
+    path: "~/.claude/.credentials.json"
+    description: "Credentials"

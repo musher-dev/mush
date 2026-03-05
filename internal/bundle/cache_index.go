@@ -6,16 +6,18 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"time"
 
 	"github.com/musher-dev/mush/internal/client"
 )
 
 // CachedBundle is a locally cached bundle version.
 type CachedBundle struct {
-	Workspace  string
+	Namespace  string
 	Slug       string
 	Version    string
 	AssetCount int
+	ModTime    time.Time // modification time of the cache directory
 }
 
 // ListCached returns all cached bundle versions.
@@ -33,14 +35,14 @@ func ListCached() ([]CachedBundle, error) {
 
 	var out []CachedBundle
 
-	for _, workspaceEntry := range entries {
-		if !workspaceEntry.IsDir() {
+	for _, nsEntry := range entries {
+		if !nsEntry.IsDir() {
 			continue
 		}
 
-		wsPath := filepath.Join(root, workspaceEntry.Name())
+		nsPath := filepath.Join(root, nsEntry.Name())
 
-		slugDirs, err := os.ReadDir(wsPath)
+		slugDirs, err := os.ReadDir(nsPath)
 		if err != nil {
 			continue
 		}
@@ -50,7 +52,7 @@ func ListCached() ([]CachedBundle, error) {
 				continue
 			}
 
-			slugPath := filepath.Join(wsPath, slugDir.Name())
+			slugPath := filepath.Join(nsPath, slugDir.Name())
 
 			versionDirs, err := os.ReadDir(slugPath)
 			if err != nil {
@@ -75,19 +77,25 @@ func ListCached() ([]CachedBundle, error) {
 					continue
 				}
 
+				var modTime time.Time
+				if info, statErr := os.Stat(versionPath); statErr == nil {
+					modTime = info.ModTime()
+				}
+
 				out = append(out, CachedBundle{
-					Workspace:  workspaceEntry.Name(),
+					Namespace:  nsEntry.Name(),
 					Slug:       slugDir.Name(),
 					Version:    versionDir.Name(),
 					AssetCount: len(manifest.Manifest.Layers),
+					ModTime:    modTime,
 				})
 			}
 		}
 	}
 
 	sort.Slice(out, func(i, j int) bool {
-		if out[i].Workspace != out[j].Workspace {
-			return out[i].Workspace < out[j].Workspace
+		if out[i].Namespace != out[j].Namespace {
+			return out[i].Namespace < out[j].Namespace
 		}
 
 		if out[i].Slug != out[j].Slug {
@@ -98,4 +106,19 @@ func ListCached() ([]CachedBundle, error) {
 	})
 
 	return out, nil
+}
+
+// ListCachedByRecency returns cached bundles sorted by directory modification
+// time (most recent first).
+func ListCachedByRecency() ([]CachedBundle, error) {
+	all, err := ListCached()
+	if err != nil {
+		return nil, err
+	}
+
+	sort.Slice(all, func(i, j int) bool {
+		return all[i].ModTime.After(all[j].ModTime)
+	})
+
+	return all, nil
 }

@@ -289,11 +289,11 @@ func TestJobFieldsAndHelpers(t *testing.T) {
 		InputData:     map[string]any{"title": "Fix bug"},
 		AttemptNumber: 1,
 		MaxAttempts:   3,
-		Execution:     &ExecutionConfig{HarnessType: "bash", RenderedInstruction: "echo hi"},
+		Execution:     &ExecutionConfig{HarnessType: "claude", RenderedInstruction: "echo hi"},
 	}
 
-	if job.GetHarnessType() != "bash" {
-		t.Fatalf("GetHarnessType = %q, want bash", job.GetHarnessType())
+	if job.GetHarnessType() != "claude" {
+		t.Fatalf("GetHarnessType = %q, want claude", job.GetHarnessType())
 	}
 
 	if got := job.GetRenderedInstruction(); got != "echo hi" {

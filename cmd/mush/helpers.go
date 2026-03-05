@@ -1,10 +1,6 @@
 package main
 
 import (
-	"net/http"
-
-	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
-
 	"github.com/musher-dev/mush/internal/auth"
 	"github.com/musher-dev/mush/internal/client"
 	"github.com/musher-dev/mush/internal/config"
@@ -27,13 +23,24 @@ func newAPIClient() (auth.CredentialSource, *client.Client, error) {
 		return "", nil, clierrors.NotAuthenticated()
 	}
 
-	cfg := config.Load()
-	httpClient := &http.Client{
-		Transport: otelhttp.NewTransport(http.DefaultTransport),
+	apiClient, err := newAPIClientWithKey(apiKey)
+	if err != nil {
+		return "", nil, err
 	}
-	c := client.NewWithHTTPClient(cfg.APIURL(), apiKey, httpClient)
 
-	return source, c, nil
+	return source, apiClient, nil
+}
+
+func newAPIClientWithKey(apiKey string) (*client.Client, error) {
+	cfg := config.Load()
+
+	httpClient, err := client.NewInstrumentedHTTPClient(cfg.CACertFile())
+	if err != nil {
+		return nil, clierrors.ConfigFailed("initialize HTTP client", err).
+			WithHint("Set MUSH_NETWORK_CA_CERT_FILE to a readable PEM bundle, or unset it and retry")
+	}
+
+	return client.NewWithHTTPClient(cfg.APIURL(), apiKey, httpClient), nil
 }
 
 var tryAPIClient = newTryAPIClient
@@ -43,15 +50,15 @@ var tryAPIClient = newTryAPIClient
 // "public" for anonymous clients, or empty when authenticated.
 func newTryAPIClient() (auth.CredentialSource, *client.Client, string, error) {
 	source, apiKey := auth.GetCredentials()
-	cfg := config.Load()
-	httpClient := &http.Client{
-		Transport: otelhttp.NewTransport(http.DefaultTransport),
+
+	apiClient, err := newAPIClientWithKey(apiKey)
+	if err != nil {
+		return auth.SourceNone, nil, "", err
 	}
-	c := client.NewWithHTTPClient(cfg.APIURL(), apiKey, httpClient)
 
 	if apiKey == "" {
-		return auth.SourceNone, c, "public", nil
+		return auth.SourceNone, apiClient, "public", nil
 	}
 
-	return source, c, "", nil
+	return source, apiClient, "", nil
 }

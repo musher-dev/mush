@@ -30,6 +30,9 @@ task check
 # Run tests only
 task check:test
 
+# Run CLI/API contract checks
+task check:contracts
+
 # Build binary
 task build
 
@@ -101,6 +104,8 @@ go test ./... -v
 - Unit tests live in `*_test.go` alongside the code they test
 - Mock external dependencies (API, Claude Code, keyring)
 - Use `output.NewWriter()` with buffers for testing CLI output
+- Golden-path contract fixtures live under `test/contracts/` and are verified by `task check:contracts`
+- Synthetic canary checks live under `test/canary/` and run via `task check:canary` when canary env vars are set
 
 ## Commit Messages
 

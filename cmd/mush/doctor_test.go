@@ -46,7 +46,6 @@ func TestDoctorOutput_AllPass_Golden(t *testing.T) {
 	results := []doctor.Result{
 		{Name: "API Connectivity", Status: doctor.StatusPass, Message: "https://api.musher.dev (42ms)"},
 		{Name: "Authentication", Status: doctor.StatusPass, Message: "sa-test (via keyring)"},
-		{Name: "Claude CLI", Status: doctor.StatusPass, Message: "1.0.20 at /usr/local/bin/claude"},
 		{Name: "CLI Version", Status: doctor.StatusPass, Message: "v2.3.0 (latest)"},
 	}
 
@@ -58,7 +57,6 @@ func TestDoctorOutput_Mixed_Golden(t *testing.T) {
 	results := []doctor.Result{
 		{Name: "API Connectivity", Status: doctor.StatusPass, Message: "https://api.musher.dev (42ms)"},
 		{Name: "Authentication", Status: doctor.StatusFail, Message: "Not authenticated", Detail: "Run 'mush auth login' to authenticate"},
-		{Name: "Claude CLI", Status: doctor.StatusWarn, Message: "Found but version unknown"},
 		{Name: "CLI Version", Status: doctor.StatusWarn, Message: "v2.2.0 (v2.3.0 available)", Detail: "Run 'mush update' to update"},
 	}
 
@@ -70,7 +68,6 @@ func TestDoctorOutput_AllFail_Golden(t *testing.T) {
 	results := []doctor.Result{
 		{Name: "API Connectivity", Status: doctor.StatusFail, Message: "https://api.musher.dev", Detail: "connection refused"},
 		{Name: "Authentication", Status: doctor.StatusFail, Message: "Not authenticated", Detail: "Run 'mush auth login' to authenticate"},
-		{Name: "Claude CLI", Status: doctor.StatusFail, Message: "Not found in PATH", Detail: "Install from https://claude.ai/download"},
 		{Name: "CLI Version", Status: doctor.StatusWarn, Message: "Development build (version check skipped)"},
 	}
 

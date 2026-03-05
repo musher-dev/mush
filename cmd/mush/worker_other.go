@@ -65,7 +65,7 @@ Watch mode is currently supported only on Unix-like systems.`,
 		Example: `  mush worker start
   mush worker start --habitat prod --queue jobs
   mush worker start --harness claude
-  mush worker start --bundle my-kit:0.1.0
+  mush worker start --bundle acme/my-kit:0.1.0
   mush worker start --dry-run`,
 		Args: noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -76,8 +76,8 @@ Watch mode is currently supported only on Unix-like systems.`,
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Verify connection without claiming jobs")
 	cmd.Flags().StringVar(&queue, "queue", "", "Filter jobs by queue slug or ID")
 	cmd.Flags().StringVar(&habitat, "habitat", "", "Habitat slug or ID to connect to")
-	cmd.Flags().StringVar(&harnessType, "harness", "", "Specific harness type: claude, bash (default: all)")
-	cmd.Flags().StringVar(&bundleRef, "bundle", "", "Bundle slug[:version] to install before starting")
+	cmd.Flags().StringVar(&harnessType, "harness", "", "Specific harness type: claude, codex, copilot, cursor, gemini, opencode (default: all)")
+	cmd.Flags().StringVar(&bundleRef, "bundle", "", "Bundle namespace/slug[:version] to install before starting")
 
 	return cmd
 }

@@ -71,17 +71,19 @@ If/when a TUI framework is adopted:
 
 ## Addendum: Root Command TUI Navigation (2026-03)
 
-The root `mush` command (bare, with no subcommand) now supports an opt-in interactive TUI mode via the `--interactive` flag, `MUSH_INTERACTIVE` env var, or `interactive` config key.
+The root `mush` command (bare, with no subcommand) now launches an interactive TUI by default. The TUI can be disabled via the `--no-tui` flag, `MUSH_NO_TUI` env var, or `tui: false` config key.
 
-**This does not change the bare-noun prohibition.** The six noun commands (`worker`, `bundle`, `auth`, `config`, `history`, `habitat`) still show help text when invoked without a verb. Only the root `mush` command gains TUI behavior, and only when explicitly opted in.
+**This does not change the bare-noun prohibition.** The six noun commands (`worker`, `bundle`, `auth`, `config`, `history`, `habitat`) still show help text when invoked without a verb. Only the root `mush` command has TUI behavior.
 
 ### Suppression rules
 
 The TUI is suppressed (falls back to help text) when any of:
+- `--no-tui` / `MUSH_NO_TUI` is set
 - `--json` / `MUSH_JSON` is set
 - `--quiet` / `MUSH_QUIET` is set
 - `--no-input` / `MUSH_NO_INPUT` / `CI=true` is set
 - stdout is not a TTY
+- `tui: false` in config
 
 ### Implementation
 

@@ -1,0 +1,6 @@
+{
+  "workerId": "worker_123",
+  "runnerId": "runner_123",
+  "heartbeatDeadlineAt": "2026-03-01T12:00:30Z",
+  "heartbeatIntervalMs": 30000
+}

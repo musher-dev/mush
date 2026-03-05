@@ -29,7 +29,7 @@ func (c *Client) RegisterWorker(ctx context.Context, req *RegisterWorkerRequest)
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusCreated {
-		return nil, unexpectedStatus("register worker", resp.StatusCode, resp.Body)
+		return nil, unexpectedStatus("register worker", resp)
 	}
 
 	var result RegisterWorkerResponse
@@ -66,7 +66,7 @@ func (c *Client) HeartbeatWorker(ctx context.Context, workerID, currentJobID str
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, unexpectedStatus("heartbeat worker", resp.StatusCode, resp.Body)
+		return nil, unexpectedStatus("heartbeat worker", resp)
 	}
 
 	var result WorkerHeartbeatResponse
@@ -99,7 +99,7 @@ func (c *Client) DeregisterWorker(ctx context.Context, workerID string, req Dere
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return unexpectedStatus("deregister worker", resp.StatusCode, resp.Body)
+		return unexpectedStatus("deregister worker", resp)
 	}
 
 	return nil

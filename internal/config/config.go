@@ -48,7 +48,8 @@ func Load() *Config {
 	v.SetDefault("api.url", DefaultAPIURL)
 	v.SetDefault("worker.poll_interval", DefaultPollInterval)
 	v.SetDefault("worker.heartbeat_interval", DefaultHeartbeatInterval)
-	v.SetDefault("interactive", false)
+	v.SetDefault("network.ca_cert_file", "")
+	v.SetDefault("tui", true)
 	v.SetDefault("history.enabled", true)
 	v.SetDefault("history.scrollback_lines", 10000)
 	v.SetDefault("history.retention", (30 * 24 * time.Hour).String())
@@ -134,6 +135,11 @@ func (c *Config) APIURL() string {
 	return c.GetString("api.url")
 }
 
+// CACertFile returns the optional custom CA certificate bundle path.
+func (c *Config) CACertFile() string {
+	return strings.TrimSpace(c.GetString("network.ca_cert_file"))
+}
+
 // PollInterval returns the poll interval as a duration.
 func (c *Config) PollInterval() time.Duration {
 	return c.parseDuration("worker.poll_interval", defaultPollIntervalDuration)
@@ -144,9 +150,9 @@ func (c *Config) HeartbeatInterval() time.Duration {
 	return c.parseDuration("worker.heartbeat_interval", defaultHeartbeatIntervalDuration)
 }
 
-// Interactive returns whether the interactive TUI is enabled.
-func (c *Config) Interactive() bool {
-	return c.v.GetBool("interactive")
+// TUI returns whether the interactive TUI is enabled.
+func (c *Config) TUI() bool {
+	return c.v.GetBool("tui")
 }
 
 // HistoryEnabled returns whether transcript history is enabled.

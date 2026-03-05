@@ -14,6 +14,9 @@ type BundleResolveResponse struct {
 	BundleID  string         `json:"bundleId"`
 	VersionID string         `json:"versionId"`
 	Version   string         `json:"version"`
+	Namespace string         `json:"namespace"`
+	Slug      string         `json:"slug"`
+	Ref       string         `json:"ref"`
 	State     string         `json:"state"`
 	OCIRef    string         `json:"ociRef"`
 	OCIDigest string         `json:"ociDigest"`
@@ -35,8 +38,9 @@ type BundleLayer struct {
 }
 
 // ResolveBundle resolves a bundle slug (and optional version) to a concrete version with manifest.
-func (c *Client) ResolveBundle(ctx context.Context, slug, version string) (*BundleResolveResponse, error) {
+func (c *Client) ResolveBundle(ctx context.Context, namespace, slug, version string) (*BundleResolveResponse, error) {
 	params := map[string]string{
+		"namespace":   namespace,
 		"bundle_slug": slug,
 	}
 
@@ -80,7 +84,7 @@ func (c *Client) resolveBundleAttempt(
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, unexpectedStatus("resolve bundle", resp.StatusCode, resp.Body)
+		return nil, unexpectedStatus("resolve bundle", resp)
 	}
 
 	var result BundleResolveResponse
@@ -116,7 +120,7 @@ func (c *Client) fetchBundleAssetAttempt(ctx context.Context, path string) ([]by
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, unexpectedStatus("fetch bundle asset", resp.StatusCode, resp.Body)
+		return nil, unexpectedStatus("fetch bundle asset", resp)
 	}
 
 	data, err := io.ReadAll(resp.Body)

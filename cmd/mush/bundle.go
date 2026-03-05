@@ -3,7 +3,6 @@
 package main
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -50,13 +49,13 @@ func newBundleLoadCmd() *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:   "load <slug>[:<version>]",
+		Use:   "load <namespace/slug>[:<version>]",
 		Short: "Load a bundle into an ephemeral session",
 		Long: `Pull a bundle and launch a harness with the bundle's assets injected
 into a temporary directory. The session is interactive — exit the harness
 (Ctrl+Q) to clean up.`,
-		Example: `  mush bundle load my-kit --harness claude
-  mush bundle load my-kit:0.1.0 --harness claude`,
+		Example: `  mush bundle load acme/my-kit --harness claude
+  mush bundle load acme/my-kit:0.1.0 --harness claude`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := output.FromContext(cmd.Context())
@@ -70,18 +69,27 @@ into a temporary directory. The session is interactive — exit the harness
 			if err != nil {
 				return &clierrors.CLIError{
 					Message: err.Error(),
-					Hint:    "Use format: <slug> or <slug>:<version>",
+					Hint:    "Use format: namespace/slug or namespace/slug:version",
 					Code:    clierrors.ExitUsage,
 				}
 			}
 
-			logger = logger.With(slog.String("bundle.slug", ref.Slug))
+			logger = logger.With(slog.String("bundle.slug", ref.Slug), slog.String("bundle.namespace", ref.Namespace))
 
 			// Validate harness type.
 			if harnessType == "" {
 				return &clierrors.CLIError{
 					Message: "Harness type is required for bundle load",
 					Hint:    fmt.Sprintf("Use --harness flag. Available: %s", joinNames(harness.RegisteredNames())),
+					Code:    clierrors.ExitUsage,
+				}
+			}
+
+			// Check for TTY before anything else — it's the most fundamental requirement.
+			if !out.Terminal().IsTTY {
+				return &clierrors.CLIError{
+					Message: "Bundle load requires a terminal (TTY)",
+					Hint:    "Run this command directly in a terminal, not in a pipe or script",
 					Code:    clierrors.ExitUsage,
 				}
 			}
@@ -96,37 +104,20 @@ into a temporary directory. The session is interactive — exit the harness
 				return clierrors.HarnessNotAvailable(normalized)
 			}
 
-			// Check for TTY.
-			if !out.Terminal().IsTTY {
-				return &clierrors.CLIError{
-					Message: "Bundle load requires a terminal (TTY)",
-					Hint:    "Run this command directly in a terminal, not in a pipe or script",
-					Code:    clierrors.ExitUsage,
-				}
-			}
-
 			// Authenticate (anonymous fallback for public bundles).
-			source, c, wsKeyOverride, err := tryAPIClient()
+			source, c, _, err := tryAPIClient()
 			if err != nil {
 				return err
 			}
 
-			var workspaceKey string
-			if wsKeyOverride != "" {
-				workspaceKey = wsKeyOverride
-
-				out.Info("No credentials found; attempting public bundle access")
-			} else {
+			if source != "" {
 				out.Print("Using credentials from: %s\n", source)
-
-				workspaceKey, err = resolveWorkspaceKey(cmd.Context(), c, out)
-				if err != nil {
-					return err
-				}
+			} else {
+				out.Info("No credentials found; attempting public bundle access")
 			}
 
 			// Pull the bundle.
-			resolved, cachePath, err := bundle.Pull(cmd.Context(), c, workspaceKey, ref.Slug, ref.Version, out)
+			resolved, cachePath, err := bundle.Pull(cmd.Context(), c, ref.Namespace, ref.Slug, ref.Version, out)
 			if err != nil {
 				logger.Error("bundle load pull failed", slog.String("event.type", "bundle.load.error"), slog.String("error", err.Error()))
 
@@ -276,12 +267,12 @@ func newBundleInstallCmd() *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:   "install <slug>[:<version>]",
+		Use:   "install <namespace/slug>[:<version>]",
 		Short: "Install bundle assets into the current project",
 		Long: `Pull a bundle and install its assets into the harness's native directory
 structure in the current project directory.`,
-		Example: `  mush bundle install my-kit --harness claude
-  mush bundle install my-kit:0.1.0 --harness claude --force`,
+		Example: `  mush bundle install acme/my-kit --harness claude
+  mush bundle install acme/my-kit:0.1.0 --harness claude --force`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := output.FromContext(cmd.Context())
@@ -295,12 +286,12 @@ structure in the current project directory.`,
 			if err != nil {
 				return &clierrors.CLIError{
 					Message: err.Error(),
-					Hint:    "Use format: <slug> or <slug>:<version>",
+					Hint:    "Use format: namespace/slug or namespace/slug:version",
 					Code:    clierrors.ExitUsage,
 				}
 			}
 
-			logger = logger.With(slog.String("bundle.slug", ref.Slug))
+			logger = logger.With(slog.String("bundle.slug", ref.Slug), slog.String("bundle.namespace", ref.Namespace))
 
 			// Validate harness type.
 			if harnessType == "" {
@@ -317,27 +308,19 @@ structure in the current project directory.`,
 			}
 
 			// Authenticate (anonymous fallback for public bundles).
-			source, c, wsKeyOverride, err := tryAPIClient()
+			source, c, _, err := tryAPIClient()
 			if err != nil {
 				return err
 			}
 
-			var workspaceKey string
-			if wsKeyOverride != "" {
-				workspaceKey = wsKeyOverride
-
-				out.Info("No credentials found; attempting public bundle access")
-			} else {
+			if source != "" {
 				out.Print("Using credentials from: %s\n", source)
-
-				workspaceKey, err = resolveWorkspaceKey(cmd.Context(), c, out)
-				if err != nil {
-					return err
-				}
+			} else {
+				out.Info("No credentials found; attempting public bundle access")
 			}
 
 			// Pull the bundle.
-			resolved, cachePath, err := bundle.Pull(cmd.Context(), c, workspaceKey, ref.Slug, ref.Version, out)
+			resolved, cachePath, err := bundle.Pull(cmd.Context(), c, ref.Namespace, ref.Slug, ref.Version, out)
 			if err != nil {
 				logger.Error("bundle install pull failed", slog.String("event.type", "bundle.install.error"), slog.String("error", err.Error()))
 
@@ -451,7 +434,7 @@ current project directory.`,
 				out.Print("  (none)\n")
 			} else {
 				for _, c := range cached {
-					out.Print("  %s/%s:%s (%d assets)\n", c.Workspace, c.Slug, c.Version, c.AssetCount)
+					out.Print("  %s/%s:%s (%d assets)\n", c.Namespace, c.Slug, c.Version, c.AssetCount)
 				}
 			}
 
@@ -543,7 +526,7 @@ in the current project directory.`,
 				out.Print("  (none)\n")
 			} else {
 				for _, c := range cachedMatches {
-					out.Print("  %s/%s:%s (%d assets)\n", c.Workspace, c.Slug, c.Version, c.AssetCount)
+					out.Print("  %s/%s:%s (%d assets)\n", c.Namespace, c.Slug, c.Version, c.AssetCount)
 				}
 			}
 
@@ -688,20 +671,6 @@ func joinNames(names []string) string {
 	}
 
 	return result
-}
-
-func resolveWorkspaceKey(ctx context.Context, c *client.Client, out *output.Writer) (string, error) {
-	identity, err := c.ValidateKey(ctx)
-	if err != nil {
-		return "", clierrors.AuthFailed(err)
-	}
-
-	if identity.WorkspaceID == "" {
-		out.Warning("Workspace ID not present in identity; using local cache workspace key 'default'")
-		return "default", nil
-	}
-
-	return identity.WorkspaceID, nil
 }
 
 // isForbiddenError returns true if the error chain contains an HTTP 403 status,

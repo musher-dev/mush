@@ -19,3 +19,9 @@ assets:
 mcp:
   format: toml
   configPath: .codex/config.toml
+
+status:
+  versionArgs: ["--version"]
+  installHint: "npm install -g @openai/codex"
+  installCommand: ["npm", "install", "-g", "@openai/codex"]
+  configDir: "~/.codex"

@@ -19,17 +19,29 @@ func TestRegisteredNamesIncludesBuiltins(t *testing.T) {
 		return false
 	}
 
-	// On unix builds, claude, bash, and codex should be registered via init().
+	// On unix builds, built-ins should be registered via init().
 	if !has("claude") {
 		t.Error("expected 'claude' in RegisteredNames()")
 	}
 
-	if !has("bash") {
-		t.Error("expected 'bash' in RegisteredNames()")
-	}
-
 	if !has("codex") {
 		t.Error("expected 'codex' in RegisteredNames()")
+	}
+
+	if !has("copilot") {
+		t.Error("expected 'copilot' in RegisteredNames()")
+	}
+
+	if !has("cursor") {
+		t.Error("expected 'cursor' in RegisteredNames()")
+	}
+
+	if !has("gemini") {
+		t.Error("expected 'gemini' in RegisteredNames()")
+	}
+
+	if !has("opencode") {
+		t.Error("expected 'opencode' in RegisteredNames()")
 	}
 }
 

@@ -29,7 +29,7 @@ func TestWorkerHotkeyNoClientShowsError(t *testing.T) {
 func TestWorkerHotkeyWithClientShowsHabitats(t *testing.T) {
 	t.Parallel()
 
-	mdl := newModel(t.Context(), &Dependencies{Client: &client.Client{}})
+	mdl := newModel(t.Context(), &Dependencies{Client: client.New("http://localhost", "test-key")})
 
 	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'w'}})
 
@@ -153,7 +153,7 @@ func TestWorkerHabitatNavigation(t *testing.T) {
 func TestWorkerHabitatSelectTransitionsToQueues(t *testing.T) {
 	t.Parallel()
 
-	mdl := newModel(t.Context(), &Dependencies{Client: &client.Client{}})
+	mdl := newModel(t.Context(), &Dependencies{Client: client.New("http://localhost", "test-key")})
 	mdl.activeScreen = screenWorkerHabitats
 	mdl.workerHabitats.habitats = []client.HabitatSummary{
 		{ID: "h1", Name: "Production", Slug: "prod"},
@@ -287,7 +287,7 @@ func TestWorkerQueueNavigation(t *testing.T) {
 func TestWorkerQueueSelectTransitionsToHarness(t *testing.T) {
 	t.Parallel()
 
-	mdl := newModel(t.Context(), &Dependencies{Client: &client.Client{}})
+	mdl := newModel(t.Context(), &Dependencies{Client: client.New("http://localhost", "test-key")})
 	mdl.activeScreen = screenWorkerQueues
 	mdl.workerQueues.queues = []client.QueueSummary{
 		{ID: "q1", Name: "Default", Slug: "default"},
@@ -347,7 +347,7 @@ func TestWorkerHarnessNavigation(t *testing.T) {
 func TestWorkerHarnessSelectTransitionsToChecking(t *testing.T) {
 	t.Parallel()
 
-	mdl := newModel(t.Context(), &Dependencies{Client: &client.Client{}})
+	mdl := newModel(t.Context(), &Dependencies{Client: client.New("http://localhost", "test-key")})
 	mdl.activeScreen = screenWorkerHarness
 	mdl.workerHarness = workerHarnessState{
 		habitatID:   "h1",
@@ -579,7 +579,7 @@ func TestWorkerErrorEscGoesBack(t *testing.T) {
 func TestWorkerErrorRetryHabitats(t *testing.T) {
 	t.Parallel()
 
-	mdl := newModel(t.Context(), &Dependencies{Client: &client.Client{}})
+	mdl := newModel(t.Context(), &Dependencies{Client: client.New("http://localhost", "test-key")})
 	mdl.activeScreen = screenWorkerError
 	mdl.workerError = workerErrorState{
 		message:     "network error",

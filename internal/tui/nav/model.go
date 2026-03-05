@@ -11,6 +11,7 @@ import (
 
 	"github.com/musher-dev/mush/internal/buildinfo"
 	"github.com/musher-dev/mush/internal/client"
+	"github.com/musher-dev/mush/internal/doctor"
 	"github.com/musher-dev/mush/internal/harness"
 	"github.com/musher-dev/mush/internal/transcript"
 )
@@ -34,6 +35,9 @@ const (
 	screenWorkerError            // error + retry/back
 	screenHubExplore             // hub browse/search
 	screenHubDetail              // hub bundle detail view
+	screenStatus                 // connectivity diagnostics
+	screenHistory                // transcript session list
+	screenHistoryDetail          // transcript session detail viewer
 	screenPlaceholder            // coming-soon for unimplemented items
 )
 
@@ -42,6 +46,7 @@ type menuItem struct {
 	label       string
 	hotkey      rune
 	description string
+	isSection   bool // section headers are non-selectable dividers
 }
 
 // harnessOption is one of the available harness choices.
@@ -65,23 +70,55 @@ func loadHarnesses() []harnessOption {
 	return opts
 }
 
+// bundleInputFocus identifies which area of the bundle input screen has focus.
+type bundleInputFocus int
+
+const (
+	bundleFocusInput   bundleInputFocus = iota // text input
+	bundleFocusList                            // recent/installed/action list
+	bundleFocusHarness                         // harness selector
+)
+
 // bundleInputState holds state for the bundle input screen.
 type bundleInputState struct {
-	textInput    textinput.Model
-	harnessCur   int  // selected harness index
-	focusOnInput bool // true=text input focused, false=harness list focused
+	textInput  textinput.Model
+	harnessCur int              // selected harness index
+	focusArea  bundleInputFocus // which area is focused
+
+	// Enriched bundle selection.
+	recentBundles    []recentBundleEntry
+	installedBundles []installedBundleEntry
+	listCursor       int // cursor in the combined recent+installed+links list
+	listLoaded       bool
+}
+
+// recentBundleEntry is a recently cached bundle for the Run harness screen.
+type recentBundleEntry struct {
+	namespace string
+	slug      string
+	version   string
+	timeAgo   string
+}
+
+// installedBundleEntry is an installed bundle for the Run harness screen.
+type installedBundleEntry struct {
+	slug    string
+	version string
+	harness string
 }
 
 // bundleResolveState holds state for the resolving screen.
 type bundleResolveState struct {
-	spinner spinner.Model
-	slug    string
-	version string
-	cancel  context.CancelFunc
+	spinner   spinner.Model
+	namespace string
+	slug      string
+	version   string
+	cancel    context.CancelFunc
 }
 
 // bundleConfirmState holds state for the confirmation screen.
 type bundleConfirmState struct {
+	namespace  string
 	slug       string
 	version    string
 	assetCount int
@@ -91,16 +128,18 @@ type bundleConfirmState struct {
 
 // bundleProgressState holds state for the download progress screen.
 type bundleProgressState struct {
-	progress progress.Model
-	slug     string
-	version  string
-	label    string
-	current  int
-	total    int
+	progress  progress.Model
+	namespace string
+	slug      string
+	version   string
+	label     string
+	current   int
+	total     int
 }
 
 // bundleCompleteState holds state for the completion screen.
 type bundleCompleteState struct {
+	namespace string
 	slug      string
 	version   string
 	harness   string
@@ -109,11 +148,13 @@ type bundleCompleteState struct {
 
 // bundleErrorState holds state for the error screen.
 type bundleErrorState struct {
-	message string
-	hint    string
-	slug    string
-	version string
-	harness string
+	message   string
+	hint      string
+	namespace string
+	slug      string
+	version   string
+	harness   string
+	buttonIdx int // 0=Retry, 1=Back
 }
 
 // workerHabitatsState holds state for the habitat selection screen.
@@ -174,6 +215,7 @@ type workerErrorState struct {
 	queueID     string
 	queueName   string
 	harness     string
+	buttonIdx   int // 0=Retry, 1=Back
 }
 
 // hubExploreState holds state for the hub explore screen.
@@ -206,6 +248,61 @@ type hubDetailState struct {
 	errorMsg     string
 }
 
+// statusState holds state for the diagnostics status screen.
+type statusState struct {
+	spinner        spinner.Model
+	loading        bool
+	results        []doctor.Result
+	passed         int
+	failed         int
+	warnings       int
+	harnessLoading bool
+	harnessReports []*harness.HealthReport
+}
+
+// historyListState holds state for the history session list screen.
+type historyListState struct {
+	spinner  spinner.Model
+	loading  bool
+	sessions []transcript.Session
+	cursor   int
+	errorMsg string
+}
+
+// historyDetailState holds state for the history detail viewer screen.
+type historyDetailState struct {
+	spinner      spinner.Model
+	loading      bool
+	session      transcript.Session
+	events       []transcript.Event
+	lines        []string // ANSI-stripped display lines
+	scrollOffset int
+	errorMsg     string
+}
+
+// homeHarnessState holds state for the harness sidebar panel on the home screen.
+type homeHarnessState struct {
+	cursor   int                  // selected harness index
+	expanded int                  // expanded harness index (-1 if none)
+	statuses []harnessQuickStatus // quick status for each harness
+	loading  bool                 // true while initial statuses are loading
+}
+
+// harnessQuickStatus holds the quick status for a single harness on the home panel.
+type harnessQuickStatus struct {
+	name        string // provider name (e.g. "claude")
+	displayName string // display name (e.g. "Claude Code")
+	installed   bool
+	version     string // version string if installed, empty otherwise
+}
+
+// harnessExpandState holds state for an expanded harness row in the home panel.
+type harnessExpandState struct {
+	loading bool
+	spinner spinner.Model
+	report  *harness.HealthReport
+}
+
 // contextInfo holds async-loaded context data for the sidebar panel.
 type contextInfo struct {
 	loading        bool
@@ -233,6 +330,11 @@ type model struct {
 	// Harness options (from registry)
 	harnesses []harnessOption
 
+	// Home harness panel
+	homeHarness   homeHarnessState
+	homeFocusArea int // 0=menu, 1=harness panel
+	harnessExpand harnessExpandState
+
 	// Context panel
 	ctxInfo contextInfo
 
@@ -247,6 +349,13 @@ type model struct {
 	// Hub sub-states
 	hubExplore hubExploreState
 	hubDetail  hubDetailState
+
+	// Status sub-state
+	status statusState
+
+	// History sub-states
+	history       historyListState
+	historyDetail historyDetailState
 
 	// Worker sub-states
 	workerHabitats workerHabitatsState
@@ -265,9 +374,12 @@ const defaultHeight = 24
 
 func newModel(ctx context.Context, deps *Dependencies) *model {
 	slugInput := textinput.New()
-	slugInput.Placeholder = "bundle-slug or slug:version"
+	slugInput.Placeholder = "namespace/slug or namespace/slug:version"
 	slugInput.CharLimit = 128
 	slugInput.Width = menuWidthFull - 8 //nolint:mnd // padding
+
+	harnessExpandSpinner := spinner.New()
+	harnessExpandSpinner.Spinner = spinner.Dot
 
 	resolveSpinner := spinner.New()
 	resolveSpinner.Spinner = spinner.Dot
@@ -287,6 +399,15 @@ func newModel(ctx context.Context, deps *Dependencies) *model {
 	hubDetailSpinner := spinner.New()
 	hubDetailSpinner.Spinner = spinner.Dot
 
+	statusSpinner := spinner.New()
+	statusSpinner.Spinner = spinner.Dot
+
+	historySpinner := spinner.New()
+	historySpinner.Spinner = spinner.Dot
+
+	historyDetailSpinner := spinner.New()
+	historyDetailSpinner.Spinner = spinner.Dot
+
 	hubSearchInput := textinput.New()
 	hubSearchInput.Placeholder = "Search bundles..."
 	hubSearchInput.CharLimit = 128
@@ -298,12 +419,21 @@ func newModel(ctx context.Context, deps *Dependencies) *model {
 		width:     defaultWidth,
 		height:    defaultHeight,
 		harnesses: loadHarnesses(),
+		homeHarness: homeHarnessState{
+			expanded: -1,
+			loading:  true,
+		},
+		harnessExpand: harnessExpandState{
+			spinner: harnessExpandSpinner,
+		},
+		cursor: 1, // skip first section header
 		items: []menuItem{
-			{label: "Load a bundle", hotkey: 'b', description: "Install and run a skill bundle"},
-			{label: "Start worker", hotkey: 'w', description: "Connect to a queue and process jobs"},
+			{label: "DEVELOP", isSection: true},
+			{label: "Run harness", hotkey: 'r', description: "Launch a harness session with a bundle"},
+			{label: "Find a bundle", hotkey: 'f', description: "Browse and install bundles from the Hub"},
+			{label: "OPERATE", isSection: true},
+			{label: "Start runner", hotkey: 'w', description: "Connect to a queue and process jobs"},
 			{label: "View history", hotkey: 'h', description: "Browse recent transcript sessions"},
-			{label: "Check status", hotkey: 's', description: "Run connectivity diagnostics"},
-			{label: "Explore Hub", hotkey: 'e', description: "Search and browse published bundles"},
 		},
 		activeScreen: screenHome,
 		screenStack:  nil,
@@ -320,9 +450,12 @@ func newModel(ctx context.Context, deps *Dependencies) *model {
 		hubDetail: hubDetailState{
 			spinner: hubDetailSpinner,
 		},
+		status: statusState{
+			spinner: statusSpinner,
+		},
 		bundleInput: bundleInputState{
-			textInput:    slugInput,
-			focusOnInput: true,
+			textInput: slugInput,
+			focusArea: bundleFocusInput,
 		},
 		bundleResolve: bundleResolveState{
 			spinner: resolveSpinner,
@@ -339,6 +472,12 @@ func newModel(ctx context.Context, deps *Dependencies) *model {
 		workerChecking: workerCheckingState{
 			spinner: checkingSpinner,
 		},
+		history: historyListState{
+			spinner: historySpinner,
+		},
+		historyDetail: historyDetailState{
+			spinner: historyDetailSpinner,
+		},
 	}
 }
 
@@ -352,16 +491,23 @@ func (m *model) pushScreen(s screen) {
 func (m *model) popScreen() {
 	if len(m.screenStack) == 0 {
 		m.activeScreen = screenHome
-		return
+	} else {
+		m.activeScreen = m.screenStack[len(m.screenStack)-1]
+		m.screenStack = m.screenStack[:len(m.screenStack)-1]
 	}
 
-	m.activeScreen = m.screenStack[len(m.screenStack)-1]
-	m.screenStack = m.screenStack[:len(m.screenStack)-1]
+	// Reset harness panel focus/expansion when returning to home.
+	if m.activeScreen == screenHome {
+		m.homeFocusArea = 0
+		m.homeHarness.expanded = -1
+		m.harnessExpand.loading = false
+		m.harnessExpand.report = nil
+	}
 }
 
-// Init satisfies tea.Model. Fires async context loading.
+// Init satisfies tea.Model. Fires async context loading and harness status detection.
 func (m *model) Init() tea.Cmd {
-	return cmdLoadContext(m.deps)
+	return tea.Batch(cmdLoadContext(m.ctx, m.deps), cmdLoadHarnessStatuses(m.ctx))
 }
 
 // Update handles messages and returns the updated model.
@@ -388,8 +534,11 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		return m, nil
 
+	case bundleListLoadedMsg:
+		return m.handleBundleListLoaded(msg)
+
 	case bundleResolvedMsg:
-		return m.handleBundleResolved(msg)
+		return m.handleBundleResolved(&msg)
 
 	case bundleResolveErrorMsg:
 		return m.handleBundleResolveError(msg)
@@ -439,8 +588,26 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case hubDebounceTickMsg:
 		return m.handleHubDebounceTick(msg)
 
+	case historySessionsLoadedMsg:
+		return m.handleHistorySessionsLoaded(msg)
+
+	case historyEventsLoadedMsg:
+		return m.handleHistoryEventsLoaded(&msg)
+
+	case statusChecksCompleteMsg:
+		return m.handleStatusChecksComplete(msg)
+
+	case harnessHealthCompleteMsg:
+		return m.handleHarnessHealthComplete(msg)
+
 	case workerInstructionErrorMsg:
 		return m.handleWorkerInstructionError(msg)
+
+	case harnessStatusesLoadedMsg:
+		return m.handleHarnessStatusesLoaded(msg)
+
+	case harnessExpandHealthMsg:
+		return m.handleHarnessExpandHealth(msg)
 
 	case spinner.TickMsg:
 		if m.activeScreen == screenBundleResolving {
@@ -487,6 +654,38 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			var cmd tea.Cmd
 
 			m.workerChecking.spinner, cmd = m.workerChecking.spinner.Update(msg)
+
+			return m, cmd
+		}
+
+		if m.activeScreen == screenStatus && (m.status.loading || m.status.harnessLoading) {
+			var cmd tea.Cmd
+
+			m.status.spinner, cmd = m.status.spinner.Update(msg)
+
+			return m, cmd
+		}
+
+		if m.activeScreen == screenHistory && m.history.loading {
+			var cmd tea.Cmd
+
+			m.history.spinner, cmd = m.history.spinner.Update(msg)
+
+			return m, cmd
+		}
+
+		if m.activeScreen == screenHistoryDetail && m.historyDetail.loading {
+			var cmd tea.Cmd
+
+			m.historyDetail.spinner, cmd = m.historyDetail.spinner.Update(msg)
+
+			return m, cmd
+		}
+
+		if m.activeScreen == screenHome && m.harnessExpand.loading {
+			var cmd tea.Cmd
+
+			m.harnessExpand.spinner, cmd = m.harnessExpand.spinner.Update(msg)
 
 			return m, cmd
 		}
@@ -544,6 +743,12 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleHubExploreKey(msg)
 	case screenHubDetail:
 		return m.handleHubDetailKey(msg)
+	case screenStatus:
+		return m.handleStatusKey(msg)
+	case screenHistory:
+		return m.handleHistoryListKey(msg)
+	case screenHistoryDetail:
+		return m.handleHistoryDetailKey(msg)
 	case screenPlaceholder:
 		return m.handlePlaceholderKey(msg)
 	}
@@ -553,32 +758,74 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // handleHomeKey processes key events on the home screen.
 func (m *model) handleHomeKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Menu hotkeys work regardless of focus area.
+	if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 {
+		r := msg.Runes[0]
+
+		// Hidden comma hotkey for settings/status screen.
+		if r == ',' {
+			m.status = statusState{
+				spinner:        m.status.spinner,
+				loading:        true,
+				harnessLoading: true,
+			}
+
+			m.pushScreen(screenStatus)
+
+			return m, tea.Batch(m.status.spinner.Tick, cmdRunStatusChecks(m.ctx), cmdRunHarnessHealthChecks(m.ctx))
+		}
+
+		for idx, item := range m.items {
+			if item.hotkey == r {
+				m.cursor = idx
+
+				return m.activateMenuItem(idx)
+			}
+		}
+	}
+
+	// Tab toggles focus between menu and harness panel (only in two-panel mode with harnesses).
+	if key.Matches(msg, m.keys.Tab) && m.styles.layout == layoutTwoPanel && len(m.homeHarness.statuses) > 0 {
+		m.homeFocusArea = (m.homeFocusArea + 1) % 2 //nolint:mnd // toggle between 2 areas
+
+		// Collapse any expansion when switching away from harness panel.
+		if m.homeFocusArea == 0 {
+			m.homeHarness.expanded = -1
+			m.harnessExpand.loading = false
+			m.harnessExpand.report = nil
+		}
+
+		return m, nil
+	}
+
+	// Delegate to harness panel handler when focused.
+	if m.homeFocusArea == 1 {
+		return m.handleHarnessPanelKey(msg)
+	}
+
 	switch {
 	case key.Matches(msg, m.keys.Down):
-		if m.cursor < len(m.items)-1 {
-			m.cursor++
+		next := m.cursor + 1
+		for next < len(m.items) && m.items[next].isSection {
+			next++
+		}
+
+		if next < len(m.items) {
+			m.cursor = next
 		}
 
 	case key.Matches(msg, m.keys.Up):
-		if m.cursor > 0 {
-			m.cursor--
+		prev := m.cursor - 1
+		for prev >= 0 && m.items[prev].isSection {
+			prev--
+		}
+
+		if prev >= 0 {
+			m.cursor = prev
 		}
 
 	case key.Matches(msg, m.keys.Select):
 		return m.activateMenuItem(m.cursor)
-
-	default:
-		// Check for hotkey match.
-		if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 {
-			r := msg.Runes[0]
-			for idx, item := range m.items {
-				if item.hotkey == r {
-					m.cursor = idx
-
-					return m.activateMenuItem(idx)
-				}
-			}
-		}
 	}
 
 	return m, nil
@@ -591,25 +838,30 @@ func (m *model) activateMenuItem(idx int) (tea.Model, tea.Cmd) {
 	}
 
 	switch m.items[idx].hotkey {
-	case 'b':
-		// Reset bundle input state.
+	case 'r':
+		// Reset bundle input state ("Run harness").
 		slugField := textinput.New()
-		slugField.Placeholder = "bundle-slug or slug:version"
+		slugField.Placeholder = "namespace/slug or namespace/slug:version"
 		slugField.CharLimit = 128
 		slugField.Width = m.styles.menuWidth - 8 //nolint:mnd // padding
 		slugField.Focus()
 
 		m.bundleInput = bundleInputState{
-			textInput:    slugField,
-			focusOnInput: true,
+			textInput: slugField,
+			focusArea: bundleFocusInput,
 		}
 
 		m.pushScreen(screenBundleInput)
 
-		return m, textinput.Blink
+		workDir := ""
+		if m.deps != nil {
+			workDir = m.deps.WorkDir
+		}
+
+		return m, tea.Batch(textinput.Blink, cmdLoadBundleLists(workDir))
 
 	case 'w':
-		if m.deps == nil || m.deps.Client == nil {
+		if m.deps == nil || m.deps.Client == nil || !m.deps.Client.IsAuthenticated() {
 			m.workerError = workerErrorState{
 				message:     "Not authenticated",
 				hint:        "Run 'mush auth login' first to authenticate",
@@ -630,11 +882,11 @@ func (m *model) activateMenuItem(idx int) (tea.Model, tea.Cmd) {
 
 		return m, tea.Batch(
 			m.workerHabitats.spinner.Tick,
-			cmdListHabitats(m.deps.Client),
+			cmdListHabitats(m.ctx, m.deps.Client),
 		)
 
-	case 'e':
-		// Reset hub explore state.
+	case 'f':
+		// Reset hub explore state ("Find a bundle").
 		searchField := textinput.New()
 		searchField.Placeholder = "Search bundles..."
 		searchField.CharLimit = 128
@@ -655,9 +907,19 @@ func (m *model) activateMenuItem(idx int) (tea.Model, tea.Cmd) {
 
 		return m, tea.Batch(
 			m.hubExplore.spinner.Tick,
-			cmdSearchHub(baseURL, "", "", "trending", hubSearchLimit, "", false, m.hubExplore.searchID),
-			cmdListHubCategories(baseURL),
+			cmdSearchHub(m.ctx, baseURL, "", "", "trending", hubSearchLimit, "", false, m.hubExplore.searchID),
+			cmdListHubCategories(m.ctx, baseURL),
 		)
+
+	case 'h':
+		m.history = historyListState{
+			spinner: m.history.spinner,
+			loading: true,
+		}
+
+		m.pushScreen(screenHistory)
+
+		return m, tea.Batch(m.history.spinner.Tick, cmdLoadHistorySessions())
 
 	default:
 		m.placeholderText = m.items[idx].label
@@ -671,6 +933,37 @@ func (m *model) activateMenuItem(idx int) (tea.Model, tea.Cmd) {
 func (m *model) handlePlaceholderKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if key.Matches(msg, m.keys.Back) || key.Matches(msg, m.keys.Select) {
 		m.popScreen()
+	}
+
+	return m, nil
+}
+
+// handleErrorScreenKey is the shared key handler for error screens with
+// Retry / Back buttons. It manages button toggling, back navigation, and
+// retry dispatch. Both worker and bundle error screens delegate here.
+func (m *model) handleErrorScreenKey(
+	msg tea.KeyMsg,
+	buttonIdx *int,
+	retryFn func() (tea.Model, tea.Cmd),
+) (tea.Model, tea.Cmd) {
+	switch {
+	case key.Matches(msg, m.keys.Back):
+		m.popScreen()
+
+	case key.Matches(msg, m.keys.Tab), key.Matches(msg, m.keys.Left), key.Matches(msg, m.keys.Right):
+		*buttonIdx = (*buttonIdx + 1) % 2 //nolint:mnd // 2 buttons
+
+	case key.Matches(msg, m.keys.Retry):
+		return retryFn()
+
+	case key.Matches(msg, m.keys.Select):
+		if *buttonIdx == 1 {
+			m.popScreen()
+
+			return m, nil
+		}
+
+		return retryFn()
 	}
 
 	return m, nil
@@ -707,6 +1000,12 @@ func (m *model) View() string {
 		return renderHubExplore(m)
 	case screenHubDetail:
 		return renderHubDetail(m)
+	case screenStatus:
+		return renderStatus(m)
+	case screenHistory:
+		return renderHistoryList(m)
+	case screenHistoryDetail:
+		return renderHistoryDetail(m)
 	case screenPlaceholder:
 		return renderPlaceholder(m)
 	default:

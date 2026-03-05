@@ -96,6 +96,13 @@ func TestLoad_FromEnv(t *testing.T) {
 			key:     "worker.heartbeat_interval",
 			wantInt: 15,
 		},
+		{
+			name:    "custom CA cert from env",
+			envVar:  "MUSH_NETWORK_CA_CERT_FILE",
+			envVal:  "/tmp/corp-ca.pem",
+			key:     "network.ca_cert_file",
+			wantStr: "/tmp/corp-ca.pem",
+		},
 	}
 
 	for _, tt := range tests {
@@ -205,6 +212,18 @@ func TestConfig_APIURL(t *testing.T) {
 				t.Errorf("APIURL() = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestConfig_CACertFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+	t.Setenv("MUSH_NETWORK_CA_CERT_FILE", "/etc/ssl/certs/custom.pem")
+
+	cfg := Load()
+
+	if got := cfg.CACertFile(); got != "/etc/ssl/certs/custom.pem" {
+		t.Errorf("CACertFile() = %q, want %q", got, "/etc/ssl/certs/custom.pem")
 	}
 }
 

@@ -132,6 +132,8 @@ type WorkerStatus struct {
 	Credential string `json:"credential"`
 	Workspace  string `json:"workspace"`
 	Active     bool   `json:"active"`
+	RequestID  string `json:"request_id,omitempty"`
+	TraceID    string `json:"trace_id,omitempty"`
 }
 
 func newWorkerStatusCmd() *cobra.Command {
@@ -155,7 +157,7 @@ func newWorkerStatusCmd() *cobra.Command {
 			spin := out.Spinner("Checking connection")
 			spin.Start()
 
-			identity, err := c.ValidateKey(cmd.Context())
+			identity, meta, err := c.ValidateKeyWithMeta(cmd.Context())
 			if err != nil {
 				spin.StopWithFailure("Authentication failed")
 				return clierrors.AuthFailed(err)
@@ -163,12 +165,22 @@ func newWorkerStatusCmd() *cobra.Command {
 
 			spin.StopWithSuccess("Connected")
 
+			requestID := ""
+			traceID := ""
+
+			if meta != nil {
+				requestID = meta.RequestID
+				traceID = meta.TraceID
+			}
+
 			if out.JSON {
 				if err := out.PrintJSON(WorkerStatus{
 					Source:     string(source),
 					Credential: identity.CredentialName,
 					Workspace:  identity.WorkspaceName,
 					Active:     false,
+					RequestID:  requestID,
+					TraceID:    traceID,
 				}); err != nil {
 					return clierrors.Wrap(clierrors.ExitGeneral, "Failed to write JSON output", err)
 				}
@@ -180,6 +192,14 @@ func newWorkerStatusCmd() *cobra.Command {
 			out.Print("Source:     %s\n", source)
 			out.Print("Credential: %s\n", identity.CredentialName)
 			out.Print("Workspace:  %s\n", identity.WorkspaceName)
+
+			if requestID != "" {
+				out.Print("Request ID: %s\n", requestID)
+			}
+
+			if traceID != "" {
+				out.Print("Trace ID:   %s\n", traceID)
+			}
 
 			out.Println()
 			out.Muted("Worker: Not active")

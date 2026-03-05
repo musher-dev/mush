@@ -14,71 +14,23 @@ func TestBundleInputScreen(t *testing.T) {
 	mdl := testModel()
 
 	// Press 'b' to go to bundle input.
-	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}})
+	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
 
 	if mdl.activeScreen != screenBundleInput {
 		t.Fatalf("activeScreen = %d, want screenBundleInput", mdl.activeScreen)
 	}
 
 	view := mdl.View()
-	if !strings.Contains(view, "Load Bundle") {
-		t.Error("bundle input view should contain 'Load Bundle'")
+	if !strings.Contains(view, "Run harness") {
+		t.Error("bundle input view should contain 'Run harness'")
 	}
 
 	if !strings.Contains(view, "claude") {
 		t.Error("bundle input view should contain 'claude' harness option")
 	}
 
-	if !strings.Contains(view, "bash") {
-		t.Error("bundle input view should contain 'bash' harness option")
-	}
-
 	if !strings.Contains(view, "codex") {
 		t.Error("bundle input view should contain 'codex' harness option")
-	}
-}
-
-func TestBundleInputExploreHubFromHarnessFocus(t *testing.T) {
-	t.Parallel()
-
-	mdl := testModel()
-
-	// Go to bundle input and switch to harness list.
-	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}})
-	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyTab})
-
-	// Press 'e' to explore hub.
-	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
-
-	if mdl.activeScreen != screenHubExplore {
-		t.Errorf("activeScreen = %d, want screenHubExplore (explore hub)", mdl.activeScreen)
-	}
-
-	// Esc should go back to bundle input.
-	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyEscape})
-
-	if mdl.activeScreen != screenBundleInput {
-		t.Errorf("activeScreen = %d, want screenBundleInput after esc from hub", mdl.activeScreen)
-	}
-}
-
-func TestBundleInputExploreHubIgnoredWhenTyping(t *testing.T) {
-	t.Parallel()
-
-	mdl := testModel()
-
-	// Go to bundle input (text input is focused by default).
-	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}})
-
-	if !mdl.bundleInput.focusOnInput {
-		t.Fatal("should start with focus on input")
-	}
-
-	// Press 'e' — should type into input, not navigate.
-	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
-
-	if mdl.activeScreen != screenBundleInput {
-		t.Errorf("activeScreen = %d, want screenBundleInput (e should type, not navigate)", mdl.activeScreen)
 	}
 }
 
@@ -88,7 +40,7 @@ func TestBundleInputEscGoesBack(t *testing.T) {
 	mdl := testModel()
 
 	// Go to bundle input.
-	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}})
+	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
 
 	if mdl.activeScreen != screenBundleInput {
 		t.Fatalf("expected bundle input screen")
@@ -108,24 +60,31 @@ func TestBundleInputTabSwitchesFocus(t *testing.T) {
 	mdl := testModel()
 
 	// Go to bundle input.
-	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}})
+	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
 
-	if !mdl.bundleInput.focusOnInput {
+	if mdl.bundleInput.focusArea != bundleFocusInput {
 		t.Error("should start with focus on input")
 	}
 
-	// Tab switches to harness.
+	// Tab switches to list.
 	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyTab})
 
-	if mdl.bundleInput.focusOnInput {
-		t.Error("after tab, focus should be on harness list")
+	if mdl.bundleInput.focusArea != bundleFocusList {
+		t.Error("after tab, focus should be on list")
 	}
 
-	// Tab again switches back to input.
+	// Tab again switches to harness.
 	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyTab})
 
-	if !mdl.bundleInput.focusOnInput {
-		t.Error("after second tab, focus should be back on input")
+	if mdl.bundleInput.focusArea != bundleFocusHarness {
+		t.Error("after second tab, focus should be on harness")
+	}
+
+	// Tab once more returns to input.
+	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyTab})
+
+	if mdl.bundleInput.focusArea != bundleFocusInput {
+		t.Error("after third tab, focus should be back on input")
 	}
 }
 
@@ -134,12 +93,21 @@ func TestBundleInputHarnessNavigation(t *testing.T) {
 
 	mdl := testModel()
 
-	// Go to bundle input and switch to harness list.
-	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}})
+	// Go to bundle input and switch to harness panel (tab twice: input→list→harness).
+	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
 	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyTab})
+	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyTab})
+
+	if mdl.bundleInput.focusArea != bundleFocusHarness {
+		t.Fatalf("focusArea = %d, want bundleFocusHarness", mdl.bundleInput.focusArea)
+	}
 
 	if mdl.bundleInput.harnessCur != 0 {
 		t.Errorf("harnessCur = %d, want 0", mdl.bundleInput.harnessCur)
+	}
+
+	if len(mdl.harnesses) < 2 {
+		t.Fatalf("need at least 2 harnesses, got %d", len(mdl.harnesses))
 	}
 
 	// Move down.
@@ -149,25 +117,23 @@ func TestBundleInputHarnessNavigation(t *testing.T) {
 		t.Errorf("harnessCur = %d, want 1 after down", mdl.bundleInput.harnessCur)
 	}
 
-	// Move down to third harness.
-	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyDown})
-
-	if mdl.bundleInput.harnessCur != 2 {
-		t.Errorf("harnessCur = %d, want 2 after second down", mdl.bundleInput.harnessCur)
+	// Move down until we hit the end, then verify it clamps.
+	last := len(mdl.harnesses) - 1
+	for mdl.bundleInput.harnessCur < last {
+		mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyDown})
 	}
 
-	// Move down again should clamp.
 	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyDown})
 
-	if mdl.bundleInput.harnessCur != 2 {
-		t.Errorf("harnessCur = %d, want 2 (clamped)", mdl.bundleInput.harnessCur)
+	if mdl.bundleInput.harnessCur != last {
+		t.Errorf("harnessCur = %d, want %d (clamped)", mdl.bundleInput.harnessCur, last)
 	}
 
 	// Move up.
 	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyUp})
 
-	if mdl.bundleInput.harnessCur != 1 {
-		t.Errorf("harnessCur = %d, want 1 after up", mdl.bundleInput.harnessCur)
+	if mdl.bundleInput.harnessCur != last-1 {
+		t.Errorf("harnessCur = %d, want %d after up", mdl.bundleInput.harnessCur, last-1)
 	}
 }
 
@@ -177,7 +143,7 @@ func TestBundleInputEmptySubmitShowsError(t *testing.T) {
 	mdl := testModel()
 
 	// Go to bundle input with empty text.
-	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}})
+	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
 
 	// Submit empty.
 	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyEnter})
@@ -193,10 +159,10 @@ func TestBundleInputNoClientShowsError(t *testing.T) {
 	mdl := newModel(t.Context(), &Dependencies{})
 
 	// Go to bundle input.
-	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}})
+	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
 
-	// Type a valid slug.
-	for _, r := range "test-bundle" {
+	// Type a valid namespace/slug.
+	for _, r := range "acme/test-bundle" {
 		mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
 	}
 
@@ -207,8 +173,8 @@ func TestBundleInputNoClientShowsError(t *testing.T) {
 		t.Errorf("activeScreen = %d, want screenBundleError (no client)", mdl.activeScreen)
 	}
 
-	if !strings.Contains(mdl.bundleError.message, "Not authenticated") {
-		t.Errorf("error message = %q, want to contain 'Not authenticated'", mdl.bundleError.message)
+	if !strings.Contains(mdl.bundleError.message, "Unable to connect") {
+		t.Errorf("error message = %q, want to contain 'Unable to connect'", mdl.bundleError.message)
 	}
 }
 
@@ -346,6 +312,7 @@ func TestBundleCompleteEscGoesHome(t *testing.T) {
 	mdl := testModel()
 	mdl.pushScreen(screenBundleComplete)
 	mdl.bundleComplete = bundleCompleteState{
+		namespace: "acme",
 		slug:      "test",
 		version:   "1.0.0",
 		harness:   "claude",
@@ -366,6 +333,7 @@ func TestBundleCompleteLaunchSetsResult(t *testing.T) {
 	mdl := testModel()
 	mdl.pushScreen(screenBundleComplete)
 	mdl.bundleComplete = bundleCompleteState{
+		namespace: "acme",
 		slug:      "test",
 		version:   "1.0.0",
 		harness:   "claude",
@@ -385,6 +353,10 @@ func TestBundleCompleteLaunchSetsResult(t *testing.T) {
 
 	if mdl.result.BundleSlug != "test" {
 		t.Errorf("result.BundleSlug = %q, want 'test'", mdl.result.BundleSlug)
+	}
+
+	if mdl.result.BundleNamespace != "acme" {
+		t.Errorf("result.BundleNamespace = %q, want 'acme'", mdl.result.BundleNamespace)
 	}
 
 	// Should have a quit command.
@@ -481,6 +453,43 @@ func TestBundleDownloadErrorMsg(t *testing.T) {
 
 	if !strings.Contains(mdl.bundleError.message, "network error") {
 		t.Errorf("error message = %q, want to contain 'network error'", mdl.bundleError.message)
+	}
+}
+
+func TestBundleInputTwoPanelView(t *testing.T) {
+	t.Parallel()
+
+	mdl := testModel()
+
+	// Simulate a wide terminal to trigger two-panel mode.
+	mdl = updateModel(mdl, tea.WindowSizeMsg{Width: 130, Height: 40})
+
+	// Navigate to bundle input screen.
+	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+
+	if mdl.activeScreen != screenBundleInput {
+		t.Fatalf("activeScreen = %d, want screenBundleInput", mdl.activeScreen)
+	}
+
+	view := mdl.View()
+	if !strings.Contains(view, "Run harness") {
+		t.Error("two-panel view should contain 'Run harness' panel title")
+	}
+
+	if !strings.Contains(view, "Harness") {
+		t.Error("two-panel view should contain 'Harness' panel title")
+	}
+
+	if !strings.Contains(view, "namespace/slug") {
+		t.Error("two-panel view should contain slug input placeholder")
+	}
+
+	if !strings.Contains(view, "Find a bundle on the Hub") {
+		t.Error("two-panel view should contain 'Find a bundle on the Hub' action link")
+	}
+
+	if !strings.Contains(view, "switch panel") {
+		t.Error("two-panel footer should contain 'switch panel' hint")
 	}
 }
 

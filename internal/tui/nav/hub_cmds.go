@@ -62,12 +62,11 @@ const (
 // --- Hub commands ---
 
 // cmdSearchHub searches for bundles in the hub.
-func cmdSearchHub(baseURL, query, bundleType, sort string, limit int, cursor string, appendMore bool, searchID int) tea.Cmd {
+func cmdSearchHub(ctx context.Context, baseURL, query, bundleType, sort string, limit int, cursor string, appendMore bool, searchID int) tea.Cmd {
 	return func() tea.Msg {
 		c := client.New(baseURL, "")
-		ctx := context.Background()
 
-		resp, err := c.SearchHubBundles(ctx, query, bundleType, sort, limit, cursor)
+		resp, err := c.SearchHubBundles(navBaseCtx(ctx), query, bundleType, sort, limit, cursor)
 		if err != nil {
 			return hubSearchErrorMsg{err: err, query: query, searchID: searchID}
 		}
@@ -84,12 +83,11 @@ func cmdSearchHub(baseURL, query, bundleType, sort string, limit int, cursor str
 }
 
 // cmdGetHubDetail fetches full details for a hub bundle.
-func cmdGetHubDetail(baseURL, publisher, slug string) tea.Cmd {
+func cmdGetHubDetail(ctx context.Context, baseURL, publisher, slug string) tea.Cmd {
 	return func() tea.Msg {
 		c := client.New(baseURL, "")
-		ctx := context.Background()
 
-		detail, err := c.GetHubBundleDetail(ctx, publisher, slug)
+		detail, err := c.GetHubBundleDetail(navBaseCtx(ctx), publisher, slug)
 		if err != nil {
 			return hubDetailErrorMsg{err: err, publisher: publisher, slug: slug}
 		}
@@ -99,12 +97,11 @@ func cmdGetHubDetail(baseURL, publisher, slug string) tea.Cmd {
 }
 
 // cmdListHubCategories fetches hub categories.
-func cmdListHubCategories(baseURL string) tea.Cmd {
+func cmdListHubCategories(ctx context.Context, baseURL string) tea.Cmd {
 	return func() tea.Msg {
 		c := client.New(baseURL, "")
-		ctx := context.Background()
 
-		cats, err := c.ListHubCategories(ctx)
+		cats, err := c.ListHubCategories(navBaseCtx(ctx))
 		if err != nil {
 			// Non-fatal: categories are optional.
 			return hubCategoriesLoadedMsg{categories: nil}

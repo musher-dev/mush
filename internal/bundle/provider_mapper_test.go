@@ -9,20 +9,6 @@ import (
 	"github.com/musher-dev/mush/internal/harness"
 )
 
-func TestProviderMapper_NoAssets(t *testing.T) {
-	spec, ok := harness.GetProvider("bash")
-	if !ok {
-		t.Fatal("bash provider not found")
-	}
-
-	mapper := NewProviderMapper(spec)
-
-	_, err := mapper.MapAsset("/project", client.BundleLayer{AssetType: "skill", LogicalPath: "test.md"})
-	if err == nil {
-		t.Fatal("expected error for provider without asset support")
-	}
-}
-
 func TestProviderMapper_PrepareLoad_Claude(t *testing.T) {
 	spec, ok := harness.GetProvider("claude")
 	if !ok {

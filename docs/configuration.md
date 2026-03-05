@@ -58,15 +58,18 @@ Mush reads `config.yaml` from the config root. The file is created automatically
 | Key | Type | Default | Env Override | Description |
 |-----|------|---------|-------------|-------------|
 | `api.url` | string | `https://api.musher.dev` | `MUSH_API_URL` | Musher platform API endpoint |
+| `network.ca_cert_file` | string | `""` | `MUSH_NETWORK_CA_CERT_FILE` | Optional PEM CA bundle for corporate proxy/TLS interception |
 | `worker.poll_interval` | duration | `30s` | `MUSH_WORKER_POLL_INTERVAL` | Job poll interval (e.g. `30s`, `1m`) |
 | `worker.heartbeat_interval` | duration | `30s` | `MUSH_WORKER_HEARTBEAT_INTERVAL` | Heartbeat interval (e.g. `30s`, `1m`) |
-| `interactive` | bool | `false` | `MUSH_INTERACTIVE` | Launch interactive TUI when running bare `mush` |
+| `tui` | bool | `true` | `MUSH_TUI` / `MUSH_NO_TUI` | Enable interactive TUI when running bare `mush` |
 | `history.enabled` | bool | `true` | `MUSH_HISTORY_ENABLED` | Enable transcript history recording |
 | `history.dir` | string | `<state root>/history` | `MUSH_HISTORY_DIR` | Transcript storage directory |
 | `history.scrollback_lines` | int | `10000` | `MUSH_HISTORY_SCROLLBACK_LINES` | In-memory scrollback ring buffer size (lines) |
 | `history.retention` | duration | `720h` (30 days) | `MUSH_HISTORY_RETENTION` | Retention period for `mush history prune` |
 
 Environment variables use the `MUSH_` prefix with dots replaced by underscores (e.g., `api.url` becomes `MUSH_API_URL`). Environment variables take precedence over the config file.
+
+When `network.ca_cert_file` / `MUSH_NETWORK_CA_CERT_FILE` is configured, Mush appends the provided CA certificates to the system trust store for outbound API TLS verification.
 
 ### Precedence
 
@@ -97,6 +100,8 @@ mush --api-url http://localhost:8080 doctor
 ```yaml
 api:
   url: https://api.musher.dev
+network:
+  ca_cert_file: /etc/ssl/certs/corporate-ca.pem
 worker:
   poll_interval: 30s
   heartbeat_interval: 30s
@@ -316,7 +321,8 @@ Summary of all environment variables that affect Mush behavior:
 | `MUSH_HISTORY_RETENTION` | History retention period (Go duration, e.g., `720h`) |
 | `MUSH_WORKER_POLL_INTERVAL` | Job poll interval (Go duration, e.g., `30s`) |
 | `MUSH_WORKER_HEARTBEAT_INTERVAL` | Heartbeat interval (Go duration, e.g., `30s`) |
-| `MUSH_INTERACTIVE` | Enable interactive TUI for bare `mush` (`1` or `true`) |
+| `MUSH_TUI` | Enable/disable interactive TUI for bare `mush` (`true` or `false`) |
+| `MUSH_NO_TUI` | Disable interactive TUI for bare `mush` (`1` or `true`) |
 | `MUSH_UPDATE_DISABLED` | Disable update checks (`1` or `true`) |
 | `MUSH_JSON` | Enable JSON output (`1` or `true`) |
 | `MUSH_QUIET` | Enable quiet mode (`1` or `true`) |
