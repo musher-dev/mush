@@ -514,13 +514,16 @@ func buildTUIDeps() *nav.Dependencies {
 		Config: cfg,
 	}
 
-	// Check if we have credentials to build a client.
+	// Build API client — use credentials if available, otherwise create
+	// an anonymous client so public bundle access works without auth.
 	source, apiKey := auth.GetCredentials()
-	if source != auth.SourceNone && apiKey != "" {
-		httpClient, err := client.NewInstrumentedHTTPClient(cfg.CACertFile())
-		if err == nil {
-			deps.Client = client.NewWithHTTPClient(cfg.APIURL(), apiKey, httpClient)
-		}
+	if source == auth.SourceNone || apiKey == "" {
+		apiKey = ""
+	}
+
+	httpClient, err := client.NewInstrumentedHTTPClient(cfg.CACertFile())
+	if err == nil {
+		deps.Client = client.NewWithHTTPClient(cfg.APIURL(), apiKey, httpClient)
 	}
 
 	if wd, err := os.Getwd(); err == nil {

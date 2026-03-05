@@ -427,8 +427,8 @@ func TestHubInstallWithoutClientShowsError(t *testing.T) {
 		t.Errorf("activeScreen = %d, want screenBundleError (no client)", mdl.activeScreen)
 	}
 
-	if !strings.Contains(mdl.bundleError.message, "Not authenticated") {
-		t.Errorf("error message = %q, want to contain 'Not authenticated'", mdl.bundleError.message)
+	if !strings.Contains(mdl.bundleError.message, "Unable to connect") {
+		t.Errorf("error message = %q, want to contain 'Unable to connect'", mdl.bundleError.message)
 	}
 }
 
