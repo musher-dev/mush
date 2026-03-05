@@ -12,9 +12,9 @@ import (
 
 func testModelWithHarnesses() *model {
 	mdl := testModel()
-	mdl.width = 120
+	mdl.width = 130
 	mdl.height = 40
-	mdl.styles = newTheme(120)
+	mdl.styles = newTheme(130)
 	mdl.homeHarness = homeHarnessState{
 		expanded: -1,
 		loading:  false,

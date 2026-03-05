@@ -388,10 +388,10 @@ func TestTwoPanelLayout(t *testing.T) {
 	t.Parallel()
 
 	mdl := testModel()
-	mdl = updateModel(mdl, tea.WindowSizeMsg{Width: 100, Height: 40})
+	mdl = updateModel(mdl, tea.WindowSizeMsg{Width: 130, Height: 40})
 
 	if mdl.styles.layout != layoutTwoPanel {
-		t.Errorf("layout = %d, want layoutTwoPanel at width 100", mdl.styles.layout)
+		t.Errorf("layout = %d, want layoutTwoPanel at width 130", mdl.styles.layout)
 	}
 
 	view := mdl.View()

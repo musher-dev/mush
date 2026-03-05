@@ -30,11 +30,12 @@ const (
 
 // Result carries the TUI's chosen action and associated parameters back to the caller.
 type Result struct {
-	Action     Action
-	BundleSlug string
-	BundleVer  string
-	Harness    string
-	CachePath  string
+	Action          Action
+	BundleNamespace string
+	BundleSlug      string
+	BundleVer       string
+	Harness         string
+	CachePath       string
 
 	// Worker start fields
 	HabitatID          string

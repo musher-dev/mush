@@ -312,6 +312,7 @@ func TestBundleCompleteEscGoesHome(t *testing.T) {
 	mdl := testModel()
 	mdl.pushScreen(screenBundleComplete)
 	mdl.bundleComplete = bundleCompleteState{
+		namespace: "acme",
 		slug:      "test",
 		version:   "1.0.0",
 		harness:   "claude",
@@ -332,6 +333,7 @@ func TestBundleCompleteLaunchSetsResult(t *testing.T) {
 	mdl := testModel()
 	mdl.pushScreen(screenBundleComplete)
 	mdl.bundleComplete = bundleCompleteState{
+		namespace: "acme",
 		slug:      "test",
 		version:   "1.0.0",
 		harness:   "claude",
@@ -351,6 +353,10 @@ func TestBundleCompleteLaunchSetsResult(t *testing.T) {
 
 	if mdl.result.BundleSlug != "test" {
 		t.Errorf("result.BundleSlug = %q, want 'test'", mdl.result.BundleSlug)
+	}
+
+	if mdl.result.BundleNamespace != "acme" {
+		t.Errorf("result.BundleNamespace = %q, want 'acme'", mdl.result.BundleNamespace)
 	}
 
 	// Should have a quit command.
@@ -456,7 +462,7 @@ func TestBundleInputTwoPanelView(t *testing.T) {
 	mdl := testModel()
 
 	// Simulate a wide terminal to trigger two-panel mode.
-	mdl = updateModel(mdl, tea.WindowSizeMsg{Width: 120, Height: 40})
+	mdl = updateModel(mdl, tea.WindowSizeMsg{Width: 130, Height: 40})
 
 	// Navigate to bundle input screen.
 	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})

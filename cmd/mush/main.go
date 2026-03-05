@@ -210,8 +210,11 @@ Get started:  mush init`,
 				}
 
 				if result.Action == nav.ActionBundleLoad {
-					out.Success("Bundle %s v%s ready at %s (harness: %s)",
-						result.BundleSlug, result.BundleVer, result.CachePath, result.Harness)
+					return handleBundleLoadNavResult(cmd, out, result)
+				}
+
+				if result.Action == nav.ActionBareRun {
+					return handleBareRunNavResult(cmd, out, result)
 				}
 
 				if result.Action == nav.ActionWorkerStart {

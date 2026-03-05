@@ -9,7 +9,7 @@ import (
 
 // bundleHarnessPanelWidth is the fixed width for the right-hand harness panel in two-panel mode.
 // Matches menuWidthFull to avoid wrapping long harness descriptions.
-const bundleHarnessPanelWidth = 52
+const bundleHarnessPanelWidth = 60
 
 // renderBundleInput renders the bundle slug input screen.
 // Wide terminals (>= layoutTwoPanel) get side-by-side panels; narrow terminals get the original single panel.
@@ -358,7 +358,7 @@ func renderBundleProgress(mdl *model) string {
 func renderBundleComplete(mdl *model) string {
 	crumbs := renderBreadcrumb(&mdl.styles, []string{"Home", "Run Harness", "Ready"})
 
-	launchBtn := renderButton(&mdl.styles, "Launch session", true)
+	launchBtn := renderButton(&mdl.styles, "Launch interaction", true)
 
 	lines := []string{
 		renderStatusDot(&mdl.styles.statusOK, "Bundle ready"),

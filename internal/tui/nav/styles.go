@@ -4,11 +4,11 @@ import "github.com/charmbracelet/lipgloss"
 
 // Responsive layout breakpoints.
 const (
-	twoPanelThreshold = 100 // main ~50% + context ~40% + gap
+	twoPanelThreshold = 124 // 60 + 60 + gap(2) + margin(2)
 	compactThreshold  = 60
 	minTerminalWidth  = 40
 
-	menuWidthFull     = 52
+	menuWidthFull     = 60
 	menuWidthCompact  = 32
 	hubWidthMax       = 80
 	contextPanelWidth = 24
@@ -22,8 +22,8 @@ type layoutMode int
 const (
 	layoutMinimal  layoutMode = iota // < 40 cols
 	layoutCompact                    // 40–59 cols
-	layoutSingle                     // 60–89 cols
-	layoutTwoPanel                   // >= 90 cols
+	layoutSingle                     // 60–123 cols
+	layoutTwoPanel                   // >= 124 cols
 )
 
 // classifyLayout returns the layout mode for a given terminal width.

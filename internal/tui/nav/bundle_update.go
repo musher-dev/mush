@@ -315,13 +315,14 @@ func (m *model) handleBundleCompleteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.activeScreen = screenHome
 
 	case key.Matches(msg, m.keys.Select):
-		// Launch session — exit TUI with result.
+		// Launch interaction — exit TUI with result.
 		m.result = &Result{
-			Action:     ActionBundleLoad,
-			BundleSlug: m.bundleComplete.slug,
-			BundleVer:  m.bundleComplete.version,
-			Harness:    m.bundleComplete.harness,
-			CachePath:  m.bundleComplete.cachePath,
+			Action:          ActionBundleLoad,
+			BundleNamespace: m.bundleComplete.namespace,
+			BundleSlug:      m.bundleComplete.slug,
+			BundleVer:       m.bundleComplete.version,
+			Harness:         m.bundleComplete.harness,
+			CachePath:       m.bundleComplete.cachePath,
 		}
 
 		return m, tea.Quit
