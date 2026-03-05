@@ -173,12 +173,12 @@ func loadCachedBundleResolve(cachePath string) (*client.BundleResolveResponse, e
 
 	data, err := os.ReadFile(manifestPath) //nolint:gosec // path is from controlled bundle cache.
 	if err != nil {
-		return nil, fmt.Errorf("read %s: %w", manifestPath, err)
+		return nil, clierrors.Wrap(clierrors.ExitGeneral, fmt.Sprintf("read %s", manifestPath), err)
 	}
 
 	var resolved client.BundleResolveResponse
 	if err := json.Unmarshal(data, &resolved); err != nil {
-		return nil, fmt.Errorf("parse %s: %w", manifestPath, err)
+		return nil, clierrors.Wrap(clierrors.ExitGeneral, fmt.Sprintf("parse %s", manifestPath), err)
 	}
 
 	return &resolved, nil
