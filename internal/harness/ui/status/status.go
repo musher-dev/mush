@@ -24,7 +24,7 @@ func Render(s *state.Snapshot) string {
 
 	if s.SidebarVisible {
 		rows := s.Height - 1
-		lines := sidebarLines(s, rows)
+		lines := SidebarLines(s, rows)
 
 		for i := 0; i < rows; i++ {
 			b.WriteString(ansi.Move(2+i, 1))
@@ -44,16 +44,17 @@ const (
 	barReset = "\x1b[22;39m" + barBG + barFG // clear bold, reset FG, re-apply BG+FG
 
 	// Accent colors (applied over bar background).
-	bold    = "\x1b[1m"
-	dimGray = "\x1b[90m"
-	green   = "\x1b[32m"
-	yellow  = "\x1b[33m"
-	red     = "\x1b[31m"
+	bold     = "\x1b[1m"
+	dimGray  = "\x1b[90m"
+	green    = "\x1b[38;5;149m" // matches colorSuccess (#9ECE6A)
+	yellow   = "\x1b[38;5;179m" // matches colorWarning (#E0AF68)
+	red      = "\x1b[38;5;210m" // matches colorError (#F7768E)
+	accentFG = "\x1b[38;5;140m" // matches colorAccent (#9D7CD8)
 
 	// Sidebar palette.
 	sidebarBG     = "\x1b[48;5;238m"
 	sidebarFG     = "\x1b[38;5;252m"
-	sidebarBorder = "\x1b[48;5;236m\x1b[38;5;244m"
+	sidebarBorder = "\x1b[48;5;236m\x1b[38;5;240m" // muted border
 
 	// Reset.
 	resetAll = "\x1b[0m"
@@ -63,7 +64,7 @@ func topBarLine(s *state.Snapshot) string {
 	sep := " " + dimGray + "|" + barReset + " "
 
 	parts := []string{
-		bold + "MUSH" + barReset,
+		accentFG + bold + "MUSH" + barReset,
 		fmt.Sprintf("Status: %s", styleStatus(s.StatusLabel)),
 	}
 	if s.CopyMode {
@@ -87,7 +88,8 @@ func topBarLine(s *state.Snapshot) string {
 	return line + " " + resetAll
 }
 
-func sidebarLines(s *state.Snapshot, rows int) []string {
+// SidebarLines builds plain-text sidebar rows for a snapshot.
+func SidebarLines(s *state.Snapshot, rows int) []string {
 	lines := make([]string, 0, rows)
 
 	lines = append(lines, "Bundle")

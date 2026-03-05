@@ -1,14 +1,6 @@
 //go:build unix
 
-// Package harness provides a PTY-based TUI for embedding Claude Code.
-//
-// The harness creates a "window-in-window" interface where Claude Code runs
-// interactively via PTY, with a status bar showing connection state, job info,
-// and queue metrics.
-//
-// This implementation uses ANSI scroll regions (DECSTBM) to reserve the top
-// lines for status while giving Claude Code full control of the remaining
-// terminal space.
+// Package harness provides the interactive watch runtime for harness executors.
 package harness
 
 import (
@@ -65,10 +57,7 @@ func Run(ctx context.Context, cfg *Config) error {
 		return fmt.Errorf("harness requires a terminal (TTY)")
 	}
 
-	// Create and run the harness
-	model := NewRootModel(ctx, cfg)
-
-	return model.Run()
+	return runEmbeddedHarness(ctx, cfg)
 }
 
 // LoadedMCPServers returns the names of MCP providers that are effectively loaded.

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/musher-dev/mush/internal/client"
+	harnessstate "github.com/musher-dev/mush/internal/harness/state"
 )
 
 const (
@@ -411,4 +412,54 @@ func LoadedMCPProviderNames(cfg *client.RunnerConfigResponse, now time.Time) []s
 	sort.Strings(names) // defensive: BuildMCPProviderSpecs already sorts, but guard against future changes
 
 	return names
+}
+
+// buildMCPServerStatuses builds snapshot-ready MCP server status entries from a JobLoop.
+func buildMCPServerStatuses(jobs *JobLoop, now time.Time) []harnessstate.MCPServerStatus {
+	cfg := jobs.RunnerConfig()
+	if cfg == nil || len(cfg.Providers) == 0 {
+		return nil
+	}
+
+	loadedSet := map[string]bool{}
+	for _, name := range LoadedMCPProviderNames(cfg, now) {
+		loadedSet[name] = true
+	}
+
+	names := make([]string, 0, len(cfg.Providers))
+
+	for name, provider := range cfg.Providers {
+		if !provider.Flags.MCP || provider.MCP == nil {
+			continue
+		}
+
+		names = append(names, name)
+	}
+
+	sort.Strings(names)
+
+	statuses := make([]harnessstate.MCPServerStatus, 0, len(names))
+
+	for _, name := range names {
+		provider := cfg.Providers[name]
+		authenticated := false
+		expired := false
+
+		if provider.Credential != nil {
+			authenticated = provider.Credential.AccessToken != ""
+			if provider.Credential.ExpiresAt != nil && !provider.Credential.ExpiresAt.After(now) {
+				expired = true
+				authenticated = false
+			}
+		}
+
+		statuses = append(statuses, harnessstate.MCPServerStatus{
+			Name:          name,
+			Loaded:        loadedSet[name],
+			Authenticated: authenticated,
+			Expired:       expired,
+		})
+	}
+
+	return statuses
 }
