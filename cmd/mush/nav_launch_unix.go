@@ -27,17 +27,17 @@ func handleBundleLoadNavResult(cmd *cobra.Command, out *output.Writer, result *n
 		}
 	}
 
-	normalized, err := validateNavHarness(result.Harness)
-	if err != nil {
-		return err
-	}
-
 	if result.CachePath == "" {
 		return &clierrors.CLIError{
 			Message: "Missing bundle cache path from navigation result",
 			Hint:    "Re-run the bundle flow and launch again",
 			Code:    clierrors.ExitGeneral,
 		}
+	}
+
+	normalized, err := validateNavHarness(result.Harness)
+	if err != nil {
+		return err
 	}
 
 	resolved, err := loadCachedBundleResolve(result.CachePath)
