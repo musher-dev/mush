@@ -21,7 +21,7 @@ type contextInfoMsg struct {
 const maxRecentSessions = 3
 
 // cmdLoadContext loads auth status, workspace name, and recent sessions asynchronously.
-func cmdLoadContext(deps *Dependencies) tea.Cmd {
+func cmdLoadContext(ctx context.Context, deps *Dependencies) tea.Cmd {
 	return func() tea.Msg {
 		msg := contextInfoMsg{
 			authStatus: "not authenticated",
@@ -39,9 +39,7 @@ func cmdLoadContext(deps *Dependencies) tea.Cmd {
 
 		// 2. If authed and client available, validate key to get workspace info.
 		if msg.authStatus == "authenticated" && deps.Client != nil {
-			ctx := context.Background()
-
-			identity, err := deps.Client.ValidateKey(ctx)
+			identity, err := deps.Client.ValidateKey(navBaseCtx(ctx))
 			if err == nil {
 				msg.workspaceName = identity.WorkspaceName
 				msg.workspaceID = identity.WorkspaceID

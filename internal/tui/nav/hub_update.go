@@ -53,7 +53,7 @@ func (m *model) handleHubSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 		return m, tea.Batch(
 			m.hubExplore.spinner.Tick,
-			cmdSearchHub(baseURL, query, bundleType, "trending", hubSearchLimit, "", false, m.hubExplore.searchID),
+			cmdSearchHub(m.ctx, baseURL, query, bundleType, "trending", hubSearchLimit, "", false, m.hubExplore.searchID),
 		)
 	}
 
@@ -248,7 +248,7 @@ func (m *model) handleHubDebounceTick(msg hubDebounceTickMsg) (tea.Model, tea.Cm
 
 	return m, tea.Batch(
 		m.hubExplore.spinner.Tick,
-		cmdSearchHub(baseURL, msg.query, bundleType, "trending", hubSearchLimit, "", false, m.hubExplore.searchID),
+		cmdSearchHub(m.ctx, baseURL, msg.query, bundleType, "trending", hubSearchLimit, "", false, m.hubExplore.searchID),
 	)
 }
 
@@ -331,7 +331,7 @@ func (m *model) hubApplyFilter() (tea.Model, tea.Cmd) {
 
 	return m, tea.Batch(
 		m.hubExplore.spinner.Tick,
-		cmdSearchHub(baseURL, query, bundleType, "trending", hubSearchLimit, "", false, m.hubExplore.searchID),
+		cmdSearchHub(m.ctx, baseURL, query, bundleType, "trending", hubSearchLimit, "", false, m.hubExplore.searchID),
 	)
 }
 
@@ -356,7 +356,7 @@ func (m *model) hubViewDetail() (tea.Model, tea.Cmd) {
 
 	return m, tea.Batch(
 		m.hubDetail.spinner.Tick,
-		cmdGetHubDetail(baseURL, selected.Publisher.Handle, selected.Slug),
+		cmdGetHubDetail(m.ctx, baseURL, selected.Publisher.Handle, selected.Slug),
 	)
 }
 
@@ -383,9 +383,10 @@ func (m *model) hubInstallFromDetail() (tea.Model, tea.Cmd) {
 // hubInstall bridges hub selection to the existing bundle resolve flow.
 func (m *model) hubInstall(namespace, slug, version string) (tea.Model, tea.Cmd) {
 	if m.deps == nil || m.deps.Client == nil {
+		// Should not happen — anonymous client is created at startup.
 		m.bundleError = bundleErrorState{
-			message:   "Not authenticated",
-			hint:      "Run 'mush auth login' to authenticate before installing",
+			message:   "Unable to connect",
+			hint:      "Client not available — try restarting mush",
 			namespace: namespace,
 			slug:      slug,
 			version:   version,
@@ -412,7 +413,7 @@ func (m *model) hubInstall(namespace, slug, version string) (tea.Model, tea.Cmd)
 
 	return m, tea.Batch(
 		m.bundleResolve.spinner.Tick,
-		cmdResolveBundle(m.deps.Client, namespace, slug, version, harness),
+		cmdResolveBundle(m.ctx, m.deps.Client, namespace, slug, version, harness),
 	)
 }
 
@@ -426,6 +427,6 @@ func (m *model) hubLoadMore() (tea.Model, tea.Cmd) {
 
 	return m, tea.Batch(
 		m.hubExplore.spinner.Tick,
-		cmdSearchHub(baseURL, m.hubExplore.query, bundleType, "trending", hubSearchLimit, m.hubExplore.nextCursor, true, m.hubExplore.searchID),
+		cmdSearchHub(m.ctx, baseURL, m.hubExplore.query, bundleType, "trending", hubSearchLimit, m.hubExplore.nextCursor, true, m.hubExplore.searchID),
 	)
 }

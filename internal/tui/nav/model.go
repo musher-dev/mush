@@ -507,7 +507,7 @@ func (m *model) popScreen() {
 
 // Init satisfies tea.Model. Fires async context loading and harness status detection.
 func (m *model) Init() tea.Cmd {
-	return tea.Batch(cmdLoadContext(m.deps), cmdLoadHarnessStatuses())
+	return tea.Batch(cmdLoadContext(m.ctx, m.deps), cmdLoadHarnessStatuses(m.ctx))
 }
 
 // Update handles messages and returns the updated model.
@@ -772,7 +772,7 @@ func (m *model) handleHomeKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 			m.pushScreen(screenStatus)
 
-			return m, tea.Batch(m.status.spinner.Tick, cmdRunStatusChecks(), cmdRunHarnessHealthChecks())
+			return m, tea.Batch(m.status.spinner.Tick, cmdRunStatusChecks(m.ctx), cmdRunHarnessHealthChecks(m.ctx))
 		}
 
 		for idx, item := range m.items {
@@ -861,7 +861,7 @@ func (m *model) activateMenuItem(idx int) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(textinput.Blink, cmdLoadBundleLists(workDir))
 
 	case 'w':
-		if m.deps == nil || m.deps.Client == nil {
+		if m.deps == nil || m.deps.Client == nil || !m.deps.Client.IsAuthenticated() {
 			m.workerError = workerErrorState{
 				message:     "Not authenticated",
 				hint:        "Run 'mush auth login' first to authenticate",
@@ -882,7 +882,7 @@ func (m *model) activateMenuItem(idx int) (tea.Model, tea.Cmd) {
 
 		return m, tea.Batch(
 			m.workerHabitats.spinner.Tick,
-			cmdListHabitats(m.deps.Client),
+			cmdListHabitats(m.ctx, m.deps.Client),
 		)
 
 	case 'f':
@@ -907,8 +907,8 @@ func (m *model) activateMenuItem(idx int) (tea.Model, tea.Cmd) {
 
 		return m, tea.Batch(
 			m.hubExplore.spinner.Tick,
-			cmdSearchHub(baseURL, "", "", "trending", hubSearchLimit, "", false, m.hubExplore.searchID),
-			cmdListHubCategories(baseURL),
+			cmdSearchHub(m.ctx, baseURL, "", "", "trending", hubSearchLimit, "", false, m.hubExplore.searchID),
+			cmdListHubCategories(m.ctx, baseURL),
 		)
 
 	case 'h':

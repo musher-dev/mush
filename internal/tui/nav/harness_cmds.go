@@ -21,7 +21,7 @@ type harnessExpandHealthMsg struct {
 }
 
 // cmdLoadHarnessStatuses detects installed harnesses and their versions asynchronously.
-func cmdLoadHarnessStatuses() tea.Cmd {
+func cmdLoadHarnessStatuses(ctx context.Context) tea.Cmd {
 	return func() tea.Msg {
 		names := harness.ProviderNames()
 		statuses := make([]harnessQuickStatus, 0, len(names))
@@ -40,7 +40,7 @@ func cmdLoadHarnessStatuses() tea.Cmd {
 			// Check if binary is available.
 			if _, err := exec.LookPath(spec.Binary); err == nil {
 				status.installed = true
-				status.version = harnessQuickStatusVersion(detectVersion(spec))
+				status.version = harnessQuickStatusVersion(detectVersion(ctx, spec))
 			}
 
 			statuses = append(statuses, status)
@@ -51,13 +51,16 @@ func cmdLoadHarnessStatuses() tea.Cmd {
 }
 
 // detectVersion runs the provider's version command and returns the first line.
-func detectVersion(spec *harness.ProviderSpec) string {
+func detectVersion(ctx context.Context, spec *harness.ProviderSpec) string {
 	if spec.Status == nil || len(spec.Status.VersionArgs) == 0 {
 		return ""
 	}
 
+	versionCtx, cancel := navStatusCtx(ctx)
+	defer cancel()
+
 	//nolint:gosec // args come from embedded YAML, not user input
-	cmd := exec.CommandContext(context.Background(), spec.Binary, spec.Status.VersionArgs...)
+	cmd := exec.CommandContext(versionCtx, spec.Binary, spec.Status.VersionArgs...)
 
 	out, err := cmd.Output()
 	if err != nil {
@@ -68,9 +71,13 @@ func detectVersion(spec *harness.ProviderSpec) string {
 }
 
 // cmdRunSingleHarnessHealthCheck runs health checks for a single harness.
-func cmdRunSingleHarnessHealthCheck(name string) tea.Cmd {
+func cmdRunSingleHarnessHealthCheck(ctx context.Context, name string) tea.Cmd {
 	return func() tea.Msg {
-		report, _ := harness.CheckHealth(context.Background(), name)
+		checkCtx, cancel := navStatusCtx(ctx)
+		defer cancel()
+
+		report, _ := harness.CheckHealth(checkCtx, name)
+
 		return harnessExpandHealthMsg{report: report}
 	}
 }

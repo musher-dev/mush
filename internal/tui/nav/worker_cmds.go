@@ -48,11 +48,9 @@ type workerInstructionErrorMsg struct {
 // --- Worker commands ---
 
 // cmdListHabitats fetches the habitat list asynchronously.
-func cmdListHabitats(c *client.Client) tea.Cmd {
+func cmdListHabitats(ctx context.Context, c *client.Client) tea.Cmd {
 	return func() tea.Msg {
-		ctx := context.Background()
-
-		habitats, err := c.ListHabitats(ctx)
+		habitats, err := c.ListHabitats(navBaseCtx(ctx))
 		if err != nil {
 			return workerHabitatsErrorMsg{err: err}
 		}
@@ -62,11 +60,9 @@ func cmdListHabitats(c *client.Client) tea.Cmd {
 }
 
 // cmdListQueues fetches the queue list for a habitat asynchronously.
-func cmdListQueues(c *client.Client, habitatID, habitatName string) tea.Cmd {
+func cmdListQueues(ctx context.Context, c *client.Client, habitatID, habitatName string) tea.Cmd {
 	return func() tea.Msg {
-		ctx := context.Background()
-
-		queues, err := c.ListQueues(ctx, habitatID)
+		queues, err := c.ListQueues(navBaseCtx(ctx), habitatID)
 		if err != nil {
 			return workerQueuesErrorMsg{
 				err:         err,
@@ -84,11 +80,9 @@ func cmdListQueues(c *client.Client, habitatID, habitatName string) tea.Cmd {
 }
 
 // cmdCheckInstructions checks instruction availability for a queue.
-func cmdCheckInstructions(c *client.Client, queueID string) tea.Cmd {
+func cmdCheckInstructions(ctx context.Context, c *client.Client, queueID string) tea.Cmd {
 	return func() tea.Msg {
-		ctx := context.Background()
-
-		availability, err := c.GetQueueInstructionAvailability(ctx, queueID)
+		availability, err := c.GetQueueInstructionAvailability(navBaseCtx(ctx), queueID)
 		if err != nil {
 			return workerInstructionErrorMsg{err: err}
 		}

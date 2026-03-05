@@ -1,6 +1,8 @@
 package nav
 
 import (
+	"strings"
+
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -170,8 +172,8 @@ func (m *model) activateBundleHubLink() (tea.Model, tea.Cmd) {
 
 	return m, tea.Batch(
 		m.hubExplore.spinner.Tick,
-		cmdSearchHub(baseURL, "", "", "trending", hubSearchLimit, "", false, m.hubExplore.searchID),
-		cmdListHubCategories(baseURL),
+		cmdSearchHub(m.ctx, baseURL, "", "", "trending", hubSearchLimit, "", false, m.hubExplore.searchID),
+		cmdListHubCategories(m.ctx, baseURL),
 	)
 }
 
@@ -208,11 +210,11 @@ func (m *model) submitBundleInput() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Check if client is available.
+	// Check if client is available (should always be non-nil; anonymous client is created at startup).
 	if m.deps == nil || m.deps.Client == nil {
 		m.bundleError = bundleErrorState{
-			message:   "Not authenticated",
-			hint:      "Run 'mush auth login' first to authenticate",
+			message:   "Unable to connect",
+			hint:      "Client not available — try restarting mush",
 			namespace: ref.Namespace,
 			slug:      ref.Slug,
 			version:   ref.Version,
@@ -237,7 +239,7 @@ func (m *model) submitBundleInput() (tea.Model, tea.Cmd) {
 
 	return m, tea.Batch(
 		m.bundleResolve.spinner.Tick,
-		cmdResolveBundle(m.deps.Client, ref.Namespace, ref.Slug, ref.Version, harness),
+		cmdResolveBundle(m.ctx, m.deps.Client, ref.Namespace, ref.Slug, ref.Version, harness),
 	)
 }
 
@@ -295,7 +297,7 @@ func (m *model) startBundleDownload() (tea.Model, tea.Cmd) {
 
 	m.pushScreen(screenBundleProgress)
 
-	return m, cmdCheckBundleCache(m.deps, namespace, slug, ver, harness)
+	return m, cmdCheckBundleCache(m.ctx, m.deps, namespace, slug, ver, harness)
 }
 
 // handleBundleProgressKey processes key events on the progress screen.
@@ -341,6 +343,7 @@ func (m *model) retryBundleResolve() (tea.Model, tea.Cmd) {
 	harness := m.bundleError.harness
 
 	if m.deps == nil || m.deps.Client == nil {
+		// Should not happen — anonymous client is created at startup.
 		return m, nil
 	}
 
@@ -372,7 +375,7 @@ func (m *model) retryBundleResolve() (tea.Model, tea.Cmd) {
 
 	return m, tea.Batch(
 		m.bundleResolve.spinner.Tick,
-		cmdResolveBundle(m.deps.Client, ref.Namespace, ref.Slug, ref.Version, harness),
+		cmdResolveBundle(m.ctx, m.deps.Client, ref.Namespace, ref.Slug, ref.Version, harness),
 	)
 }
 
@@ -395,9 +398,17 @@ func (m *model) handleBundleResolved(msg *bundleResolvedMsg) (tea.Model, tea.Cmd
 
 // handleBundleResolveError processes a resolve error.
 func (m *model) handleBundleResolveError(msg bundleResolveErrorMsg) (tea.Model, tea.Cmd) {
+	hint := "Check the bundle reference and try again"
+
+	// If the error contains a 403 and the client is unauthenticated,
+	// the bundle is likely private — guide the user to log in.
+	if isForbiddenError(msg.err) && m.deps != nil && m.deps.Client != nil && !m.deps.Client.IsAuthenticated() {
+		hint = "This bundle may be private. Run 'mush auth login' to authenticate"
+	}
+
 	m.bundleError = bundleErrorState{
 		message:   msg.err.Error(),
-		hint:      "Check the bundle reference and try again",
+		hint:      hint,
 		namespace: m.bundleResolve.namespace,
 		slug:      msg.slug,
 		version:   msg.version,
@@ -408,6 +419,11 @@ func (m *model) handleBundleResolveError(msg bundleResolveErrorMsg) (tea.Model, 
 	m.activeScreen = screenBundleError
 
 	return m, nil
+}
+
+// isForbiddenError returns true if the error message indicates a 403 status.
+func isForbiddenError(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "status 403")
 }
 
 // handleBundleCacheHit processes a cache hit.

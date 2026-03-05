@@ -64,7 +64,7 @@ func (m *model) toggleHarnessExpansion() (tea.Model, tea.Cmd) {
 
 	name := m.homeHarness.statuses[cur].name
 
-	return m, tea.Batch(m.harnessExpand.spinner.Tick, cmdRunSingleHarnessHealthCheck(name))
+	return m, tea.Batch(m.harnessExpand.spinner.Tick, cmdRunSingleHarnessHealthCheck(m.ctx, name))
 }
 
 // handleHarnessInstall triggers install for the expanded not-installed harness.

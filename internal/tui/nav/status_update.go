@@ -25,7 +25,7 @@ func (m *model) handleStatusKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.status.results = nil
 		m.status.harnessReports = nil
 
-		return m, tea.Batch(m.status.spinner.Tick, cmdRunStatusChecks(), cmdRunHarnessHealthChecks())
+		return m, tea.Batch(m.status.spinner.Tick, cmdRunStatusChecks(m.ctx), cmdRunHarnessHealthChecks(m.ctx))
 
 	case key.Matches(msg, m.keys.Install):
 		if m.status.loading || m.status.harnessLoading {

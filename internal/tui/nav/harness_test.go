@@ -1,6 +1,7 @@
 package nav
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -517,5 +518,23 @@ func TestTabCollapsesExpansionOnFocusSwitch(t *testing.T) {
 
 	if mdl.homeHarness.expanded != -1 {
 		t.Errorf("expanded should be -1 after tab away, got %d", mdl.homeHarness.expanded)
+	}
+}
+
+func TestDetectVersion_CanceledContextReturnsEmpty(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	spec := &harness.ProviderSpec{
+		Binary: "echo",
+		Status: &harness.StatusSpec{
+			VersionArgs: []string{"1.2.3"},
+		},
+	}
+
+	if got := detectVersion(ctx, spec); got != "" {
+		t.Fatalf("detectVersion() with canceled context = %q, want empty", got)
 	}
 }

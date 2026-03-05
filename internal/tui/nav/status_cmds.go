@@ -18,12 +18,13 @@ type statusChecksCompleteMsg struct {
 }
 
 // cmdRunStatusChecks runs all diagnostic checks asynchronously.
-func cmdRunStatusChecks() tea.Cmd {
+func cmdRunStatusChecks(ctx context.Context) tea.Cmd {
 	return func() tea.Msg {
-		ctx := context.Background()
+		checkCtx, cancel := navStatusCtx(ctx)
+		defer cancel()
 
 		runner := doctor.New()
-		results := runner.Run(ctx)
+		results := runner.Run(checkCtx)
 		passed, failed, warnings := doctor.Summary(results)
 
 		return statusChecksCompleteMsg{
@@ -41,10 +42,12 @@ type harnessHealthCompleteMsg struct {
 }
 
 // cmdRunHarnessHealthChecks runs health checks for all registered harnesses.
-func cmdRunHarnessHealthChecks() tea.Cmd {
+func cmdRunHarnessHealthChecks(ctx context.Context) tea.Cmd {
 	return func() tea.Msg {
-		ctx := context.Background()
-		reports := harness.CheckAllHealth(ctx)
+		checkCtx, cancel := navStatusCtx(ctx)
+		defer cancel()
+
+		reports := harness.CheckAllHealth(checkCtx)
 
 		return harnessHealthCompleteMsg{reports: reports}
 	}

@@ -108,11 +108,9 @@ func cmdLoadBundleLists(workDir string) tea.Cmd {
 }
 
 // cmdResolveBundle resolves a bundle slug/version via the API.
-func cmdResolveBundle(c *client.Client, namespace, slug, version, harness string) tea.Cmd {
+func cmdResolveBundle(ctx context.Context, c *client.Client, namespace, slug, version, harness string) tea.Cmd {
 	return func() tea.Msg {
-		ctx := context.Background()
-
-		resolved, err := c.ResolveBundle(ctx, namespace, slug, version)
+		resolved, err := c.ResolveBundle(navBaseCtx(ctx), namespace, slug, version)
 		if err != nil {
 			return bundleResolveErrorMsg{
 				err:     err,
@@ -135,11 +133,11 @@ func cmdResolveBundle(c *client.Client, namespace, slug, version, harness string
 
 // cmdCheckBundleCache checks if the bundle is cached; if so, returns a cache hit.
 // Otherwise, starts downloading assets.
-func cmdCheckBundleCache(deps *Dependencies, namespace, slug, version, harness string) tea.Cmd {
+func cmdCheckBundleCache(ctx context.Context, deps *Dependencies, namespace, slug, version, harness string) tea.Cmd {
 	return func() tea.Msg {
 		if deps == nil || deps.Client == nil {
 			return bundleDownloadErrorMsg{
-				err:     fmt.Errorf("not authenticated"),
+				err:     fmt.Errorf("client not available"),
 				harness: harness,
 			}
 		}
@@ -153,7 +151,7 @@ func cmdCheckBundleCache(deps *Dependencies, namespace, slug, version, harness s
 		}
 
 		// Need to download — resolve first to get manifest.
-		resolveCtx := context.Background()
+		resolveCtx := navBaseCtx(ctx)
 
 		resolved, err := deps.Client.ResolveBundle(resolveCtx, namespace, slug, version)
 		if err != nil {

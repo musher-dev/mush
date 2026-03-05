@@ -68,7 +68,7 @@ func (m *model) selectHabitat() (tea.Model, tea.Cmd) {
 
 	return m, tea.Batch(
 		m.workerQueues.spinner.Tick,
-		cmdListQueues(m.deps.Client, h.ID, h.Name),
+		cmdListQueues(m.ctx, m.deps.Client, h.ID, h.Name),
 	)
 }
 
@@ -125,7 +125,7 @@ func (m *model) selectWorkerHarness() (tea.Model, tea.Cmd) {
 
 	return m, tea.Batch(
 		m.workerChecking.spinner.Tick,
-		cmdCheckInstructions(m.deps.Client, m.workerHarness.queueID),
+		cmdCheckInstructions(m.ctx, m.deps.Client, m.workerHarness.queueID),
 	)
 }
 
@@ -177,7 +177,7 @@ func (m *model) handleWorkerErrorKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // retryWorker retries the failed worker step based on retryAction.
 func (m *model) retryWorker() (tea.Model, tea.Cmd) {
-	if m.deps == nil || m.deps.Client == nil {
+	if m.deps == nil || m.deps.Client == nil || !m.deps.Client.IsAuthenticated() {
 		return m, nil
 	}
 
@@ -192,7 +192,7 @@ func (m *model) retryWorker() (tea.Model, tea.Cmd) {
 
 		return m, tea.Batch(
 			m.workerHabitats.spinner.Tick,
-			cmdListHabitats(m.deps.Client),
+			cmdListHabitats(m.ctx, m.deps.Client),
 		)
 
 	case "queues":
@@ -207,7 +207,7 @@ func (m *model) retryWorker() (tea.Model, tea.Cmd) {
 
 		return m, tea.Batch(
 			m.workerQueues.spinner.Tick,
-			cmdListQueues(m.deps.Client, m.workerError.habitatID, m.workerError.habitatName),
+			cmdListQueues(m.ctx, m.deps.Client, m.workerError.habitatID, m.workerError.habitatName),
 		)
 
 	case "instructions":
@@ -224,7 +224,7 @@ func (m *model) retryWorker() (tea.Model, tea.Cmd) {
 
 		return m, tea.Batch(
 			m.workerChecking.spinner.Tick,
-			cmdCheckInstructions(m.deps.Client, m.workerError.queueID),
+			cmdCheckInstructions(m.ctx, m.deps.Client, m.workerError.queueID),
 		)
 	}
 

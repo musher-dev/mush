@@ -74,9 +74,15 @@ func ProbeHealth(ctx context.Context, baseURL string, caCertFile ...string) *Pro
 	if len(caCertFile) > 0 {
 		caPath := strings.TrimSpace(caCertFile[0])
 		if caPath != "" {
-			if tlsCfg, tlsErr := buildProbeTLSConfig(caPath); tlsErr == nil {
-				cloned.TLSClientConfig = tlsCfg
+			tlsCfg, tlsErr := buildProbeTLSConfig(caPath)
+			if tlsErr != nil {
+				return &ProbeResult{
+					Host:  host,
+					Error: fmt.Sprintf("custom CA bundle error: %v", tlsErr),
+				}
 			}
+
+			cloned.TLSClientConfig = tlsCfg
 		}
 	}
 
@@ -197,7 +203,9 @@ func buildProbeTLSConfig(caPath string) (*tls.Config, error) {
 		pool = x509.NewCertPool()
 	}
 
-	pool.AppendCertsFromPEM(pemData)
+	if ok := pool.AppendCertsFromPEM(pemData); !ok {
+		return nil, fmt.Errorf("parse probe CA cert %q: no certificates found", caPath)
+	}
 
 	return &tls.Config{
 		MinVersion: tls.VersionTLS12,

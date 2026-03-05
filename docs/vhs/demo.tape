@@ -35,7 +35,7 @@ Up
 Sleep 1s
 
 # Enter bundle load screen via hotkey
-Type "b"
+Type "r"
 Sleep 1.5s
 
 # Type a bundle slug

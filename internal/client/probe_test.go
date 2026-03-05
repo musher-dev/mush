@@ -6,6 +6,9 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -114,6 +117,37 @@ func TestProbeHealth_EmptyHost(t *testing.T) {
 
 	if result.Error != "invalid URL" {
 		t.Fatalf("expected 'invalid URL', got %q", result.Error)
+	}
+}
+
+func TestProbeHealth_CustomCABundleUnreadable(t *testing.T) {
+	result := ProbeHealth(t.Context(), "https://example.com", "/path/does/not/exist.pem")
+
+	if result.Reachable {
+		t.Fatal("expected unreachable when custom CA bundle is unreadable")
+	}
+
+	if !strings.Contains(result.Error, "custom CA bundle error:") {
+		t.Fatalf("expected explicit custom CA bundle error, got %q", result.Error)
+	}
+}
+
+func TestProbeHealth_CustomCABundleInvalidPEM(t *testing.T) {
+	dir := t.TempDir()
+	caPath := filepath.Join(dir, "bad-ca.pem")
+
+	if err := os.WriteFile(caPath, []byte("not a cert"), 0o600); err != nil {
+		t.Fatalf("write CA file: %v", err)
+	}
+
+	result := ProbeHealth(t.Context(), "https://example.com", caPath)
+
+	if result.Reachable {
+		t.Fatal("expected unreachable when custom CA bundle has no certs")
+	}
+
+	if !strings.Contains(result.Error, "custom CA bundle error:") {
+		t.Fatalf("expected explicit custom CA bundle error, got %q", result.Error)
 	}
 }
 
