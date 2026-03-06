@@ -1,0 +1,21 @@
+Show cached versions and installation status for a specific bundle reference
+in the current project directory.
+
+Usage:
+  mush bundle info <namespace/slug>[:<version>] [flags]
+
+Examples:
+  mush bundle info acme/my-agent-kit
+  mush bundle info acme/my-agent-kit:1.0.0
+
+Flags:
+  -h, --help   help for info
+
+Global Flags:
+      --api-key string   API key override (prefer MUSH_API_KEY env var)
+      --api-url string   Override Musher API URL for this command
+      --json             Output in JSON format
+      --no-color         Disable colored output
+      --no-input         Disable interactive prompts
+      --no-tui           Disable interactive TUI navigation
+      --quiet            Minimal output (for CI)

@@ -16,3 +16,7 @@ func handleBundleLoadNavResult(_ *cobra.Command, _ *output.Writer, _ *nav.Result
 func handleBareRunNavResult(_ *cobra.Command, _ *output.Writer, _ *nav.Result) error {
 	return unsupportedWatchModeError()
 }
+
+func handleBundleInstallNavResult(_ *cobra.Command, _ *output.Writer, _ *nav.Result) error {
+	return unsupportedWatchModeError()
+}

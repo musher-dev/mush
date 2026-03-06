@@ -11,7 +11,9 @@ func TestTrackInstallAndLoad(t *testing.T) {
 	workDir := t.TempDir()
 
 	bundle := &InstalledBundle{
+		Namespace: "acme",
 		Slug:      "my-bundle",
+		Ref:       "acme/my-bundle",
 		Version:   "1.0.0",
 		Harness:   "claude",
 		Assets:    []string{".claude/skills/skill.md"},
@@ -32,7 +34,7 @@ func TestTrackInstallAndLoad(t *testing.T) {
 	}
 
 	got := installed[0]
-	if got.Slug != bundle.Slug || got.Version != bundle.Version || got.Harness != bundle.Harness {
+	if got.Namespace != bundle.Namespace || got.Ref != bundle.Ref || got.Slug != bundle.Slug || got.Version != bundle.Version || got.Harness != bundle.Harness {
 		t.Fatalf("LoadInstalled()[0] = %+v, want %+v", got, *bundle)
 	}
 }
@@ -41,7 +43,9 @@ func TestTrackInstallReplacesExisting(t *testing.T) {
 	workDir := t.TempDir()
 
 	v1 := &InstalledBundle{
+		Namespace: "acme",
 		Slug:      "my-bundle",
+		Ref:       "acme/my-bundle",
 		Version:   "1.0.0",
 		Harness:   "claude",
 		Assets:    []string{".claude/skills/old.md"},
@@ -52,7 +56,9 @@ func TestTrackInstallReplacesExisting(t *testing.T) {
 	}
 
 	v2 := &InstalledBundle{
+		Namespace: "acme",
 		Slug:      "my-bundle",
+		Ref:       "acme/my-bundle",
 		Version:   "2.0.0",
 		Harness:   "claude",
 		Assets:    []string{".claude/skills/new.md"},
@@ -92,7 +98,9 @@ func TestUninstallRemovesFilesAndEntry(t *testing.T) {
 	}
 
 	bundle := &InstalledBundle{
+		Namespace: "acme",
 		Slug:      "my-bundle",
+		Ref:       "acme/my-bundle",
 		Version:   "1.0.0",
 		Harness:   "claude",
 		Assets:    []string{assetRel},
@@ -102,7 +110,7 @@ func TestUninstallRemovesFilesAndEntry(t *testing.T) {
 		t.Fatalf("TrackInstall error = %v", err)
 	}
 
-	removed, err := Uninstall(workDir, "my-bundle", "claude")
+	removed, err := Uninstall(workDir, Ref{Namespace: "acme", Slug: "my-bundle"}, "claude")
 	if err != nil {
 		t.Fatalf("Uninstall() error = %v", err)
 	}
@@ -133,7 +141,9 @@ func TestSaveInstalledAtomic(t *testing.T) {
 
 	// Write initial state.
 	bundle := &InstalledBundle{
+		Namespace: "acme",
 		Slug:      "test",
+		Ref:       "acme/test",
 		Version:   "1.0.0",
 		Harness:   "claude",
 		Assets:    []string{"script.sh"},
@@ -167,7 +177,71 @@ func TestSaveInstalledAtomic(t *testing.T) {
 		t.Fatalf("LoadInstalled() error = %v", err)
 	}
 
-	if len(installed) != 1 || installed[0].Slug != "test" {
-		t.Fatalf("LoadInstalled() = %+v, want [{slug:test}]", installed)
+	if len(installed) != 1 || installed[0].Ref != "acme/test" {
+		t.Fatalf("LoadInstalled() = %+v, want [{ref:acme/test}]", installed)
+	}
+}
+
+func TestLoadInstalledBackfillsMissingRef(t *testing.T) {
+	workDir := t.TempDir()
+
+	mushDir := filepath.Join(workDir, ".mush")
+	if err := os.MkdirAll(mushDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll error = %v", err)
+	}
+
+	// Entry has namespace+slug but no ref — should be backfilled.
+	payload := `[{"namespace":"acme","slug":"bundle","version":"1.0.0","harness":"claude","assets":[]}]`
+	if err := os.WriteFile(filepath.Join(mushDir, installedFileName), []byte(payload), 0o644); err != nil {
+		t.Fatalf("WriteFile error = %v", err)
+	}
+
+	installed, err := LoadInstalled(workDir)
+	if err != nil {
+		t.Fatalf("LoadInstalled() error = %v", err)
+	}
+
+	if len(installed) != 1 {
+		t.Fatalf("LoadInstalled() len = %d, want 1", len(installed))
+	}
+
+	if installed[0].Ref != "acme/bundle" {
+		t.Fatalf("installed[0].Ref = %q, want %q", installed[0].Ref, "acme/bundle")
+	}
+}
+
+func TestLoadInstalledBackfillsLegacySlugFormat(t *testing.T) {
+	workDir := t.TempDir()
+
+	mushDir := filepath.Join(workDir, ".mush")
+	if err := os.MkdirAll(mushDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll error = %v", err)
+	}
+
+	// Legacy format: slug was "namespace/slug", no namespace or ref fields.
+	payload := `[{"slug":"acme/bundle","version":"1.0.0","harness":"claude","assets":[]}]`
+	if err := os.WriteFile(filepath.Join(mushDir, installedFileName), []byte(payload), 0o644); err != nil {
+		t.Fatalf("WriteFile error = %v", err)
+	}
+
+	installed, err := LoadInstalled(workDir)
+	if err != nil {
+		t.Fatalf("LoadInstalled() error = %v", err)
+	}
+
+	if len(installed) != 1 {
+		t.Fatalf("LoadInstalled() len = %d, want 1", len(installed))
+	}
+
+	if installed[0].Namespace != "acme" {
+		t.Fatalf("installed[0].Namespace = %q, want %q", installed[0].Namespace, "acme")
+	}
+
+	if installed[0].Slug != "bundle" {
+		t.Fatalf("installed[0].Slug = %q, want %q", installed[0].Slug, "bundle")
+	}
+
+	if installed[0].Ref != "acme/bundle" {
+		t.Fatalf("installed[0].Ref = %q, want %q", installed[0].Ref, "acme/bundle")
 	}
 }

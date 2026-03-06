@@ -41,8 +41,6 @@ Watch mode is currently supported only on Unix-like systems.`,
 	}
 
 	cmd.AddCommand(newWorkerStartCmd())
-	cmd.AddCommand(newWorkerStatusCmd())
-	cmd.AddCommand(newWorkerStopCmd())
 
 	return cmd
 }

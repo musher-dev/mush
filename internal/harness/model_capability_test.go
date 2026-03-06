@@ -156,17 +156,13 @@ func TestSidebarEnabledCombinations(t *testing.T) {
 		name            string
 		lrMarginSupport bool
 		forcedOff       bool
-		userOff         bool
 		altScreen       bool
 		want            bool
 	}{
-		{"all enabled", true, false, false, false, true},
-		{"no LR margin support", false, false, false, false, false},
-		{"forced off", true, true, false, false, false},
-		{"user off", true, false, true, false, false},
-		{"forced and user off", true, true, true, false, false},
-		{"no LR and user off", false, false, true, false, false},
-		{"alt screen active", true, false, false, true, false},
+		{"all enabled", true, false, false, true},
+		{"no LR margin support", false, false, false, false},
+		{"forced off", true, true, false, false},
+		{"alt screen active", true, false, true, false},
 	}
 
 	for _, tc := range tests {
@@ -174,12 +170,11 @@ func TestSidebarEnabledCombinations(t *testing.T) {
 			ctrl := &TerminalController{}
 			ctrl.lrMarginSupported.Store(tc.lrMarginSupport)
 			ctrl.sidebarForcedOff.Store(tc.forcedOff)
-			ctrl.sidebarUserOff.Store(tc.userOff)
 			ctrl.altScreenActive.Store(tc.altScreen)
 
 			m := &RootModel{term: ctrl}
 
-			got := m.sidebarEnabled()
+			got := m.term.SidebarEnabled()
 			if got != tc.want {
 				t.Fatalf("sidebarEnabled() = %v, want %v", got, tc.want)
 			}
@@ -1248,32 +1243,6 @@ func TestRepeatedScrollResetsQuarantineSidebar(t *testing.T) {
 	}
 }
 
-func TestQuarantineRecoveryViaToggle(t *testing.T) {
-	tc := newTestTerminalController()
-
-	captureStdout(t, func() {
-		// Trigger quarantine.
-		for i := 0; i < tamperThreshold+1; i++ {
-			tc.handleTerminalEvent(terminalEventScrollReset)
-		}
-
-		if !tc.sidebarQuarantined.Load() {
-			t.Fatal("expected quarantine after repeated events")
-		}
-
-		// Toggle (^G) should recover.
-		tc.toggleSidebar()
-	})
-
-	if tc.sidebarQuarantined.Load() {
-		t.Fatal("quarantine should be cleared after toggle")
-	}
-
-	if !tc.SidebarEnabled() {
-		t.Fatal("sidebar should be re-enabled after toggle recovery")
-	}
-}
-
 func TestHardResetStillPermanentlyDisables(t *testing.T) {
 	tc := newTestTerminalController()
 
@@ -1283,15 +1252,6 @@ func TestHardResetStillPermanentlyDisables(t *testing.T) {
 
 	if !tc.sidebarForcedOff.Load() {
 		t.Fatal("sidebarForcedOff should be set after hard reset")
-	}
-
-	// Toggle should be a no-op.
-	captureStdout(t, func() {
-		tc.toggleSidebar()
-	})
-
-	if !tc.sidebarForcedOff.Load() {
-		t.Fatal("sidebarForcedOff should remain set after toggle attempt")
 	}
 }
 
@@ -1341,31 +1301,6 @@ func TestDisableLREventReassertsSidebar(t *testing.T) {
 
 	if !tc.SidebarEnabled() {
 		t.Fatal("sidebar should remain enabled after single disable-LR event")
-	}
-}
-
-func TestSidebarAvailableReflectsQuarantine(t *testing.T) {
-	tc := newTestTerminalController()
-
-	if !tc.SidebarAvailable() {
-		t.Fatal("SidebarAvailable should be true initially")
-	}
-
-	tc.sidebarQuarantined.Store(true)
-
-	if tc.SidebarAvailable() {
-		t.Fatal("SidebarAvailable should be false when quarantined")
-	}
-
-	if tc.SidebarEnabled() {
-		t.Fatal("SidebarEnabled should be false when quarantined")
-	}
-
-	tc.sidebarQuarantined.Store(false)
-	tc.sidebarForcedOff.Store(true)
-
-	if tc.SidebarAvailable() {
-		t.Fatal("SidebarAvailable should be false when forcedOff")
 	}
 }
 

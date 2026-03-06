@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/musher-dev/mush/internal/client"
+	"github.com/musher-dev/mush/internal/harness/harnesstype"
 )
 
 func TestHandleCtrlCExitsImmediatelyWithoutActiveClaudeJob(t *testing.T) {
@@ -130,7 +131,7 @@ func TestHandleCtrlCSecondPressExitsWithinWindow(t *testing.T) {
 
 func TestAnnotateStartPTYErrorAddsHintForEPERM(t *testing.T) {
 	baseErr := &os.PathError{Op: "fork/exec", Path: "/tmp/claude", Err: syscall.EPERM}
-	err := annotateStartPTYError(baseErr, "/tmp/claude")
+	err := harnesstype.AnnotateStartPTYError(baseErr, "/tmp/claude")
 
 	if !errors.Is(err, syscall.EPERM) {
 		t.Fatalf("annotated error should preserve EPERM: %v", err)

@@ -71,3 +71,44 @@ func TestHandleBundleLoadNavResultRequiresCachePath(t *testing.T) {
 		t.Fatalf("error = %q, want missing cache path message", err.Error())
 	}
 }
+
+func TestHandleBundleInstallNavResultRequiresCachePath(t *testing.T) {
+	t.Parallel()
+
+	out := output.NewWriter(io.Discard, io.Discard, &terminal.Info{IsTTY: true})
+	result := &nav.Result{
+		Action:          nav.ActionBundleInstall,
+		Harness:         "claude",
+		BundleNamespace: "acme",
+		BundleSlug:      "test-bundle",
+		BundleVer:       "1.0.0",
+	}
+
+	err := handleBundleInstallNavResult(&cobra.Command{}, out, result)
+	if err == nil {
+		t.Fatal("expected error for missing cache path")
+	}
+
+	if !strings.Contains(err.Error(), "Missing bundle cache path") {
+		t.Fatalf("error = %q, want missing cache path message", err.Error())
+	}
+}
+
+func TestHandleBundleInstallNavResultRequiresHarness(t *testing.T) {
+	t.Parallel()
+
+	out := output.NewWriter(io.Discard, io.Discard, &terminal.Info{IsTTY: true})
+	result := &nav.Result{
+		Action:    nav.ActionBundleInstall,
+		CachePath: "/tmp/test",
+	}
+
+	err := handleBundleInstallNavResult(&cobra.Command{}, out, result)
+	if err == nil {
+		t.Fatal("expected error for missing harness")
+	}
+
+	if !strings.Contains(err.Error(), "Harness type is required") {
+		t.Fatalf("error = %q, want missing harness message", err.Error())
+	}
+}

@@ -29,8 +29,8 @@ func TestBundleLoadRequiresHarness(t *testing.T) {
 		t.Fatal("expected error when --harness is missing")
 	}
 
-	if !strings.Contains(err.Error(), `required flag(s) "harness" not set`) {
-		t.Fatalf("error = %q, want required harness flag error", err.Error())
+	if !strings.Contains(err.Error(), "Harness type is required") {
+		t.Fatalf("error = %q, want harness required error", err.Error())
 	}
 }
 
@@ -161,7 +161,7 @@ func TestBundleCommandHasNoRunSubcommand(t *testing.T) {
 		case "load":
 			hasLoad = true
 		case "run":
-			t.Fatal("unexpected legacy subcommand: run")
+			t.Fatal("unexpected removed subcommand: run")
 		}
 	}
 

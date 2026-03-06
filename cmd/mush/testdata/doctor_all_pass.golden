@@ -1,8 +1,14 @@
 Mush Doctor
 ============
 
-✓ API Connectivity    https://api.musher.dev (42ms)
-✓ Authentication      sa-test (via keyring)
-✓ CLI Version         v2.3.0 (latest)
+✓ Directory Structure    Config, state, and cache directories OK
+✓ Config File            No config file (using defaults)
+✓ Credentials File       Not present (using keyring or env)
+✓ Proxy Environment      No proxy environment variables detected
+✓ Custom CA Bundle       Not configured
+✓ API Connectivity       https://api.musher.dev (42ms)
+✓ Clock Skew             Within tolerance (1s)
+✓ Authentication         sa-test (via keyring)
+✓ CLI Version            v2.3.0 (latest)
 
-3 passed
+9 passed

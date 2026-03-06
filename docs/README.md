@@ -1,5 +1,9 @@
 # Mush Documentation
 
+## CLI Reference
+
+- [Command Reference](reference/cli/) — Auto-generated from source (`task docs:generate`)
+
 ## User Documentation
 
 - [README](../README.md) — Overview, installation, and usage
@@ -9,9 +13,9 @@
 
 ## Contributor Documentation
 
-- [Contributing Guide](../CONTRIBUTING.md) — Setup, workflow, commit conventions, and code style
-- [Code of Conduct](../CODE_OF_CONDUCT.md)
-- [Security Policy](../SECURITY.md)
+- [Contributing Guide](../.github/CONTRIBUTING.md) — Setup, workflow, commit conventions, and code style
+- [Code of Conduct](../.github/CODE_OF_CONDUCT.md)
+- [Security Policy](../.github/SECURITY.md)
 
 ## Architecture
 

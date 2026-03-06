@@ -62,3 +62,20 @@ func TestLookupReturnsFalseForUnknown(t *testing.T) {
 		t.Fatal("Lookup('nonexistent') = true, want false")
 	}
 }
+
+// TestRegistryAndCatalogParity ensures every registered executor also has a
+// provider spec, and vice-versa. This catches drift between the two systems.
+func TestRegistryAndCatalogParity(t *testing.T) {
+	registeredNames := RegisteredNames()
+	providerNames := ProviderNames()
+
+	if len(registeredNames) != len(providerNames) {
+		t.Fatalf("RegisteredNames()=%v ProviderNames()=%v — counts differ", registeredNames, providerNames)
+	}
+
+	for i := range registeredNames {
+		if registeredNames[i] != providerNames[i] {
+			t.Fatalf("name mismatch at [%d]: registered=%q provider=%q", i, registeredNames[i], providerNames[i])
+		}
+	}
+}

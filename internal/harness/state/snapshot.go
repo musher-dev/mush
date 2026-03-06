@@ -15,11 +15,10 @@ type Snapshot struct {
 	Width  int
 	Height int
 
-	SidebarVisible   bool
-	SidebarAvailable bool // Sidebar feature available per terminal capabilities (controls ^G hint; Ctrl+G re-probes if needed)
-	SidebarWidth     int
-	PaneXStart       int
-	PaneWidth        int
+	SidebarVisible bool
+	SidebarWidth   int
+	PaneXStart     int
+	PaneWidth      int
 
 	BundleLoadMode bool
 	BundleName     string

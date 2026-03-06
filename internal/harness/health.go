@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/musher-dev/mush/internal/harness/harnesstype"
 )
 
 // HealthStatus represents the result of a single health check.
@@ -96,7 +98,7 @@ func CheckAllHealth(ctx context.Context) []*HealthReport {
 	return reports
 }
 
-func checkBinary(spec *ProviderSpec) HealthResult {
+func checkBinary(spec *harnesstype.ProviderSpec) HealthResult {
 	path, err := exec.LookPath(spec.Binary)
 	if err != nil {
 		result := HealthResult{
@@ -119,7 +121,7 @@ func checkBinary(spec *ProviderSpec) HealthResult {
 	}
 }
 
-func checkVersion(ctx context.Context, spec *ProviderSpec) HealthResult {
+func checkVersion(ctx context.Context, spec *harnesstype.ProviderSpec) HealthResult {
 	//nolint:gosec // args come from embedded YAML, not user input
 	cmd := exec.CommandContext(ctx, spec.Binary, spec.Status.VersionArgs...)
 
@@ -142,7 +144,7 @@ func checkVersion(ctx context.Context, spec *ProviderSpec) HealthResult {
 	}
 }
 
-func checkConfigDir(spec *ProviderSpec) HealthResult {
+func checkConfigDir(spec *harnesstype.ProviderSpec) HealthResult {
 	dir := expandTilde(spec.Status.ConfigDir)
 
 	if _, err := os.Stat(dir); err != nil {
@@ -160,7 +162,7 @@ func checkConfigDir(spec *ProviderSpec) HealthResult {
 	}
 }
 
-func checkAuthFile(spec *ProviderSpec) HealthResult {
+func checkAuthFile(spec *harnesstype.ProviderSpec) HealthResult {
 	path := expandTilde(spec.Status.AuthCheck.Path)
 	desc := spec.Status.AuthCheck.Description
 

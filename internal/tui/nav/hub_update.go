@@ -404,16 +404,11 @@ func (m *model) hubInstall(namespace, slug, version string) (tea.Model, tea.Cmd)
 		version:   version,
 	}
 
-	harness := "claude"
-	if len(m.harnesses) > 0 {
-		harness = m.harnesses[0].name
-	}
-
 	m.pushScreen(screenBundleResolving)
 
 	return m, tea.Batch(
 		m.bundleResolve.spinner.Tick,
-		cmdResolveBundle(m.ctx, m.deps.Client, namespace, slug, version, harness),
+		cmdResolveBundle(m.ctx, m.deps.Client, namespace, slug, version),
 	)
 }
 

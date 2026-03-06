@@ -15,6 +15,7 @@ import (
 
 	"github.com/musher-dev/mush/internal/client"
 	"github.com/musher-dev/mush/internal/config"
+	"github.com/musher-dev/mush/internal/harness/harnesstype"
 	"github.com/musher-dev/mush/internal/observability"
 )
 
@@ -29,7 +30,7 @@ type JobLoop struct {
 	signalDir  string
 
 	// Set once, read-only thereafter.
-	executors          map[string]Executor
+	executors          map[string]harnesstype.Executor
 	supportedHarnesses []string
 
 	// Job lifecycle state (guarded by jobMu).
@@ -113,7 +114,7 @@ func (jl *JobLoop) CurrentJobID() string {
 }
 
 // HasActiveInterruptableJob returns true when the current job's executor
-// implements InterruptHandler.
+// implements harnesstype.InterruptHandler.
 func (jl *JobLoop) HasActiveInterruptableJob() bool {
 	jl.jobMu.Lock()
 	job := jl.currentJob
@@ -130,7 +131,7 @@ func (jl *JobLoop) HasActiveInterruptableJob() bool {
 		return false
 	}
 
-	_, isHandler := executor.(InterruptHandler)
+	_, isHandler := executor.(harnesstype.InterruptHandler)
 
 	return isHandler
 }
@@ -307,7 +308,7 @@ func (jl *JobLoop) processJob(parentCtx context.Context, job *client.Job) {
 		msg := execErr.Error()
 		retry := true
 
-		var ee *ExecError
+		var ee *harnesstype.ExecError
 		if errors.As(execErr, &ee) {
 			reason = ee.Reason
 			msg = ee.Message
@@ -437,7 +438,7 @@ func (jl *JobLoop) RunnerConfigRefreshLoop(ctx context.Context, done <-chan stru
 
 			// Check all refreshable executors.
 			for _, executor := range jl.executors {
-				if r, ok := executor.(Refreshable); ok {
+				if r, ok := executor.(harnesstype.Refreshable); ok {
 					if r.NeedsRefresh(cfg) {
 						jl.runnerConfig = cfg
 					}
@@ -460,7 +461,7 @@ func (jl *JobLoop) maybeRefreshExecutors(ctx context.Context) error {
 	jl.refreshMu.Unlock()
 
 	for harnessName, executor := range jl.executors {
-		r, ok := executor.(Refreshable)
+		r, ok := executor.(harnesstype.Refreshable)
 		if !ok {
 			continue
 		}

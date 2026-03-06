@@ -1,0 +1,20 @@
+List all locally stored transcript sessions with their start and close times.
+
+Usage:
+  mush history list [flags]
+
+Examples:
+  mush history list
+  mush history list --json
+
+Flags:
+  -h, --help   help for list
+
+Global Flags:
+      --api-key string   API key override (prefer MUSH_API_KEY env var)
+      --api-url string   Override Musher API URL for this command
+      --json             Output in JSON format
+      --no-color         Disable colored output
+      --no-input         Disable interactive prompts
+      --no-tui           Disable interactive TUI navigation
+      --quiet            Minimal output (for CI)

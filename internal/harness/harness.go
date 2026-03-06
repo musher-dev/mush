@@ -14,6 +14,7 @@ import (
 	"golang.org/x/term"
 
 	"github.com/musher-dev/mush/internal/client"
+	"github.com/musher-dev/mush/internal/harness/harnesstype"
 )
 
 // Config holds configuration for the harness.
@@ -62,7 +63,7 @@ func Run(ctx context.Context, cfg *Config) error {
 
 // LoadedMCPServers returns the names of MCP providers that are effectively loaded.
 func LoadedMCPServers(cfg *client.RunnerConfigResponse, now time.Time) []string {
-	return LoadedMCPProviderNames(cfg, now)
+	return harnesstype.LoadedMCPProviderNames(cfg, now)
 }
 
 // SummarizeBundleManifest builds a bundle summary for TUI chrome/sidebar use.

@@ -14,9 +14,12 @@ func newDoctorCmd() *cobra.Command {
 		Long: `Run diagnostic checks to identify configuration and connectivity issues.
 
 Checks performed:
+  - Directory structure and permissions
+  - Configuration file validity
+  - Credential file security
   - API connectivity and response time
-  - Authentication status and credential source
-  - Claude CLI availability and version`,
+  - Authentication status
+  - CLI version`,
 		Example: `  mush doctor`,
 		Args:    noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {

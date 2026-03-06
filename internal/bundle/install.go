@@ -12,10 +12,12 @@ import (
 
 // InstalledBundle records information about an installed bundle.
 type InstalledBundle struct {
-	Slug    string   `json:"slug"`
-	Version string   `json:"version"`
-	Harness string   `json:"harness"`
-	Assets  []string `json:"assets"` // installed file paths (relative to workDir)
+	Namespace string   `json:"namespace"`
+	Slug      string   `json:"slug"`
+	Ref       string   `json:"ref"`
+	Version   string   `json:"version"`
+	Harness   string   `json:"harness"`
+	Assets    []string `json:"assets"` // installed file paths (relative to workDir)
 
 	Timestamp time.Time `json:"timestamp"`
 }
@@ -24,13 +26,21 @@ const installedFileName = "installed.json"
 
 // TrackInstall records a bundle installation in .mush/installed.json.
 func TrackInstall(workDir string, bundle *InstalledBundle) error {
+	if bundle.Namespace == "" || bundle.Slug == "" {
+		return fmt.Errorf("installed bundle must include namespace and slug")
+	}
+
+	if bundle.Ref == "" {
+		bundle.Ref = bundle.Namespace + "/" + bundle.Slug
+	}
+
 	installed, _ := LoadInstalled(workDir)
 
-	// Replace existing entry for same slug+harness or append.
+	// Replace existing entry for same ref+harness or append.
 	found := false
 
-	for i, b := range installed {
-		if b.Slug == bundle.Slug && b.Harness == bundle.Harness {
+	for i := range installed {
+		if installed[i].Ref == bundle.Ref && installed[i].Harness == bundle.Harness {
 			installed[i] = *bundle
 			found = true
 
@@ -63,21 +73,52 @@ func LoadInstalled(workDir string) ([]InstalledBundle, error) {
 		return nil, fmt.Errorf("parse installed bundles: %w", err)
 	}
 
+	// Backfill legacy entries that lack namespace/ref fields.
+	for i := range installed {
+		if installed[i].Slug == "" {
+			continue // skip truly empty entries
+		}
+
+		if installed[i].Namespace == "" {
+			// Legacy entries stored slug as "namespace/slug"; split if possible.
+			if parts := strings.SplitN(installed[i].Slug, "/", 2); len(parts) == 2 {
+				installed[i].Namespace = parts[0]
+				installed[i].Slug = parts[1]
+			}
+		}
+
+		if installed[i].Ref == "" && installed[i].Namespace != "" {
+			installed[i].Ref = installed[i].Namespace + "/" + installed[i].Slug
+		}
+	}
+
 	return installed, nil
 }
 
-// FindInstalled looks up a specific installed bundle by slug and harness.
+// FindInstalled looks up a specific installed bundle by ref and harness.
 // Returns ErrNotInstalled if no matching bundle is found.
-func FindInstalled(workDir, slug, harness string) (*InstalledBundle, error) {
+func FindInstalled(workDir string, ref Ref, harness string) (*InstalledBundle, error) {
 	installed, err := LoadInstalled(workDir)
 	if err != nil {
 		return nil, err
 	}
 
+	baseRef := ref.Namespace + "/" + ref.Slug
+
 	for i := range installed {
-		if installed[i].Slug == slug && installed[i].Harness == harness {
-			return &installed[i], nil
+		if installed[i].Ref != baseRef || installed[i].Harness != harness {
+			continue
 		}
+
+		if ref.Version != "" && installed[i].Version != ref.Version {
+			continue
+		}
+
+		if installed[i].Namespace != ref.Namespace || installed[i].Slug != ref.Slug {
+			continue
+		}
+
+		return &installed[i], nil
 	}
 
 	return nil, ErrNotInstalled
@@ -86,20 +127,28 @@ func FindInstalled(workDir, slug, harness string) (*InstalledBundle, error) {
 // ErrNotInstalled is returned when a bundle is not found in the installed list.
 var ErrNotInstalled = errors.New("bundle not installed")
 
-// Uninstall removes installed assets for a specific bundle slug and harness.
-func Uninstall(workDir, slug, harness string) ([]string, error) {
+// Uninstall removes installed assets for a specific bundle reference and harness.
+func Uninstall(workDir string, ref Ref, harness string) ([]string, error) {
 	installed, err := LoadInstalled(workDir)
 	if err != nil {
 		return nil, err
 	}
 
 	target := -1
+	baseRef := ref.Namespace + "/" + ref.Slug
 
-	for i, entry := range installed {
-		if entry.Slug == slug && entry.Harness == harness {
-			target = i
-			break
+	for i := range installed {
+		if installed[i].Ref != baseRef || installed[i].Harness != harness {
+			continue
 		}
+
+		if ref.Version != "" && installed[i].Version != ref.Version {
+			continue
+		}
+
+		target = i
+
+		break
 	}
 
 	if target == -1 {

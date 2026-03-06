@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/musher-dev/mush/internal/harness"
+	"github.com/musher-dev/mush/internal/harness/harnesstype"
 )
 
 // harnessStatusesLoadedMsg carries the quick statuses for all harnesses.
@@ -51,7 +52,7 @@ func cmdLoadHarnessStatuses(ctx context.Context) tea.Cmd {
 }
 
 // detectVersion runs the provider's version command and returns the first line.
-func detectVersion(ctx context.Context, spec *harness.ProviderSpec) string {
+func detectVersion(ctx context.Context, spec *harnesstype.ProviderSpec) string {
 	if spec.Status == nil || len(spec.Status.VersionArgs) == 0 {
 		return ""
 	}

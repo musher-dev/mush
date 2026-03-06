@@ -27,7 +27,8 @@ func renderHome(mdl *model) string {
 func renderHomeTwoPanel(mdl *model) string {
 	menuActive := mdl.homeFocusArea == 0
 	leftContent := renderMenuContent(mdl)
-	leftPanel := renderPanel(&mdl.styles, "mush", leftContent, mdl.styles.menuWidth, menuActive)
+	leftTitle := renderPanelTitle(mdl)
+	leftPanel := renderPanel(&mdl.styles, leftTitle, leftContent, mdl.styles.menuWidth, menuActive)
 
 	// Build the top block: menu panel + optional harness panel side by side.
 	// Both panels use the same width for visual alignment.
@@ -82,7 +83,7 @@ func renderHomeTwoPanel(mdl *model) string {
 
 // renderHomeSinglePanel draws the single-panel layout with a collapsed context line.
 func renderHomeSinglePanel(mdl *model) string {
-	header := renderHeader(&mdl.styles, mdl.version())
+	header := renderHeader(&mdl.styles, mdl.version(), mdl.updateAvailable)
 	statusLine := renderStatusLine(mdl)
 	menu := renderMenu(mdl)
 	desc := renderDescription(mdl)
@@ -106,15 +107,37 @@ func renderHomeSinglePanel(mdl *model) string {
 	)
 }
 
-// renderHeader returns the brand logo line and tagline.
-func renderHeader(styles *theme, ver string) string {
-	versionLabel := ver
-	if ver != "dev" {
-		versionLabel = "v" + ver
+// formatVersionLabel formats a version string for display.
+func formatVersionLabel(ver string) string {
+	if ver == "dev" {
+		return "dev"
 	}
 
+	return "v" + ver
+}
+
+// renderPanelTitle returns the two-panel left panel title including version and update indicator.
+func renderPanelTitle(mdl *model) string {
+	title := "mush " + formatVersionLabel(mdl.version())
+	if mdl.updateAvailable {
+		badge := lipgloss.NewStyle().Foreground(colorWarning).Render("update available")
+		title += " · " + badge
+	}
+
+	return title
+}
+
+// renderHeader returns the brand logo line and tagline.
+func renderHeader(styles *theme, ver string, updateAvailable bool) string {
+	versionLabel := formatVersionLabel(ver)
 	brand := styles.logo.Render("mush") + " " + styles.version.Render(versionLabel)
-	tagline := styles.tagline.Render("Local agent runtime")
+
+	if updateAvailable {
+		badge := lipgloss.NewStyle().Foreground(colorWarning).Render("update available")
+		brand += "  " + badge
+	}
+
+	tagline := styles.tagline.Render("Portable agent bundles")
 
 	return lipgloss.JoinVertical(lipgloss.Center, brand, tagline)
 }
@@ -315,7 +338,7 @@ func renderHomeFooter(mdl *model) string {
 
 	hints = append(hints,
 		hint{key: "enter", desc: "select"},
-		hint{key: ",", desc: "settings"},
+		hint{key: ",", desc: "status"},
 		hint{key: "q", desc: "quit"},
 	)
 

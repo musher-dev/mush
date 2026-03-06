@@ -1,0 +1,20 @@
+Validate stored credentials against the Musher API and display the authenticated identity.
+
+Usage:
+  mush auth status [flags]
+
+Examples:
+  mush auth status
+  mush auth status --json
+
+Flags:
+  -h, --help   help for status
+
+Global Flags:
+      --api-key string   API key override (prefer MUSH_API_KEY env var)
+      --api-url string   Override Musher API URL for this command
+      --json             Output in JSON format
+      --no-color         Disable colored output
+      --no-input         Disable interactive prompts
+      --no-tui           Disable interactive TUI navigation
+      --quiet            Minimal output (for CI)

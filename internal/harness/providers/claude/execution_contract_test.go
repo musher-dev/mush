@@ -1,0 +1,42 @@
+//go:build unix
+
+package claude
+
+import (
+	"strings"
+	"testing"
+
+	"github.com/musher-dev/mush/internal/client"
+	"github.com/musher-dev/mush/internal/harness/harnesstype"
+)
+
+func TestGetPromptFromJob_StrictExecutionContract(t *testing.T) {
+	t.Run("requires execution config", func(t *testing.T) {
+		_, err := harnesstype.GetPromptFromJob(&client.Job{})
+		if err == nil || !strings.Contains(err.Error(), "missing execution config") {
+			t.Fatalf("err = %v, want missing execution config", err)
+		}
+	})
+
+	t.Run("requires rendered instruction", func(t *testing.T) {
+		_, err := harnesstype.GetPromptFromJob(&client.Job{
+			Execution: &client.ExecutionConfig{},
+		})
+		if err == nil || !strings.Contains(err.Error(), "missing execution.renderedInstruction") {
+			t.Fatalf("err = %v, want missing execution.renderedInstruction", err)
+		}
+	})
+
+	t.Run("uses rendered instruction", func(t *testing.T) {
+		got, err := harnesstype.GetPromptFromJob(&client.Job{
+			Execution: &client.ExecutionConfig{RenderedInstruction: "do work"},
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if got != "do work" {
+			t.Fatalf("prompt = %q, want %q", got, "do work")
+		}
+	})
+}

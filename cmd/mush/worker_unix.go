@@ -33,17 +33,13 @@ func newWorkerCmd() *cobra.Command {
 		Long: `Manage the local worker runtime that connects your machine to a habitat
 and processes jobs from the Musher platform.
 
-Use subcommands to start, check status, or stop the worker.`,
+Use subcommands to start the worker.`,
 		Example: `  mush worker start
-  mush worker start --habitat prod --queue jobs
-  mush worker status
-  mush worker stop`,
+  mush worker start --habitat prod --queue jobs`,
 		Args: noArgs,
 	}
 
 	cmd.AddCommand(newWorkerStartCmd())
-	cmd.AddCommand(newWorkerStatusCmd())
-	cmd.AddCommand(newWorkerStopCmd())
 
 	return cmd
 }
@@ -76,10 +72,10 @@ The worker will:
 Harness Types:
   --harness claude  Only handle Claude Code jobs
   --harness codex   Only handle Codex jobs
-  --harness cursor  Only handle Cursor Agent CLI jobs
-  --harness copilot Only handle GitHub Copilot CLI jobs
-  --harness gemini  Only handle Gemini CLI jobs
-  --harness opencode Only handle OpenCode CLI jobs
+  --harness cursor  Only handle Cursor Agent jobs
+  --harness copilot Only handle GitHub Copilot jobs
+  --harness gemini  Only handle Gemini jobs
+  --harness opencode Only handle OpenCode jobs
   (default)         Handle all supported harness types
 
 Press Ctrl+C once to interrupt Claude; press Ctrl+C again quickly to exit.
@@ -478,7 +474,9 @@ func resolveBundle(
 
 	// Track the installation.
 	trackErr := bundle.TrackInstall(workDir, &bundle.InstalledBundle{
+		Namespace: ref.Namespace,
 		Slug:      ref.Slug,
+		Ref:       ref.Namespace + "/" + ref.Slug,
 		Version:   resolved.Version,
 		Harness:   harnessType,
 		Assets:    installedPaths,

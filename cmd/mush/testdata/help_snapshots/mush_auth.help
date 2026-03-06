@@ -1,0 +1,23 @@
+Authenticate with the Musher platform using your API key.
+
+Usage:
+  mush auth [command]
+
+Available Commands:
+  login       Authenticate with your API key
+  logout      Clear stored credentials
+  status      Show authentication status
+
+Flags:
+  -h, --help   help for auth
+
+Global Flags:
+      --api-key string   API key override (prefer MUSH_API_KEY env var)
+      --api-url string   Override Musher API URL for this command
+      --json             Output in JSON format
+      --no-color         Disable colored output
+      --no-input         Disable interactive prompts
+      --no-tui           Disable interactive TUI navigation
+      --quiet            Minimal output (for CI)
+
+Use "mush auth [command] --help" for more information about a command.

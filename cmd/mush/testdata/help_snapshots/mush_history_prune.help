@@ -1,0 +1,26 @@
+Delete transcript sessions older than the configured retention window.
+
+The default retention comes from the history.retention config key (default 720h).
+Use --older-than to override. Requires confirmation unless --force is passed.
+
+Usage:
+  mush history prune [flags]
+
+Examples:
+  mush history prune
+  mush history prune --older-than 168h
+  mush history prune --force
+
+Flags:
+  -f, --force               Skip confirmation prompt
+  -h, --help                help for prune
+      --older-than string   Override retention window (example: 168h)
+
+Global Flags:
+      --api-key string   API key override (prefer MUSH_API_KEY env var)
+      --api-url string   Override Musher API URL for this command
+      --json             Output in JSON format
+      --no-color         Disable colored output
+      --no-input         Disable interactive prompts
+      --no-tui           Disable interactive TUI navigation
+      --quiet            Minimal output (for CI)

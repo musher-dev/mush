@@ -1,0 +1,27 @@
+Pull versioned collections of agent assets from the Musher platform
+and either load them ephemerally or install them into a harness's native
+directory structure.
+
+Usage:
+  mush bundle [command]
+
+Available Commands:
+  info        Show local details for a bundle reference
+  install     Install bundle assets into the current project
+  list        List local bundle cache and installed bundles
+  load        Load a bundle into an ephemeral session
+  uninstall   Remove installed bundle assets from the current project
+
+Flags:
+  -h, --help   help for bundle
+
+Global Flags:
+      --api-key string   API key override (prefer MUSH_API_KEY env var)
+      --api-url string   Override Musher API URL for this command
+      --json             Output in JSON format
+      --no-color         Disable colored output
+      --no-input         Disable interactive prompts
+      --no-tui           Disable interactive TUI navigation
+      --quiet            Minimal output (for CI)
+
+Use "mush bundle [command] --help" for more information about a command.

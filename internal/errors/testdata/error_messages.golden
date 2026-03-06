@@ -109,8 +109,8 @@ Hint: Install Claude Code CLI: https://docs.anthropic.com/en/docs/claude-code
 Code: 4
 
 --- CodexNotFound ---
-Message: Codex CLI not found
-Hint: Install OpenAI Codex CLI: https://github.com/openai/codex
+Message: Codex not found
+Hint: Install OpenAI Codex: https://github.com/openai/codex
 Code: 4
 
 --- InvalidHarnessType ---
@@ -125,7 +125,7 @@ Code: 4
 
 --- BundleNotFound ---
 Message: Bundle not found: my-bundle
-Hint: Check the bundle slug or verify it exists in your workspace
+Hint: Check the bundle reference or verify it exists in your workspace
 Code: 1
 
 --- BundleVersionNotFound ---

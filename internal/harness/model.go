@@ -7,8 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"sort"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -20,6 +18,7 @@ import (
 
 	"github.com/musher-dev/mush/internal/buildinfo"
 	"github.com/musher-dev/mush/internal/config"
+	"github.com/musher-dev/mush/internal/harness/harnesstype"
 	harnessstate "github.com/musher-dev/mush/internal/harness/state"
 	"github.com/musher-dev/mush/internal/harness/ui/layout"
 	statusui "github.com/musher-dev/mush/internal/harness/ui/status"
@@ -27,44 +26,15 @@ import (
 	"github.com/musher-dev/mush/internal/worker"
 )
 
-// SignalFileName is the marker file created by the Stop hook.
-const SignalFileName = "complete"
-
-// PromptDetectionBytes contains the bytes to detect Claude's input prompt.
-// We look for "❯ " (U+276F HEAVY RIGHT-POINTING ANGLE QUOTATION MARK ORNAMENT + space)
-// to know Claude is ready for input (used for initial ready state).
-var PromptDetectionBytes = []byte{0xe2, 0x9d, 0xaf, 0x20} // "❯ " in UTF-8
-
-// PromptDebounceTime is how long to wait after seeing the prompt before
-// declaring Claude is ready. Used only for initial startup detection.
-const PromptDebounceTime = 1 * time.Second
-
-// SignalPollInterval is how often to check for completion signal files.
-const SignalPollInterval = 200 * time.Millisecond
-
 // ResizePollInterval is the fallback interval to reconcile terminal size in
 // environments that don't reliably forward SIGWINCH.
 const ResizePollInterval = 250 * time.Millisecond
-
-// PTYWriteChunkSize is the max bytes to write to the PTY at once.
-const PTYWriteChunkSize = 4096
-
-// PTYChunkDelay is the delay between writing chunks to the PTY.
-const PTYChunkDelay = 10 * time.Millisecond
-
-// PTYPostWriteDelay is the delay after writing all content before sending Enter.
-const PTYPostWriteDelay = 50 * time.Millisecond
-
-// PTYPasteSettleDelay is the delay after bulk-pasting content, allowing the
-// application to process the pasted text before we send Enter.
-const PTYPasteSettleDelay = 500 * time.Millisecond
 
 // DefaultExecutionTimeout is the fallback when no execution timeout is set on the job.
 const DefaultExecutionTimeout = 10 * time.Minute
 
 const (
 	ctrlC = 0x03
-	ctrlG = 0x07
 	ctrlQ = 0x11
 	ctrlS = 0x13
 	esc   = 0x1b
@@ -87,7 +57,7 @@ type RootModel struct {
 	// Executor registry: harness type → executor instance.
 	// Populated once during Run() setup and never modified after.
 	// Shared by reference with term and jobs.
-	executors map[string]Executor
+	executors map[string]harnesstype.Executor
 
 	// setPTYSize is injectable for tests; defaults to pty.Setsize.
 	setPTYSize func(*os.File, *pty.Winsize) error
@@ -138,7 +108,7 @@ func NewRootModel(ctx context.Context, cfg *Config) *RootModel {
 		initialStatus = StatusStarting
 	}
 
-	executors := make(map[string]Executor)
+	executors := make(map[string]harnesstype.Executor)
 	loadedCfg := config.Load()
 
 	model := &RootModel{
@@ -310,7 +280,7 @@ func (m *RootModel) Run() error {
 
 		executor := info.New()
 
-		setupOpts := SetupOptions{
+		setupOpts := harnesstype.SetupOptions{
 			TermWriter:     termWriter,
 			TermWidth:      frame.PaneWidth,
 			TermHeight:     ptyRows,
@@ -525,13 +495,12 @@ func (m *RootModel) statusSnapshot() harnessstate.Snapshot {
 
 	now := nowFn()
 
-	frame := layout.ComputeFrame(w, h, m.sidebarEnabled())
+	frame := layout.ComputeFrame(w, h, m.term.SidebarEnabled())
 
 	return harnessstate.Snapshot{
 		Width:              w,
 		Height:             h,
 		SidebarVisible:     frame.SidebarVisible,
-		SidebarAvailable:   m.term.SidebarAvailable(),
 		SidebarWidth:       frame.SidebarWidth,
 		PaneXStart:         frame.PaneXStart,
 		PaneWidth:          frame.PaneWidth,
@@ -565,7 +534,7 @@ func (m *RootModel) drawStatusBar() {
 	}
 
 	snap := m.statusSnapshot()
-	m.termWriteString(statusui.Render(&snap))
+	m.term.WriteString(statusui.Render(&snap))
 }
 
 func (m *RootModel) shouldCaptureTranscript() bool {
@@ -639,7 +608,7 @@ func (m *RootModel) popCopyEscPending() bool {
 	return pending
 }
 
-// needsSignalDir checks if any supported harness type implements SignalDirConsumer.
+// needsSignalDir checks if any supported harness type implements harnesstype.SignalDirConsumer.
 func needsSignalDir(supportedHarnesses []string) bool {
 	for _, name := range supportedHarnesses {
 		info, ok := Lookup(name)
@@ -648,7 +617,7 @@ func needsSignalDir(supportedHarnesses []string) bool {
 		}
 
 		executor := info.New()
-		if _, ok := executor.(SignalDirConsumer); ok {
+		if _, ok := executor.(harnesstype.SignalDirConsumer); ok {
 			return true
 		}
 	}
@@ -656,7 +625,7 @@ func needsSignalDir(supportedHarnesses []string) bool {
 	return false
 }
 
-// hasTranscriptSource checks if any supported harness type implements TranscriptSource.
+// hasTranscriptSource checks if any supported harness type implements harnesstype.TranscriptSource.
 func hasTranscriptSource(supportedHarnesses []string) bool {
 	for _, name := range supportedHarnesses {
 		info, ok := Lookup(name)
@@ -665,7 +634,7 @@ func hasTranscriptSource(supportedHarnesses []string) bool {
 		}
 
 		executor := info.New()
-		if ts, ok := executor.(TranscriptSource); ok && ts.WantsTranscript() {
+		if ts, ok := executor.(harnesstype.TranscriptSource); ok && ts.WantsTranscript() {
 			return true
 		}
 	}
@@ -673,10 +642,10 @@ func hasTranscriptSource(supportedHarnesses []string) bool {
 	return false
 }
 
-// hasRefreshableExecutor checks if any executor in the map implements Refreshable.
-func hasRefreshableExecutor(executors map[string]Executor) bool {
+// hasRefreshableExecutor checks if any executor in the map implements harnesstype.Refreshable.
+func hasRefreshableExecutor(executors map[string]harnesstype.Executor) bool {
 	for _, executor := range executors {
-		if _, ok := executor.(Refreshable); ok {
+		if _, ok := executor.(harnesstype.Refreshable); ok {
 			return true
 		}
 	}
@@ -700,7 +669,7 @@ func (m *RootModel) copyInput() {
 
 		for _, harnessType := range m.supportedHarnesses {
 			if executor, ok := m.executors[harnessType]; ok {
-				if ir, ok := executor.(InputReceiver); ok {
+				if ir, ok := executor.(harnesstype.InputReceiver); ok {
 					_, _ = ir.WriteInput(leftover)
 
 					break
@@ -768,14 +737,6 @@ func (m *RootModel) copyInput() {
 				continue
 			}
 
-			if buf[i] == ctrlG {
-				m.term.toggleSidebar()
-
-				buf[i] = 0
-
-				continue
-			}
-
 			if buf[i] == ctrlS { // Ctrl+S toggles copy mode
 				m.setCopyMode(!m.isCopyMode())
 
@@ -813,7 +774,7 @@ func (m *RootModel) copyInput() {
 		// Write to the first InputReceiver executor.
 		for _, harnessType := range m.supportedHarnesses {
 			if executor, ok := m.executors[harnessType]; ok {
-				if ir, ok := executor.(InputReceiver); ok {
+				if ir, ok := executor.(harnesstype.InputReceiver); ok {
 					_, _ = ir.WriteInput(out)
 
 					break
@@ -825,7 +786,7 @@ func (m *RootModel) copyInput() {
 
 func (m *RootModel) handleCtrlC() bool {
 	// When not actively running an interruptable job, Ctrl+C exits immediately.
-	if !m.hasActiveInterruptableJob() {
+	if !m.jobs.HasActiveInterruptableJob() {
 		m.signalDone()
 		return true
 	}
@@ -863,7 +824,7 @@ func (m *RootModel) handleCtrlC() bool {
 	// Forward Ctrl+C to the current job's executor via InterruptHandler.
 	harnessType := m.jobs.CurrentJobHarnessType()
 	if executor, ok := m.executors[harnessType]; ok {
-		if ih, ok := executor.(InterruptHandler); ok {
+		if ih, ok := executor.(harnesstype.InterruptHandler); ok {
 			_ = ih.Interrupt()
 		}
 	}
@@ -894,73 +855,12 @@ func (m *RootModel) infof(format string, args ...any) {
 	msg := fmt.Sprintf(format, args...)
 	// Use \r\n because the terminal is in raw mode; writing through termWrite
 	// ensures the output lands inside the scroll region alongside PTY output.
-	m.termWrite([]byte(msg + "\r\n"))
+	m.term.Write([]byte(msg + "\r\n"))
 }
 
 // setLastError records an error to be displayed in the status bar.
 func (m *RootModel) setLastError(msg string) {
 	m.jobs.SetLastError(msg)
-}
-
-func summarizeMCPServers(names []string) string {
-	if len(names) == 0 {
-		return "none"
-	}
-
-	return strings.Join(names, ", ")
-}
-
-func sameStringSlice(expected, compared []string) bool {
-	if len(expected) != len(compared) {
-		return false
-	}
-
-	aCopy := make([]string, len(expected))
-	copy(aCopy, expected)
-
-	bCopy := make([]string, len(compared))
-	copy(bCopy, compared)
-
-	sort.Strings(aCopy)
-	sort.Strings(bCopy)
-
-	for i := range aCopy {
-		if aCopy[i] != bCopy[i] {
-			return false
-		}
-	}
-
-	return true
-}
-
-func annotateStartPTYError(err error, binaryPath string) error {
-	if !errors.Is(err, syscall.EPERM) {
-		return err
-	}
-
-	return fmt.Errorf(
-		"%w (EPERM during PTY start for %q; likely session/exec policy issue. Check executable permissions, filesystem noexec, and macOS quarantine attributes)",
-		err,
-		binaryPath,
-	)
-}
-
-// --- Forwarding methods for test compatibility and internal use ---
-
-func (m *RootModel) sidebarEnabled() bool {
-	return m.term.SidebarEnabled()
-}
-
-func (m *RootModel) handleResize(w, h int) {
-	m.term.handleResize(w, h)
-}
-
-func (m *RootModel) restoreLayoutAfterAltScreen() {
-	m.term.restoreLayoutAfterAltScreen()
-}
-
-func (m *RootModel) hasActiveInterruptableJob() bool {
-	return m.jobs.HasActiveInterruptableJob()
 }
 
 // isPTYActive reports whether any executor PTY is currently running, making it
@@ -972,12 +872,4 @@ func (m *RootModel) isPTYActive() bool {
 	}
 
 	return m.jobs.CurrentJobID() != ""
-}
-
-func (m *RootModel) termWrite(p []byte) {
-	m.term.Write(p)
-}
-
-func (m *RootModel) termWriteString(s string) {
-	m.term.WriteString(s)
 }

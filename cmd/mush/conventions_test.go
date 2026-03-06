@@ -168,12 +168,11 @@ func TestShortDescriptionsStyle(t *testing.T) {
 func TestDataCommandsSupportJSON(t *testing.T) {
 	// Commands that currently support --json output.
 	jsonSupported := map[string]bool{
-		"mush habitat list":  true,
-		"mush history list":  true,
-		"mush config list":   true,
-		"mush auth status":   true,
-		"mush worker status": true,
-		"mush version":       true,
+		"mush habitat list": true,
+		"mush history list": true,
+		"mush config list":  true,
+		"mush auth status":  true,
+		"mush version":      true,
 	}
 
 	// Commands where --json support is intentionally deferred.
@@ -255,6 +254,97 @@ func TestNoShortFlagCollisions(t *testing.T) {
 	if len(collisions) > 0 {
 		t.Errorf("short flag collisions:\n  %s",
 			strings.Join(collisions, "\n  "))
+	}
+}
+
+// TestHiddenFlagsAreRegistered maintains an explicit allowlist of hidden flags.
+// Any new hidden flag must be added here, forcing code review visibility.
+func TestHiddenFlagsAreRegistered(t *testing.T) {
+	allowedHidden := map[string]bool{
+		"mush --log-level":  true,
+		"mush --log-format": true,
+		"mush --log-file":   true,
+		"mush --log-stderr": true,
+	}
+
+	root := newRootCmd()
+
+	var unregistered []string
+
+	var stale []string
+
+	for _, cmd := range collectAllCommands(root) {
+		cmd.NonInheritedFlags().VisitAll(func(f *pflag.Flag) {
+			key := cmd.CommandPath() + " --" + f.Name
+
+			if f.Hidden {
+				if !allowedHidden[key] {
+					unregistered = append(unregistered, key)
+				}
+			}
+		})
+	}
+
+	// Check for stale entries (flag in allowlist but no longer hidden).
+	for key := range allowedHidden {
+		parts := strings.SplitN(key, " --", 2)
+		if len(parts) != 2 {
+			t.Errorf("malformed allowlist key: %s", key)
+
+			continue
+		}
+
+		cmdPath, flagName := parts[0], parts[1]
+
+		var found bool
+
+		for _, cmd := range collectAllCommands(root) {
+			if cmd.CommandPath() != cmdPath {
+				continue
+			}
+
+			f := cmd.NonInheritedFlags().Lookup(flagName)
+			if f != nil && f.Hidden {
+				found = true
+			}
+
+			break
+		}
+
+		if !found {
+			stale = append(stale, key)
+		}
+	}
+
+	if len(unregistered) > 0 {
+		t.Errorf("unregistered hidden flags (add to allowedHidden in this test):\n  %s",
+			strings.Join(unregistered, "\n  "))
+	}
+
+	if len(stale) > 0 {
+		t.Errorf("stale allowlist entries (flag is no longer hidden — remove from allowedHidden):\n  %s",
+			strings.Join(stale, "\n  "))
+	}
+}
+
+// TestAllFlagsHaveUsageDescription checks that every flag (including hidden
+// ones) has a non-empty Usage string, preventing undocumented flags.
+func TestAllFlagsHaveUsageDescription(t *testing.T) {
+	root := newRootCmd()
+
+	var missing []string
+
+	for _, cmd := range collectAllCommands(root) {
+		cmd.NonInheritedFlags().VisitAll(func(f *pflag.Flag) {
+			if strings.TrimSpace(f.Usage) == "" {
+				missing = append(missing, fmt.Sprintf("%s --%s", cmd.CommandPath(), f.Name))
+			}
+		})
+	}
+
+	if len(missing) > 0 {
+		t.Errorf("flags missing usage description:\n  %s\n\nEvery flag must have a non-empty Usage string.",
+			strings.Join(missing, "\n  "))
 	}
 }
 

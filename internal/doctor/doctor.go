@@ -1,6 +1,9 @@
 // Package doctor provides diagnostic checks for Mush CLI health.
 //
 // This package implements a check framework that validates:
+//   - Local directory structure and permissions
+//   - Configuration file validity
+//   - Credential file security
 //   - API connectivity and response time
 //   - Authentication status and credential source
 //   - CLI version against latest release
@@ -9,15 +12,20 @@ package doctor
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
+
+	"gopkg.in/yaml.v3"
 
 	"github.com/musher-dev/mush/internal/auth"
 	"github.com/musher-dev/mush/internal/buildinfo"
 	"github.com/musher-dev/mush/internal/client"
 	"github.com/musher-dev/mush/internal/config"
+	"github.com/musher-dev/mush/internal/paths"
 	"github.com/musher-dev/mush/internal/update"
 )
 
@@ -58,11 +66,14 @@ type namedCheck struct {
 func New() *Runner {
 	r := &Runner{}
 
-	// Register default checks
-	r.AddCheck("API Connectivity", checkAPIConnectivity)
-	r.AddCheck("Clock Skew", checkClockSkew)
+	// Register default checks — prerequisites first
+	r.AddCheck("Directory Structure", checkDirectoryStructure)
+	r.AddCheck("Config File", checkConfigFile)
+	r.AddCheck("Credentials File", checkCredentialsFile)
 	r.AddCheck("Proxy Environment", checkProxyEnvironment)
 	r.AddCheck("Custom CA Bundle", checkCustomCABundle)
+	r.AddCheck("API Connectivity", checkAPIConnectivity)
+	r.AddCheck("Clock Skew", checkClockSkew)
 	r.AddCheck("Authentication", checkAuthentication)
 	r.AddCheck("CLI Version", checkCLIVersion)
 
@@ -101,6 +112,173 @@ func Summary(results []Result) (passed, failed, warnings int) {
 	}
 
 	return passed, failed, warnings
+}
+
+// checkDirectoryStructure verifies XDG roots resolve and are accessible.
+func checkDirectoryStructure(context.Context) Result {
+	type root struct {
+		name string
+		fn   func() (string, error)
+	}
+
+	roots := []root{
+		{"config", paths.ConfigRoot},
+		{"state", paths.StateRoot},
+		{"cache", paths.CacheRoot},
+	}
+
+	var missing []string
+
+	for _, r := range roots {
+		dir, err := r.fn()
+		if err != nil {
+			return Result{
+				Status:  StatusFail,
+				Message: "Cannot resolve directories",
+				Detail:  "$HOME must be set",
+			}
+		}
+
+		info, err := os.Stat(dir)
+		if err != nil {
+			if os.IsNotExist(err) {
+				missing = append(missing, r.name)
+				continue
+			}
+
+			return Result{
+				Status:  StatusFail,
+				Message: fmt.Sprintf("Cannot access %s directory", r.name),
+				Detail:  err.Error(),
+			}
+		}
+
+		if !info.IsDir() {
+			return Result{
+				Status:  StatusFail,
+				Message: fmt.Sprintf("%s path is not a directory: %s", r.name, dir),
+				Detail:  "Remove the file and let mush recreate it",
+			}
+		}
+
+		// Check writable by attempting to create a unique temp file
+		f, err := os.CreateTemp(dir, ".mush-doctor-probe.*")
+		if err != nil {
+			return Result{
+				Status:  StatusFail,
+				Message: fmt.Sprintf("%s directory not writable: %s", r.name, dir),
+				Detail:  "Check directory permissions",
+			}
+		}
+
+		_ = f.Close()
+		_ = os.Remove(f.Name())
+	}
+
+	if len(missing) > 0 {
+		return Result{
+			Status:  StatusWarn,
+			Message: fmt.Sprintf("Missing directories: %s", strings.Join(missing, ", ")),
+			Detail:  "Created on first use by any mush command",
+		}
+	}
+
+	return Result{
+		Status:  StatusPass,
+		Message: "Config, state, and cache directories OK",
+	}
+}
+
+// checkConfigFile validates YAML syntax of the config file if present.
+func checkConfigFile(context.Context) Result {
+	configDir, err := paths.ConfigRoot()
+	if err != nil {
+		return Result{
+			Status:  StatusPass,
+			Message: "No config file (using defaults)",
+		}
+	}
+
+	configPath := filepath.Join(configDir, "config.yaml")
+
+	data, err := os.ReadFile(configPath) //nolint:gosec // configPath is derived from XDG config root, not user input
+	if err != nil {
+		if os.IsNotExist(err) {
+			return Result{
+				Status:  StatusPass,
+				Message: "No config file (using defaults)",
+			}
+		}
+
+		return Result{
+			Status:  StatusFail,
+			Message: "Cannot read config file",
+			Detail:  err.Error(),
+		}
+	}
+
+	var parsed any
+	if err := yaml.Unmarshal(data, &parsed); err != nil {
+		return Result{
+			Status:  StatusFail,
+			Message: "Invalid YAML in config file",
+			Detail:  fmt.Sprintf("%s — fix or delete %s", err.Error(), configPath),
+		}
+	}
+
+	return Result{
+		Status:  StatusPass,
+		Message: configPath,
+	}
+}
+
+// checkCredentialsFile checks permissions on the credentials fallback file.
+func checkCredentialsFile(context.Context) Result {
+	credPath, err := paths.CredentialsFile()
+	if err != nil {
+		return Result{
+			Status:  StatusPass,
+			Message: "Not present (using keyring or env)",
+		}
+	}
+
+	info, err := os.Stat(credPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return Result{
+				Status:  StatusPass,
+				Message: "Not present (using keyring or env)",
+			}
+		}
+
+		return Result{
+			Status:  StatusFail,
+			Message: "Cannot access credentials file",
+			Detail:  err.Error(),
+		}
+	}
+
+	// Skip permission check on non-Unix platforms
+	if runtime.GOOS == "windows" {
+		return Result{
+			Status:  StatusPass,
+			Message: credPath,
+		}
+	}
+
+	mode := info.Mode().Perm()
+	if mode&(fs.FileMode(0o077)) != 0 {
+		return Result{
+			Status:  StatusWarn,
+			Message: fmt.Sprintf("Credentials file too permissive (%04o)", mode),
+			Detail:  fmt.Sprintf("chmod 600 %s", credPath),
+		}
+	}
+
+	return Result{
+		Status:  StatusPass,
+		Message: credPath,
+	}
 }
 
 // checkAPIConnectivity tests connection to the API endpoint.

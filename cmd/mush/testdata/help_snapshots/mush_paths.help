@@ -1,0 +1,23 @@
+Display all file and directory paths used by Mush.
+
+Useful for debugging, scripting, and understanding where configuration,
+state, cache, and credential files are stored on this system.
+
+Usage:
+  mush paths [flags]
+
+Examples:
+  mush paths
+  mush paths --json
+
+Flags:
+  -h, --help   help for paths
+
+Global Flags:
+      --api-key string   API key override (prefer MUSH_API_KEY env var)
+      --api-url string   Override Musher API URL for this command
+      --json             Output in JSON format
+      --no-color         Disable colored output
+      --no-input         Disable interactive prompts
+      --no-tui           Disable interactive TUI navigation
+      --quiet            Minimal output (for CI)

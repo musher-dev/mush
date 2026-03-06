@@ -362,6 +362,20 @@ tasks:
       - go mod tidy
 
   # ===========================================================================
+  # Documentation Generation
+  # ===========================================================================
+
+  docs:generate:
+    desc: Regenerate CLI reference documentation from source
+    cmds:
+      - UPDATE_GOLDEN=1 go test ./cmd/mush -run TestGenerateCLIDocs -count=1
+
+  docs:snapshots:
+    desc: Update help output snapshots
+    cmds:
+      - UPDATE_GOLDEN=1 go test ./cmd/mush -run TestHelpSnapshots -count=1
+
+  # ===========================================================================
   # Golden File Testing
   # ===========================================================================
 

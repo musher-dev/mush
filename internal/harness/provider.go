@@ -1,146 +1,54 @@
 package harness
 
 import (
-	"embed"
-	"fmt"
-	"os/exec"
 	"sort"
+	"sync"
 
-	"gopkg.in/yaml.v3"
+	"github.com/musher-dev/mush/internal/harness/harnesstype"
 )
 
-//go:embed providers/*.yaml
-var providersFS embed.FS
+// providerSpecs stores provider specs registered by builtins.
+var (
+	providerSpecsMu sync.RWMutex
+	providerSpecs   = map[string]*harnesstype.ProviderSpec{}
+)
 
-// ProviderSpec describes a harness provider loaded from an embedded YAML file.
-type ProviderSpec struct {
-	Name        string         `yaml:"name"`
-	DisplayName string         `yaml:"displayName"`
-	Description string         `yaml:"description"`
-	Binary      string         `yaml:"binary"`
-	Directories *Directories   `yaml:"directories,omitempty"`
-	BundleDir   *BundleDirSpec `yaml:"bundleDir,omitempty"`
-	CLI         *CLIFlags      `yaml:"cli,omitempty"`
-	Assets      *AssetPaths    `yaml:"assets,omitempty"`
-	MCP         *MCPDef        `yaml:"mcp,omitempty"`
-	Status      *StatusSpec    `yaml:"status,omitempty"`
-}
-
-// Directories describes harness-specific config directory paths.
-type Directories struct {
-	Project string `yaml:"project"`
-	User    string `yaml:"user"`
-}
-
-// BundleDirSpec describes how a bundle directory is injected into the harness CLI.
-type BundleDirSpec struct {
-	Mode string `yaml:"mode"` // "add_dir", "cd_flag", "cwd"
-	Flag string `yaml:"flag"` // CLI flag for add_dir/cd_flag modes
-}
-
-// CLIFlags describes harness-specific CLI flags.
-type CLIFlags struct {
-	MCPConfig string `yaml:"mcpConfig"`
-}
-
-// AssetPaths describes where bundle assets are mapped in the harness's native structure.
-type AssetPaths struct {
-	SkillDir       string `yaml:"skillDir"`
-	AgentDir       string `yaml:"agentDir"`
-	ToolConfigFile string `yaml:"toolConfigFile"`
-}
-
-// MCPDef describes MCP configuration for a harness.
-type MCPDef struct {
-	Format     string `yaml:"format"`     // "json" or "toml"
-	ConfigPath string `yaml:"configPath"` // relative path for MCP config file
-}
-
-// StatusSpec describes health-check and install metadata for a harness provider.
-type StatusSpec struct {
-	VersionArgs    []string   `yaml:"versionArgs,omitempty"`
-	InstallHint    string     `yaml:"installHint,omitempty"`
-	InstallCommand []string   `yaml:"installCommand,omitempty"`
-	ConfigDir      string     `yaml:"configDir,omitempty"`
-	AuthCheck      *AuthCheck `yaml:"authCheck,omitempty"`
-}
-
-// AuthCheck describes a file-based credential check for a harness provider.
-type AuthCheck struct {
-	Path        string `yaml:"path"`
-	Description string `yaml:"description"`
-}
-
-// providerSpecs is loaded at package init time from embedded YAML files.
-var providerSpecs = mustLoadProviders(providersFS)
-
-func mustLoadProviders(fsys embed.FS) map[string]*ProviderSpec {
-	entries, err := fsys.ReadDir("providers")
-	if err != nil {
-		panic(fmt.Sprintf("harness: read providers dir: %v", err))
+// registerProviderSpec adds a provider spec to the provider map.
+// It panics on nil spec, empty name, or duplicate registration to fail fast during init.
+func registerProviderSpec(spec *harnesstype.ProviderSpec) {
+	if spec == nil {
+		panic("harness: registerProviderSpec called with nil spec")
 	}
 
-	specs := make(map[string]*ProviderSpec, len(entries))
-
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-
-		data, readErr := fsys.ReadFile("providers/" + entry.Name())
-		if readErr != nil {
-			panic(fmt.Sprintf("harness: read provider file %s: %v", entry.Name(), readErr))
-		}
-
-		var spec ProviderSpec
-		if unmarshalErr := yaml.Unmarshal(data, &spec); unmarshalErr != nil {
-			panic(fmt.Sprintf("harness: unmarshal provider %s: %v", entry.Name(), unmarshalErr))
-		}
-
-		validateProviderSpec(&spec, entry.Name())
-
-		if _, dup := specs[spec.Name]; dup {
-			panic(fmt.Sprintf("harness: duplicate provider name %q in %s", spec.Name, entry.Name()))
-		}
-
-		specs[spec.Name] = &spec
-	}
-
-	return specs
-}
-
-func validateProviderSpec(spec *ProviderSpec, filename string) {
 	if spec.Name == "" {
-		panic(fmt.Sprintf("harness: provider %s: name is required", filename))
+		panic("harness: registerProviderSpec called with empty name")
 	}
 
-	if spec.BundleDir != nil && spec.BundleDir.Mode != "" {
-		switch spec.BundleDir.Mode {
-		case "add_dir", "cd_flag", "cwd":
-			// valid
-		default:
-			panic(fmt.Sprintf("harness: provider %s: invalid bundleDir.mode %q", filename, spec.BundleDir.Mode))
-		}
+	providerSpecsMu.Lock()
+	defer providerSpecsMu.Unlock()
+
+	if _, dup := providerSpecs[spec.Name]; dup {
+		panic("harness: duplicate provider registration: " + spec.Name)
 	}
 
-	if spec.MCP != nil && spec.MCP.Format != "" {
-		switch spec.MCP.Format {
-		case "json", "toml":
-			// valid
-		default:
-			panic(fmt.Sprintf("harness: provider %s: invalid mcp.format %q", filename, spec.MCP.Format))
-		}
-	}
+	providerSpecs[spec.Name] = spec
 }
 
 // GetProvider returns the ProviderSpec for a named harness type.
-func GetProvider(name string) (*ProviderSpec, bool) {
+func GetProvider(name string) (*harnesstype.ProviderSpec, bool) {
+	providerSpecsMu.RLock()
+	defer providerSpecsMu.RUnlock()
+
 	spec, ok := providerSpecs[name]
+
 	return spec, ok
 }
 
 // ProviderNames returns all provider names in sorted order.
 func ProviderNames() []string {
+	providerSpecsMu.RLock()
+	defer providerSpecsMu.RUnlock()
+
 	names := make([]string, 0, len(providerSpecs))
 	for name := range providerSpecs {
 		names = append(names, name)
@@ -153,7 +61,11 @@ func ProviderNames() []string {
 
 // HasAssetMapping returns true if the named provider has asset mapping rules.
 func HasAssetMapping(name string) bool {
+	providerSpecsMu.RLock()
+	defer providerSpecsMu.RUnlock()
+
 	spec, ok := providerSpecs[name]
+
 	return ok && spec.Assets != nil
 }
 
@@ -161,17 +73,16 @@ func HasAssetMapping(name string) bool {
 // The closure reads from the provider spec map at call time, avoiding init-order dependence.
 func AvailableFunc(name string) func() bool {
 	return func() bool {
+		providerSpecsMu.RLock()
+
 		spec, ok := providerSpecs[name]
+
+		providerSpecsMu.RUnlock()
+
 		if !ok {
 			return false
 		}
 
-		if spec.Binary == "" {
-			return true
-		}
-
-		_, err := exec.LookPath(spec.Binary)
-
-		return err == nil
+		return harnesstype.AvailableFunc(spec)()
 	}
 }

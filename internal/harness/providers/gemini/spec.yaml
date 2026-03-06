@@ -1,0 +1,29 @@
+name: gemini
+displayName: Gemini
+description: Google Gemini open source coding agent CLI
+binary: gemini
+
+directories:
+  project: .gemini
+  user: ~/.gemini
+
+bundleDir:
+  mode: cwd
+
+assets:
+  skillDir: .gemini/commands
+  agentDir: .gemini/commands
+  toolConfigFile: .gemini/settings.json
+
+mcp:
+  format: json
+  configPath: .gemini/settings.json
+
+status:
+  versionArgs: ["--version"]
+  installHint: "npm install -g @google/gemini-cli"
+  installCommand: ["npm", "install", "-g", "@google/gemini-cli"]
+  configDir: "~/.gemini"
+  authCheck:
+    path: "~/.gemini/oauth_creds.json"
+    description: "Credentials"

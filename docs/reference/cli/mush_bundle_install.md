@@ -1,0 +1,49 @@
+---
+title: "mush bundle install"
+description: "Install bundle assets into the current project"
+---
+
+## mush bundle install
+
+Install bundle assets into the current project
+
+### Synopsis
+
+Pull a bundle and install its assets into the harness's native directory
+structure in the current project directory.
+
+```
+mush bundle install <namespace/slug>[:<version>] [flags]
+```
+
+### Examples
+
+```
+  mush bundle install acme/my-kit --harness claude
+  mush bundle install acme/my-kit:0.1.0 --harness claude --force
+```
+
+### Options
+
+```
+  -f, --force            Overwrite existing files
+      --harness string   Harness type to install for (required)
+  -h, --help             help for install
+```
+
+### Options inherited from parent commands
+
+```
+      --api-key string   API key override (prefer MUSH_API_KEY env var)
+      --api-url string   Override Musher API URL for this command
+      --json             Output in JSON format
+      --no-color         Disable colored output
+      --no-input         Disable interactive prompts
+      --no-tui           Disable interactive TUI navigation
+      --quiet            Minimal output (for CI)
+```
+
+### SEE ALSO
+
+* [mush bundle](mush_bundle.md)	 - Manage agent bundles
+

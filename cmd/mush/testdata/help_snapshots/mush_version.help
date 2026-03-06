@@ -1,0 +1,19 @@
+Display the mush binary version, git commit, and build date.
+
+Usage:
+  mush version [flags]
+
+Examples:
+  mush version
+
+Flags:
+  -h, --help   help for version
+
+Global Flags:
+      --api-key string   API key override (prefer MUSH_API_KEY env var)
+      --api-url string   Override Musher API URL for this command
+      --json             Output in JSON format
+      --no-color         Disable colored output
+      --no-input         Disable interactive prompts
+      --no-tui           Disable interactive TUI navigation
+      --quiet            Minimal output (for CI)

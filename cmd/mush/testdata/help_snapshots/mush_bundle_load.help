@@ -1,0 +1,25 @@
+Pull a bundle and launch the TUI at the Ready screen where you can choose
+to Run or Install. Use --no-tui to skip the TUI and launch the harness
+directly (requires --harness).
+
+Usage:
+  mush bundle load <namespace/slug>[:<version>] [flags]
+
+Examples:
+  mush bundle load acme/my-kit
+  mush bundle load acme/my-kit:0.1.0
+  mush bundle load acme/my-kit --no-tui --harness claude
+
+Flags:
+      --force-sidebar    Skip terminal probe and force sidebar rendering
+      --harness string   Harness type to use (required with --no-tui)
+  -h, --help             help for load
+
+Global Flags:
+      --api-key string   API key override (prefer MUSH_API_KEY env var)
+      --api-url string   Override Musher API URL for this command
+      --json             Output in JSON format
+      --no-color         Disable colored output
+      --no-input         Disable interactive prompts
+      --no-tui           Disable interactive TUI navigation
+      --quiet            Minimal output (for CI)

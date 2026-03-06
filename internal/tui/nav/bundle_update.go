@@ -23,11 +23,8 @@ func (m *model) handleBundleListLoaded(msg bundleListLoadedMsg) (tea.Model, tea.
 func (m *model) handleBundleInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Hotkeys only work when text input is NOT focused.
 	if m.bundleInput.focusArea != bundleFocusInput && msg.Type == tea.KeyRunes && len(msg.Runes) == 1 {
-		switch msg.Runes[0] {
-		case 'f':
+		if msg.Runes[0] == 'f' {
 			return m.activateBundleHubLink()
-		case 'n':
-			return m.activateBareRun()
 		}
 	}
 
@@ -38,13 +35,11 @@ func (m *model) handleBundleInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case key.Matches(msg, m.keys.Tab):
-		// Cycle: input → list → harness → input.
+		// Cycle: input → list → input.
 		switch m.bundleInput.focusArea {
 		case bundleFocusInput:
 			m.bundleInput.focusArea = bundleFocusList
 			m.bundleInput.textInput.Blur()
-		case bundleFocusList:
-			m.bundleInput.focusArea = bundleFocusHarness
 		default:
 			m.bundleInput.focusArea = bundleFocusInput
 			m.bundleInput.textInput.Focus()
@@ -56,8 +51,7 @@ func (m *model) handleBundleInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.submitBundleSelection()
 
 	case key.Matches(msg, m.keys.Down):
-		switch m.bundleInput.focusArea {
-		case bundleFocusList:
+		if m.bundleInput.focusArea == bundleFocusList {
 			maxIdx := bundleListLen(m) - 1
 			if maxIdx < 0 {
 				maxIdx = 0
@@ -68,25 +62,12 @@ func (m *model) handleBundleInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 
 			return m, nil
-		case bundleFocusHarness:
-			if m.bundleInput.harnessCur < len(m.harnesses)-1 {
-				m.bundleInput.harnessCur++
-			}
-
-			return m, nil
 		}
 
 	case key.Matches(msg, m.keys.Up):
-		switch m.bundleInput.focusArea {
-		case bundleFocusList:
+		if m.bundleInput.focusArea == bundleFocusList {
 			if m.bundleInput.listCursor > 0 {
 				m.bundleInput.listCursor--
-			}
-
-			return m, nil
-		case bundleFocusHarness:
-			if m.bundleInput.harnessCur > 0 {
-				m.bundleInput.harnessCur--
 			}
 
 			return m, nil
@@ -133,21 +114,21 @@ func (m *model) submitBundleSelection() (tea.Model, tea.Cmd) {
 	// Installed bundle selected.
 	if cursor < installedLen {
 		b := m.bundleInput.installedBundles[cursor]
-		m.bundleInput.textInput.SetValue(b.slug)
+
+		value := b.ref
+		if b.version != "" {
+			value += ":" + b.version
+		}
+
+		m.bundleInput.textInput.SetValue(value)
 		m.bundleInput.focusArea = bundleFocusInput
 		m.bundleInput.textInput.Focus()
 
 		return m.submitBundleInput()
 	}
 
-	cursor -= installedLen
-
-	// Action links.
-	if cursor == 0 {
-		return m.activateBundleHubLink()
-	}
-
-	return m.activateBareRun()
+	// Action link: "Find a bundle on the Hub".
+	return m.activateBundleHubLink()
 }
 
 // activateBundleHubLink navigates to the hub explore screen from the bundle input.
@@ -177,21 +158,6 @@ func (m *model) activateBundleHubLink() (tea.Model, tea.Cmd) {
 	)
 }
 
-// activateBareRun exits the TUI with a bare harness run (no bundle).
-func (m *model) activateBareRun() (tea.Model, tea.Cmd) {
-	harness := ""
-	if len(m.harnesses) > 0 {
-		harness = m.harnesses[m.bundleInput.harnessCur].name
-	}
-
-	m.result = &Result{
-		Action:  ActionBareRun,
-		Harness: harness,
-	}
-
-	return m, tea.Quit
-}
-
 // submitBundleInput validates the input and starts the resolve flow.
 func (m *model) submitBundleInput() (tea.Model, tea.Cmd) {
 	raw := m.bundleInput.textInput.Value()
@@ -202,7 +168,6 @@ func (m *model) submitBundleInput() (tea.Model, tea.Cmd) {
 			message: err.Error(),
 			hint:    "Enter a bundle reference like 'namespace/slug' or 'namespace/slug:1.0.0'",
 			slug:    raw,
-			harness: m.harnesses[m.bundleInput.harnessCur].name,
 		}
 
 		m.pushScreen(screenBundleError)
@@ -218,7 +183,6 @@ func (m *model) submitBundleInput() (tea.Model, tea.Cmd) {
 			namespace: ref.Namespace,
 			slug:      ref.Slug,
 			version:   ref.Version,
-			harness:   m.harnesses[m.bundleInput.harnessCur].name,
 		}
 
 		m.pushScreen(screenBundleError)
@@ -234,12 +198,11 @@ func (m *model) submitBundleInput() (tea.Model, tea.Cmd) {
 		version:   ref.Version,
 	}
 
-	harness := m.harnesses[m.bundleInput.harnessCur].name
 	m.pushScreen(screenBundleResolving)
 
 	return m, tea.Batch(
 		m.bundleResolve.spinner.Tick,
-		cmdResolveBundle(m.ctx, m.deps.Client, ref.Namespace, ref.Slug, ref.Version, harness),
+		cmdResolveBundle(m.ctx, m.deps.Client, ref.Namespace, ref.Slug, ref.Version),
 	)
 }
 
@@ -256,36 +219,11 @@ func (m *model) handleBundleResolvingKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// handleBundleConfirmKey processes key events on the confirmation screen.
-func (m *model) handleBundleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch {
-	case key.Matches(msg, m.keys.Back):
-		m.popScreen()
-
-	case key.Matches(msg, m.keys.Tab):
-		m.bundleConfirm.buttonIdx = (m.bundleConfirm.buttonIdx + 1) % 2 //nolint:mnd // 2 buttons
-
-	case key.Matches(msg, m.keys.Select):
-		if m.bundleConfirm.buttonIdx == 1 {
-			// Cancel — go back.
-			m.popScreen()
-
-			return m, nil
-		}
-
-		// Load — start download.
-		return m.startBundleDownload()
-	}
-
-	return m, nil
-}
-
 // startBundleDownload begins the download/cache process.
 func (m *model) startBundleDownload() (tea.Model, tea.Cmd) {
 	namespace := m.bundleConfirm.namespace
 	slug := m.bundleConfirm.slug
 	ver := m.bundleConfirm.version
-	harness := m.bundleConfirm.harness
 
 	m.bundleProgress = bundleProgressState{
 		progress:  m.bundleProgress.progress,
@@ -297,7 +235,7 @@ func (m *model) startBundleDownload() (tea.Model, tea.Cmd) {
 
 	m.pushScreen(screenBundleProgress)
 
-	return m, cmdCheckBundleCache(m.ctx, m.deps, namespace, slug, ver, harness)
+	return m, cmdCheckBundleCache(m.ctx, m.deps, namespace, slug, ver)
 }
 
 // handleBundleProgressKey processes key events on the progress screen.
@@ -306,26 +244,170 @@ func (m *model) handleBundleProgressKey(_ tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// handleBundleCompleteKey processes key events on the complete screen.
-func (m *model) handleBundleCompleteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+// handleBundleActionKey processes key events on the Run/Install action choice screen.
+func (m *model) handleBundleActionKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, m.keys.Back):
 		// Return to home.
 		m.screenStack = nil
 		m.activeScreen = screenHome
 
+	case key.Matches(msg, m.keys.Tab), key.Matches(msg, m.keys.Left), key.Matches(msg, m.keys.Right):
+		m.bundleAction.buttonIdx = (m.bundleAction.buttonIdx + 1) % 2 //nolint:mnd // 2 buttons
+
 	case key.Matches(msg, m.keys.Select):
-		// Launch interaction — exit TUI with result.
-		m.result = &Result{
-			Action:          ActionBundleLoad,
-			BundleNamespace: m.bundleComplete.namespace,
-			BundleSlug:      m.bundleComplete.slug,
-			BundleVer:       m.bundleComplete.version,
-			Harness:         m.bundleComplete.harness,
-			CachePath:       m.bundleComplete.cachePath,
+		// Build list of installed harness indices.
+		var installed []int
+
+		for i, h := range m.harnesses {
+			for _, s := range m.homeHarness.statuses {
+				if s.name == h.name && s.installed {
+					installed = append(installed, i)
+
+					break
+				}
+			}
 		}
 
-		return m, tea.Quit
+		// Fall back to all harnesses if none detected as installed.
+		if len(installed) == 0 {
+			for i := range m.harnesses {
+				installed = append(installed, i)
+			}
+		}
+
+		// Push harness selection screen.
+		m.bundleHarness = bundleHarnessState{
+			namespace:  m.bundleAction.namespace,
+			slug:       m.bundleAction.slug,
+			version:    m.bundleAction.version,
+			cachePath:  m.bundleAction.cachePath,
+			installed:  installed,
+			forInstall: m.bundleAction.buttonIdx == 1,
+		}
+
+		m.pushScreen(screenBundleHarness)
+	}
+
+	return m, nil
+}
+
+// handleBundleHarnessKey processes key events on the harness selection screen.
+func (m *model) handleBundleHarnessKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	installedCount := len(m.bundleHarness.installed)
+
+	switch {
+	case key.Matches(msg, m.keys.Back):
+		m.popScreen()
+
+	case key.Matches(msg, m.keys.Down):
+		if m.bundleHarness.cursor < installedCount-1 {
+			m.bundleHarness.cursor++
+		}
+
+	case key.Matches(msg, m.keys.Up):
+		if m.bundleHarness.cursor > 0 {
+			m.bundleHarness.cursor--
+		}
+
+	case key.Matches(msg, m.keys.Select):
+		harness := ""
+
+		if installedCount > 0 && m.bundleHarness.cursor < installedCount {
+			idx := m.bundleHarness.installed[m.bundleHarness.cursor]
+			harness = m.harnesses[idx].name
+		}
+
+		if !m.bundleHarness.forInstall {
+			// Run path — exit TUI with ActionBundleLoad.
+			m.result = &Result{
+				Action:          ActionBundleLoad,
+				BundleNamespace: m.bundleHarness.namespace,
+				BundleSlug:      m.bundleHarness.slug,
+				BundleVer:       m.bundleHarness.version,
+				Harness:         harness,
+				CachePath:       m.bundleHarness.cachePath,
+			}
+
+			return m, tea.Quit
+		}
+
+		// Install path — push install confirmation screen.
+		workDir := ""
+		if m.deps != nil {
+			workDir = m.deps.WorkDir
+		}
+
+		m.bundleInstallConfirm = bundleInstallConfirmState{
+			namespace: m.bundleHarness.namespace,
+			slug:      m.bundleHarness.slug,
+			version:   m.bundleHarness.version,
+			cachePath: m.bundleHarness.cachePath,
+			harness:   harness,
+			targetDir: workDir,
+		}
+
+		m.pushScreen(screenBundleInstallConfirm)
+
+		return m, cmdCheckInstallConflicts(m.bundleHarness.cachePath, harness, workDir)
+	}
+
+	return m, nil
+}
+
+// handleBundleInstallConfirmKey processes key events on the install confirm screen.
+func (m *model) handleBundleInstallConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case key.Matches(msg, m.keys.Back):
+		m.popScreen()
+
+	case key.Matches(msg, m.keys.Tab):
+		if m.bundleInstallConfirm.hasConflicts {
+			// Cycle: force toggle → Install → Cancel → force toggle.
+			maxIdx := 2 //nolint:mnd // 3 focusable areas
+			m.bundleInstallConfirm.buttonIdx = (m.bundleInstallConfirm.buttonIdx + 1) % (maxIdx + 1)
+		} else {
+			// Cycle: Install → Cancel.
+			m.bundleInstallConfirm.buttonIdx = (m.bundleInstallConfirm.buttonIdx + 1) % 2 //nolint:mnd // 2 buttons
+		}
+
+	case msg.Type == tea.KeySpace:
+		// Toggle force if on toggle (buttonIdx == 0 when hasConflicts).
+		if m.bundleInstallConfirm.hasConflicts && m.bundleInstallConfirm.buttonIdx == 0 {
+			m.bundleInstallConfirm.force = !m.bundleInstallConfirm.force
+		}
+
+	case key.Matches(msg, m.keys.Select):
+		installBtnIdx := 0
+
+		if m.bundleInstallConfirm.hasConflicts {
+			// Toggle force on enter when on toggle.
+			if m.bundleInstallConfirm.buttonIdx == 0 {
+				m.bundleInstallConfirm.force = !m.bundleInstallConfirm.force
+
+				return m, nil
+			}
+
+			installBtnIdx = 1
+		}
+
+		if m.bundleInstallConfirm.buttonIdx == installBtnIdx {
+			// Install — exit TUI with ActionBundleInstall.
+			m.result = &Result{
+				Action:          ActionBundleInstall,
+				BundleNamespace: m.bundleInstallConfirm.namespace,
+				BundleSlug:      m.bundleInstallConfirm.slug,
+				BundleVer:       m.bundleInstallConfirm.version,
+				Harness:         m.bundleInstallConfirm.harness,
+				CachePath:       m.bundleInstallConfirm.cachePath,
+				Force:           m.bundleInstallConfirm.force,
+			}
+
+			return m, tea.Quit
+		}
+
+		// Cancel — pop back.
+		m.popScreen()
 	}
 
 	return m, nil
@@ -341,7 +423,6 @@ func (m *model) retryBundleResolve() (tea.Model, tea.Cmd) {
 	namespace := m.bundleError.namespace
 	slug := m.bundleError.slug
 	version := m.bundleError.version
-	harness := m.bundleError.harness
 
 	if m.deps == nil || m.deps.Client == nil {
 		// Should not happen — anonymous client is created at startup.
@@ -376,25 +457,22 @@ func (m *model) retryBundleResolve() (tea.Model, tea.Cmd) {
 
 	return m, tea.Batch(
 		m.bundleResolve.spinner.Tick,
-		cmdResolveBundle(m.ctx, m.deps.Client, ref.Namespace, ref.Slug, ref.Version, harness),
+		cmdResolveBundle(m.ctx, m.deps.Client, ref.Namespace, ref.Slug, ref.Version),
 	)
 }
 
-// handleBundleResolved processes a successful resolve.
+// handleBundleResolved processes a successful resolve — skip confirm and start download immediately.
 func (m *model) handleBundleResolved(msg *bundleResolvedMsg) (tea.Model, tea.Cmd) {
 	m.bundleConfirm = bundleConfirmState{
 		namespace:  msg.namespace,
 		slug:       msg.slug,
 		version:    msg.version,
 		assetCount: msg.assetCount,
-		harness:    msg.harness,
 		buttonIdx:  0,
 	}
 
-	// Replace resolving screen with confirm.
-	m.activeScreen = screenBundleConfirm
-
-	return m, nil
+	// Skip confirm screen — go directly to download/cache check.
+	return m.startBundleDownload()
 }
 
 // handleBundleResolveError processes a resolve error.
@@ -413,7 +491,6 @@ func (m *model) handleBundleResolveError(msg bundleResolveErrorMsg) (tea.Model, 
 		namespace: m.bundleResolve.namespace,
 		slug:      msg.slug,
 		version:   msg.version,
-		harness:   msg.harness,
 	}
 
 	// Replace resolving screen with error.
@@ -429,16 +506,15 @@ func isForbiddenError(err error) bool {
 
 // handleBundleCacheHit processes a cache hit.
 func (m *model) handleBundleCacheHit(msg bundleCacheHitMsg) (tea.Model, tea.Cmd) {
-	m.bundleComplete = bundleCompleteState{
+	m.bundleAction = bundleActionState{
 		namespace: m.bundleProgress.namespace,
 		slug:      m.bundleProgress.slug,
 		version:   m.bundleProgress.version,
-		harness:   msg.harness,
 		cachePath: msg.cachePath,
 	}
 
-	// Replace progress screen with complete.
-	m.activeScreen = screenBundleComplete
+	// Replace progress screen with action choice.
+	m.activeScreen = screenBundleAction
 
 	return m, nil
 }
@@ -454,16 +530,15 @@ func (m *model) handleBundleDownloadProgress(msg bundleDownloadProgressMsg) (tea
 
 // handleBundleDownloadComplete processes download completion.
 func (m *model) handleBundleDownloadComplete(msg bundleDownloadCompleteMsg) (tea.Model, tea.Cmd) {
-	m.bundleComplete = bundleCompleteState{
+	m.bundleAction = bundleActionState{
 		namespace: m.bundleProgress.namespace,
 		slug:      m.bundleProgress.slug,
 		version:   m.bundleProgress.version,
-		harness:   msg.harness,
 		cachePath: msg.cachePath,
 	}
 
-	// Replace progress screen with complete.
-	m.activeScreen = screenBundleComplete
+	// Replace progress screen with action choice.
+	m.activeScreen = screenBundleAction
 
 	return m, nil
 }
@@ -476,11 +551,18 @@ func (m *model) handleBundleDownloadError(msg bundleDownloadErrorMsg) (tea.Model
 		namespace: m.bundleProgress.namespace,
 		slug:      m.bundleProgress.slug,
 		version:   m.bundleProgress.version,
-		harness:   msg.harness,
 	}
 
 	// Replace progress screen with error.
 	m.activeScreen = screenBundleError
+
+	return m, nil
+}
+
+// handleBundleInstallConflicts processes the install conflict check result.
+func (m *model) handleBundleInstallConflicts(msg bundleInstallConflictsMsg) (tea.Model, tea.Cmd) {
+	m.bundleInstallConfirm.hasConflicts = msg.hasConflicts
+	m.bundleInstallConfirm.conflictPaths = msg.conflictPaths
 
 	return m, nil
 }

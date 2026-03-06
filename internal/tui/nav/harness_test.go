@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/musher-dev/mush/internal/harness"
+	"github.com/musher-dev/mush/internal/harness/harnesstype"
 )
 
 func testModelWithHarnesses() *model {
@@ -20,7 +21,7 @@ func testModelWithHarnesses() *model {
 		loading:  false,
 		statuses: []harnessQuickStatus{
 			{name: "claude", displayName: "Claude Code", installed: true, version: "1.0.24"},
-			{name: "codex", displayName: "Codex CLI", installed: false},
+			{name: "codex", displayName: "Codex", installed: false},
 		},
 	}
 
@@ -41,8 +42,8 @@ func TestHarnessPanelRendersInTwoPanel(t *testing.T) {
 		t.Error("view should contain 'Claude Code' harness")
 	}
 
-	if !strings.Contains(view, "Codex CLI") {
-		t.Error("view should contain 'Codex CLI' harness")
+	if !strings.Contains(view, "Codex") {
+		t.Error("view should contain 'Codex' harness")
 	}
 }
 
@@ -215,7 +216,7 @@ func TestHarnessInstallAction(t *testing.T) {
 
 	mdl := testModelWithHarnesses()
 	mdl.homeFocusArea = 1
-	mdl.homeHarness.cursor = 1 // Codex CLI (not installed)
+	mdl.homeHarness.cursor = 1 // Codex (not installed)
 	mdl.homeHarness.expanded = 1
 
 	_, cmd := mdl.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'i'}})
@@ -527,9 +528,9 @@ func TestDetectVersion_CanceledContextReturnsEmpty(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
-	spec := &harness.ProviderSpec{
+	spec := &harnesstype.ProviderSpec{
 		Binary: "echo",
-		Status: &harness.StatusSpec{
+		Status: &harnesstype.StatusSpec{
 			VersionArgs: []string{"1.2.3"},
 		},
 	}

@@ -477,3 +477,64 @@ func TestContextInfoMsg(t *testing.T) {
 		t.Errorf("workspaceName = %q, want 'test-ws'", mdl.ctxInfo.workspaceName)
 	}
 }
+
+func TestUpdateCheckMsg(t *testing.T) {
+	t.Parallel()
+
+	mdl := testModel()
+
+	mdl = updateModel(mdl, updateCheckMsg{available: true, version: "9.9.9"})
+
+	if !mdl.updateAvailable {
+		t.Error("updateAvailable should be true after updateCheckMsg")
+	}
+
+	if mdl.updateVersion != "9.9.9" {
+		t.Errorf("updateVersion = %q, want '9.9.9'", mdl.updateVersion)
+	}
+}
+
+func TestUpdateCheckMsgNoUpdate(t *testing.T) {
+	t.Parallel()
+
+	mdl := testModel()
+
+	mdl = updateModel(mdl, updateCheckMsg{})
+
+	if mdl.updateAvailable {
+		t.Error("updateAvailable should be false when no update")
+	}
+}
+
+func TestUpdateBadgeInTwoPanel(t *testing.T) {
+	t.Parallel()
+
+	mdl := testModel()
+	mdl.width = 130
+	mdl.height = 40
+	mdl.styles = newTheme(130)
+	mdl.updateAvailable = true
+	mdl.updateVersion = "9.9.9"
+
+	view := mdl.View()
+
+	if !strings.Contains(view, "update available") {
+		t.Error("two-panel view should contain 'update available' badge")
+	}
+}
+
+func TestUpdateBadgeInSinglePanel(t *testing.T) {
+	t.Parallel()
+
+	mdl := testModel()
+	mdl.width = 70
+	mdl.styles = newTheme(70)
+	mdl.updateAvailable = true
+	mdl.updateVersion = "9.9.9"
+
+	view := mdl.View()
+
+	if !strings.Contains(view, "update available") {
+		t.Error("single-panel view should contain 'update available' badge")
+	}
+}
