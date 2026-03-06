@@ -12,8 +12,10 @@ require (
 	github.com/creack/pty v1.1.24
 	github.com/creativeprojects/go-selfupdate v1.5.2
 	github.com/fatih/color v1.18.0
+	github.com/gdamore/tcell/v2 v2.13.8
 	github.com/google/go-containerregistry v0.21.1
 	github.com/google/uuid v1.6.0
+	github.com/hinshun/vt10x v0.0.0-20220301184237-5011da428d02
 	github.com/mattn/go-runewidth v0.0.20
 	github.com/pelletier/go-toml/v2 v2.2.4
 	github.com/spf13/cobra v1.10.2
@@ -106,6 +108,7 @@ require (
 	github.com/firefart/nonamedreturns v1.0.6 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/fzipp/gocyclo v0.6.0 // indirect
+	github.com/gdamore/encoding v1.0.1 // indirect
 	github.com/getkin/kin-openapi v0.132.0 // indirect
 	github.com/ghostiam/protogetter v0.3.20 // indirect
 	github.com/go-critic/go-critic v0.14.3 // indirect

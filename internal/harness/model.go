@@ -554,57 +554,9 @@ func (m *RootModel) statusSnapshot() harnessstate.Snapshot {
 		Failed:             jsnap.Failed,
 		LastError:          jsnap.LastError,
 		LastErrorTime:      jsnap.LastErrorTime,
-		MCPServers:         m.snapshotMCPServers(now),
+		MCPServers:         buildMCPServerStatuses(m.jobs, now),
 		Now:                now,
 	}
-}
-
-func (m *RootModel) snapshotMCPServers(now time.Time) []harnessstate.MCPServerStatus {
-	cfg := m.jobs.RunnerConfig()
-
-	if cfg == nil || len(cfg.Providers) == 0 {
-		return nil
-	}
-
-	loadedSet := map[string]bool{}
-	for _, name := range LoadedMCPProviderNames(cfg, now) {
-		loadedSet[name] = true
-	}
-
-	names := make([]string, 0, len(cfg.Providers))
-	for name, provider := range cfg.Providers {
-		if !provider.Flags.MCP || provider.MCP == nil {
-			continue
-		}
-
-		names = append(names, name)
-	}
-
-	sort.Strings(names)
-
-	statuses := make([]harnessstate.MCPServerStatus, 0, len(names))
-	for _, name := range names {
-		provider := cfg.Providers[name]
-		authenticated := false
-		expired := false
-
-		if provider.Credential != nil {
-			authenticated = provider.Credential.AccessToken != ""
-			if provider.Credential.ExpiresAt != nil && !provider.Credential.ExpiresAt.After(now) {
-				expired = true
-				authenticated = false
-			}
-		}
-
-		statuses = append(statuses, harnessstate.MCPServerStatus{
-			Name:          name,
-			Loaded:        loadedSet[name],
-			Authenticated: authenticated,
-			Expired:       expired,
-		})
-	}
-
-	return statuses
 }
 
 func (m *RootModel) drawStatusBar() {
