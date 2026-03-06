@@ -2,6 +2,7 @@ package nav
 
 import (
 	"context"
+	"time"
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/progress"
@@ -576,7 +577,7 @@ func cmdCheckUpdate(ctx context.Context) tea.Cmd {
 				info, err := updater.CheckLatest(ctx, buildinfo.Version)
 				if err == nil {
 					state = &update.State{
-						LastCheckedAt:  state.LastCheckedAt,
+						LastCheckedAt:  time.Now(),
 						LatestVersion:  info.LatestVersion,
 						CurrentVersion: buildinfo.Version,
 						ReleaseURL:     info.ReleaseURL,

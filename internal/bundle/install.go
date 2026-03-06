@@ -73,9 +73,22 @@ func LoadInstalled(workDir string) ([]InstalledBundle, error) {
 		return nil, fmt.Errorf("parse installed bundles: %w", err)
 	}
 
+	// Backfill legacy entries that lack namespace/ref fields.
 	for i := range installed {
-		if installed[i].Namespace == "" || installed[i].Slug == "" || installed[i].Ref == "" {
-			return nil, fmt.Errorf("parse installed bundles: invalid entry %d: namespace, slug, and ref are required", i)
+		if installed[i].Slug == "" {
+			continue // skip truly empty entries
+		}
+
+		if installed[i].Namespace == "" {
+			// Legacy entries stored slug as "namespace/slug"; split if possible.
+			if parts := strings.SplitN(installed[i].Slug, "/", 2); len(parts) == 2 {
+				installed[i].Namespace = parts[0]
+				installed[i].Slug = parts[1]
+			}
+		}
+
+		if installed[i].Ref == "" && installed[i].Namespace != "" {
+			installed[i].Ref = installed[i].Namespace + "/" + installed[i].Slug
 		}
 	}
 

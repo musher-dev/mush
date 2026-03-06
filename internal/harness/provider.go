@@ -14,9 +14,22 @@ var (
 )
 
 // registerProviderSpec adds a provider spec to the provider map.
+// It panics on nil spec, empty name, or duplicate registration to fail fast during init.
 func registerProviderSpec(spec *harnesstype.ProviderSpec) {
+	if spec == nil {
+		panic("harness: registerProviderSpec called with nil spec")
+	}
+
+	if spec.Name == "" {
+		panic("harness: registerProviderSpec called with empty name")
+	}
+
 	providerSpecsMu.Lock()
 	defer providerSpecsMu.Unlock()
+
+	if _, dup := providerSpecs[spec.Name]; dup {
+		panic("harness: duplicate provider registration: " + spec.Name)
+	}
 
 	providerSpecs[spec.Name] = spec
 }

@@ -161,9 +161,9 @@ func checkDirectoryStructure(context.Context) Result {
 			}
 		}
 
-		// Check writable by attempting to create a temp file
-		testFile := filepath.Join(dir, ".mush-doctor-probe")
-		if err := os.WriteFile(testFile, nil, 0o600); err != nil {
+		// Check writable by attempting to create a unique temp file
+		f, err := os.CreateTemp(dir, ".mush-doctor-probe.*")
+		if err != nil {
 			return Result{
 				Status:  StatusFail,
 				Message: fmt.Sprintf("%s directory not writable: %s", r.name, dir),
@@ -171,7 +171,8 @@ func checkDirectoryStructure(context.Context) Result {
 			}
 		}
 
-		_ = os.Remove(testFile)
+		_ = f.Close()
+		_ = os.Remove(f.Name())
 	}
 
 	if len(missing) > 0 {

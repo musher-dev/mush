@@ -182,7 +182,7 @@ func TestSaveInstalledAtomic(t *testing.T) {
 	}
 }
 
-func TestLoadInstalledRejectsInvalidSchemaMissingRef(t *testing.T) {
+func TestLoadInstalledBackfillsMissingRef(t *testing.T) {
 	workDir := t.TempDir()
 
 	mushDir := filepath.Join(workDir, ".mush")
@@ -190,13 +190,58 @@ func TestLoadInstalledRejectsInvalidSchemaMissingRef(t *testing.T) {
 		t.Fatalf("MkdirAll error = %v", err)
 	}
 
+	// Entry has namespace+slug but no ref — should be backfilled.
 	payload := `[{"namespace":"acme","slug":"bundle","version":"1.0.0","harness":"claude","assets":[]}]`
 	if err := os.WriteFile(filepath.Join(mushDir, installedFileName), []byte(payload), 0o644); err != nil {
 		t.Fatalf("WriteFile error = %v", err)
 	}
 
-	_, err := LoadInstalled(workDir)
-	if err == nil {
-		t.Fatal("LoadInstalled() error = nil, want schema validation error")
+	installed, err := LoadInstalled(workDir)
+	if err != nil {
+		t.Fatalf("LoadInstalled() error = %v", err)
+	}
+
+	if len(installed) != 1 {
+		t.Fatalf("LoadInstalled() len = %d, want 1", len(installed))
+	}
+
+	if installed[0].Ref != "acme/bundle" {
+		t.Fatalf("installed[0].Ref = %q, want %q", installed[0].Ref, "acme/bundle")
+	}
+}
+
+func TestLoadInstalledBackfillsLegacySlugFormat(t *testing.T) {
+	workDir := t.TempDir()
+
+	mushDir := filepath.Join(workDir, ".mush")
+	if err := os.MkdirAll(mushDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll error = %v", err)
+	}
+
+	// Legacy format: slug was "namespace/slug", no namespace or ref fields.
+	payload := `[{"slug":"acme/bundle","version":"1.0.0","harness":"claude","assets":[]}]`
+	if err := os.WriteFile(filepath.Join(mushDir, installedFileName), []byte(payload), 0o644); err != nil {
+		t.Fatalf("WriteFile error = %v", err)
+	}
+
+	installed, err := LoadInstalled(workDir)
+	if err != nil {
+		t.Fatalf("LoadInstalled() error = %v", err)
+	}
+
+	if len(installed) != 1 {
+		t.Fatalf("LoadInstalled() len = %d, want 1", len(installed))
+	}
+
+	if installed[0].Namespace != "acme" {
+		t.Fatalf("installed[0].Namespace = %q, want %q", installed[0].Namespace, "acme")
+	}
+
+	if installed[0].Slug != "bundle" {
+		t.Fatalf("installed[0].Slug = %q, want %q", installed[0].Slug, "bundle")
+	}
+
+	if installed[0].Ref != "acme/bundle" {
+		t.Fatalf("installed[0].Ref = %q, want %q", installed[0].Ref, "acme/bundle")
 	}
 }
