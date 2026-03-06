@@ -456,6 +456,10 @@ func encodeTCellKey(ev *tcell.EventKey) []byte {
 		buf := make([]byte, utf8.RuneLen(ch))
 		utf8.EncodeRune(buf, ch)
 
+		if ev.Modifiers()&tcell.ModAlt != 0 {
+			return append([]byte{0x1b}, buf...)
+		}
+
 		return buf
 	case tcell.KeyEnter:
 		return []byte{'\r'}
@@ -767,12 +771,14 @@ func (r *embeddedRuntime) renderSidebar() {
 		line = runewidth.Truncate(line, r.frame.SidebarWidth-1, "")
 		line += strings.Repeat(" ", max(0, r.frame.SidebarWidth-runewidth.StringWidth(line)))
 
-		for col, ch := range line {
+		col := 0
+		for _, ch := range line {
 			if col >= r.frame.SidebarWidth {
 				break
 			}
 
 			r.screen.SetContent(col, screenY, ch, nil, sideStyle)
+			col += runewidth.RuneWidth(ch)
 		}
 
 		r.screen.SetContent(r.frame.SidebarWidth, screenY, '│', nil, borderStyle)
