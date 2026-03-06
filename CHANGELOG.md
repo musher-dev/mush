@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.9.0](https://github.com/musher-dev/mush/compare/v3.8.0...v3.9.0) (2026-03-06)
+
+
+### Features
+
+* **harness:** modularize provider architecture and refine TUI bundle navigation ([#89](https://github.com/musher-dev/mush/issues/89)) ([88ab453](https://github.com/musher-dev/mush/commit/88ab45363523c9175083eb5e0d6167563a1f514a))
+
 ## [3.8.0](https://github.com/musher-dev/mush/compare/v3.7.0...v3.8.0) (2026-03-06)
 
 
