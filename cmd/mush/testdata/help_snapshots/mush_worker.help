@@ -1,0 +1,28 @@
+Manage the local worker runtime that connects your machine to a habitat
+and processes jobs from the Musher platform.
+
+Use subcommands to start the worker.
+
+Usage:
+  mush worker [command]
+
+Examples:
+  mush worker start
+  mush worker start --habitat prod --queue jobs
+
+Available Commands:
+  start       Start the worker and begin processing jobs
+
+Flags:
+  -h, --help   help for worker
+
+Global Flags:
+      --api-key string   API key override (prefer MUSH_API_KEY env var)
+      --api-url string   Override Musher API URL for this command
+      --json             Output in JSON format
+      --no-color         Disable colored output
+      --no-input         Disable interactive prompts
+      --no-tui           Disable interactive TUI navigation
+      --quiet            Minimal output (for CI)
+
+Use "mush worker [command] --help" for more information about a command.

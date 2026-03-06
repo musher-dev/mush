@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Generate Go API client from the OpenAPI spec using oapi-codegen.
+# Called by: task generate:client (see Taskfile.yml)
 set -euo pipefail
 
 spec_path="../api/openapi.json"

@@ -139,29 +139,6 @@ func TestWorkerStartDryRunPrintsMCPServers(t *testing.T) {
 	}
 }
 
-func TestWorkerStartLegacyAgentFlagRejected(t *testing.T) {
-	term := &terminal.Info{IsTTY: false}
-	out := output.NewWriter(io.Discard, io.Discard, term)
-	out.NoInput = true
-
-	withMockAPIClient(t, workerMockClient(t, `{"configVersion":"1","workspaceId":"ws-1","generatedAt":"2026-02-13T12:00:00Z","refreshAfterSeconds":300,"providers":{}}`))
-
-	cmd := newWorkerCmd()
-	cmd.SetArgs([]string{"start", "--dry-run", "--habitat", "local", "--queue", "q-1", "--agent", "claude"})
-
-	ctx := out.WithContext(t.Context())
-	cmd.SetContext(ctx)
-
-	err := cmd.Execute()
-	if err == nil {
-		t.Fatal("expected error for legacy --agent flag")
-	}
-
-	if !strings.Contains(err.Error(), "unknown flag: --agent") {
-		t.Fatalf("error = %q, want unknown flag --agent", err.Error())
-	}
-}
-
 func TestWorkerStartBundleFlagAccepted(t *testing.T) {
 	cmd := newWorkerCmd()
 

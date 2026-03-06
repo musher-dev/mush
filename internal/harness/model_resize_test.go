@@ -101,7 +101,7 @@ func TestHandleResizeCallsResizable(t *testing.T) {
 		supportedHarnesses: []string{"claude"},
 	}
 
-	m.handleResize(120, 40)
+	m.term.handleResize(120, 40)
 
 	if !called {
 		t.Fatal("expected Resize to be called on executor")
@@ -130,7 +130,7 @@ func TestHandleResizeDoesNotForcePaneCursor(t *testing.T) {
 	}
 
 	output := captureStdout(t, func() {
-		m.handleResize(100, 30)
+		m.term.handleResize(100, 30)
 	})
 
 	frame := layout.ComputeFrame(100, 30, false)
@@ -154,7 +154,7 @@ func TestRestoreLayoutAfterAltScreenDoesNotForcePaneCursor(t *testing.T) {
 	}
 
 	output := captureStdout(t, func() {
-		m.restoreLayoutAfterAltScreen()
+		m.term.restoreLayoutAfterAltScreen()
 	})
 
 	frame := layout.ComputeFrame(140, 40, true)

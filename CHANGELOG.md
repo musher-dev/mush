@@ -7,6 +7,7 @@
 
 * add multi-harness support, TUI navigation, and platform client enhancements ([#87](https://github.com/musher-dev/mush/issues/87)) ([c036bf0](https://github.com/musher-dev/mush/commit/c036bf0ee6ce122c9b07966248fb58a42642446b))
 * **harness:** extract embedded runtime and refine status bar palette ([#88](https://github.com/musher-dev/mush/issues/88)) ([ac16637](https://github.com/musher-dev/mush/commit/ac166373c8badb692f3597d17bf3153b0a7e3fe6))
+* **worker:** remove no-op `mush worker stop` and legacy harness compatibility shims
 * **nav:** add hub exploration screen ([#85](https://github.com/musher-dev/mush/issues/85)) ([6f449f7](https://github.com/musher-dev/mush/commit/6f449f75c3c81919a48555fd5ade230a2e201785))
 
 ## [3.7.0](https://github.com/musher-dev/mush/compare/v3.6.0...v3.7.0) (2026-03-02)

@@ -53,7 +53,6 @@ var (
 	colorMuted     = lipgloss.AdaptiveColor{Light: "#8E96A5", Dark: "#4E5668"}
 	colorBorder    = lipgloss.AdaptiveColor{Light: "#D4D8E0", Dark: "#3B4252"}
 	colorBorderAct = lipgloss.AdaptiveColor{Light: "#7B5EA7", Dark: "#9D7CD8"}
-	colorSurface   = lipgloss.AdaptiveColor{Light: "#F0F1F4", Dark: "#2A2E3A"} //nolint:unused // reserved for future panel bg
 	colorHighlight = lipgloss.AdaptiveColor{Light: "#E4E1F0", Dark: "#33294A"}
 )
 

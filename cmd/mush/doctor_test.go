@@ -44,7 +44,13 @@ func renderDoctorOutput(results []doctor.Result) string {
 
 func TestDoctorOutput_AllPass_Golden(t *testing.T) {
 	results := []doctor.Result{
+		{Name: "Directory Structure", Status: doctor.StatusPass, Message: "Config, state, and cache directories OK"},
+		{Name: "Config File", Status: doctor.StatusPass, Message: "No config file (using defaults)"},
+		{Name: "Credentials File", Status: doctor.StatusPass, Message: "Not present (using keyring or env)"},
+		{Name: "Proxy Environment", Status: doctor.StatusPass, Message: "No proxy environment variables detected"},
+		{Name: "Custom CA Bundle", Status: doctor.StatusPass, Message: "Not configured"},
 		{Name: "API Connectivity", Status: doctor.StatusPass, Message: "https://api.musher.dev (42ms)"},
+		{Name: "Clock Skew", Status: doctor.StatusPass, Message: "Within tolerance (1s)"},
 		{Name: "Authentication", Status: doctor.StatusPass, Message: "sa-test (via keyring)"},
 		{Name: "CLI Version", Status: doctor.StatusPass, Message: "v2.3.0 (latest)"},
 	}
@@ -55,7 +61,13 @@ func TestDoctorOutput_AllPass_Golden(t *testing.T) {
 
 func TestDoctorOutput_Mixed_Golden(t *testing.T) {
 	results := []doctor.Result{
+		{Name: "Directory Structure", Status: doctor.StatusPass, Message: "Config, state, and cache directories OK"},
+		{Name: "Config File", Status: doctor.StatusPass, Message: "No config file (using defaults)"},
+		{Name: "Credentials File", Status: doctor.StatusWarn, Message: "Credentials file too permissive (0644)", Detail: "chmod 600 /home/user/.config/mush/api-key"},
+		{Name: "Proxy Environment", Status: doctor.StatusPass, Message: "No proxy environment variables detected"},
+		{Name: "Custom CA Bundle", Status: doctor.StatusPass, Message: "Not configured"},
 		{Name: "API Connectivity", Status: doctor.StatusPass, Message: "https://api.musher.dev (42ms)"},
+		{Name: "Clock Skew", Status: doctor.StatusPass, Message: "Within tolerance (1s)"},
 		{Name: "Authentication", Status: doctor.StatusFail, Message: "Not authenticated", Detail: "Run 'mush auth login' to authenticate"},
 		{Name: "CLI Version", Status: doctor.StatusWarn, Message: "v2.2.0 (v2.3.0 available)", Detail: "Run 'mush update' to update"},
 	}
@@ -66,7 +78,13 @@ func TestDoctorOutput_Mixed_Golden(t *testing.T) {
 
 func TestDoctorOutput_AllFail_Golden(t *testing.T) {
 	results := []doctor.Result{
+		{Name: "Directory Structure", Status: doctor.StatusFail, Message: "Cannot resolve directories", Detail: "$HOME must be set"},
+		{Name: "Config File", Status: doctor.StatusPass, Message: "No config file (using defaults)"},
+		{Name: "Credentials File", Status: doctor.StatusPass, Message: "Not present (using keyring or env)"},
+		{Name: "Proxy Environment", Status: doctor.StatusPass, Message: "No proxy environment variables detected"},
+		{Name: "Custom CA Bundle", Status: doctor.StatusPass, Message: "Not configured"},
 		{Name: "API Connectivity", Status: doctor.StatusFail, Message: "https://api.musher.dev", Detail: "connection refused"},
+		{Name: "Clock Skew", Status: doctor.StatusWarn, Message: "Clock skew check skipped", Detail: "API not reachable"},
 		{Name: "Authentication", Status: doctor.StatusFail, Message: "Not authenticated", Detail: "Run 'mush auth login' to authenticate"},
 		{Name: "CLI Version", Status: doctor.StatusWarn, Message: "Development build (version check skipped)"},
 	}

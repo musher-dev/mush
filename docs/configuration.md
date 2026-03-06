@@ -281,7 +281,7 @@ Mush caches the result of update checks in `<state root>/update-check.json` to a
 
 `mush bundle install` writes files into the current project directory:
 
-- **`.mush/installed.json`** — tracks installed bundles (slug, version, harness, asset paths)
+- **`.mush/installed.json`** — tracks installed bundles (namespace, slug, ref, version, harness, asset paths)
 - **Harness-specific assets** — installed to `.claude/skills/`, `.claude/agents/`, or other harness-specific directories depending on the bundle configuration
 
 ### installed.json Format
@@ -289,7 +289,9 @@ Mush caches the result of update checks in `<state root>/update-check.json` to a
 ```json
 [
   {
+    "namespace": "acme",
     "slug": "my-bundle",
+    "ref": "acme/my-bundle",
     "version": "1.0.0",
     "harness": "claude",
     "assets": [

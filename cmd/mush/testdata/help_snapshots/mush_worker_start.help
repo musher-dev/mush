@@ -1,0 +1,52 @@
+Start the worker, connecting your machine to a habitat and processing jobs.
+
+Watch mode is the only supported surface. Mush runs an interactive terminal UI
+that lets you watch job execution live.
+
+The worker will:
+  1. Connect to the Musher platform
+  2. Register with the selected habitat
+  3. Poll for available jobs
+  4. Execute handlers locally using the appropriate harness (Claude Code, Codex, Cursor Agent, Copilot, Gemini, OpenCode)
+  5. Report results back to the platform
+
+Harness Types:
+  --harness claude  Only handle Claude Code jobs
+  --harness codex   Only handle Codex jobs
+  --harness cursor  Only handle Cursor Agent jobs
+  --harness copilot Only handle GitHub Copilot jobs
+  --harness gemini  Only handle Gemini jobs
+  --harness opencode Only handle OpenCode jobs
+  (default)         Handle all supported harness types
+
+Press Ctrl+C once to interrupt Claude; press Ctrl+C again quickly to exit.
+Press Ctrl+Q to exit the watch UI immediately.
+Press Ctrl+S to toggle copy mode (Esc to return to live input).
+
+Usage:
+  mush worker start [flags]
+
+Examples:
+  mush worker start
+  mush worker start --habitat prod --queue jobs
+  mush worker start --harness claude
+  mush worker start --bundle acme/my-kit:0.1.0
+  mush worker start --dry-run
+
+Flags:
+      --bundle string    Bundle namespace/slug[:version] to install before starting
+      --dry-run          Verify connection without claiming jobs
+      --force-sidebar    Skip terminal probe and force sidebar rendering
+      --habitat string   Habitat slug or ID to connect to
+      --harness string   Specific harness type: claude, codex, copilot, cursor, gemini, opencode (default: all)
+  -h, --help             help for start
+      --queue string     Filter jobs by queue slug or ID
+
+Global Flags:
+      --api-key string   API key override (prefer MUSH_API_KEY env var)
+      --api-url string   Override Musher API URL for this command
+      --json             Output in JSON format
+      --no-color         Disable colored output
+      --no-input         Disable interactive prompts
+      --no-tui           Disable interactive TUI navigation
+      --quiet            Minimal output (for CI)

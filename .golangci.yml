@@ -91,6 +91,8 @@ linters:
             - internal/config/**/*.go
             - internal/update/**/*.go
             - internal/harness/provider.go
+            - internal/harness/harnesstype/**/*.go
+            - internal/harness/providers/**/*.go
             - internal/worker/**/*.go
             - internal/errors/**/*.go
             - internal/buildinfo/**/*.go
@@ -216,6 +218,10 @@ linters:
       - path: _test\.go
         linters:
           - dupl
+      # Type alias forwarding files — no individual doc comments needed
+      - path: internal/harness/executor\.go
+        linters:
+          - revive
 
 formatters:
   enable:

@@ -13,6 +13,7 @@ import (
 
 	"github.com/musher-dev/mush/internal/bundle"
 	"github.com/musher-dev/mush/internal/client"
+	harnesslib "github.com/musher-dev/mush/internal/harness"
 )
 
 // --- Message types ---
@@ -23,7 +24,6 @@ type bundleResolvedMsg struct {
 	slug       string
 	version    string
 	assetCount int
-	harness    string
 	resolved   *client.BundleResolveResponse
 }
 
@@ -32,13 +32,11 @@ type bundleResolveErrorMsg struct {
 	err     error
 	slug    string
 	version string
-	harness string
 }
 
 // bundleCacheHitMsg indicates the bundle is already cached.
 type bundleCacheHitMsg struct {
 	cachePath string
-	harness   string
 }
 
 // bundleDownloadProgressMsg reports download progress.
@@ -51,13 +49,17 @@ type bundleDownloadProgressMsg struct {
 // bundleDownloadCompleteMsg indicates download is complete.
 type bundleDownloadCompleteMsg struct {
 	cachePath string
-	harness   string
 }
 
 // bundleDownloadErrorMsg carries a download error.
 type bundleDownloadErrorMsg struct {
-	err     error
-	harness string
+	err error
+}
+
+// bundleInstallConflictsMsg carries the result of conflict detection.
+type bundleInstallConflictsMsg struct {
+	hasConflicts  bool
+	conflictPaths []string
 }
 
 // bundleListLoadedMsg carries the async-loaded recent and installed bundle lists.
@@ -90,11 +92,13 @@ func cmdLoadBundleLists(workDir string) tea.Cmd {
 		if workDir != "" {
 			bundles, loadErr := bundle.LoadInstalled(workDir)
 			if loadErr == nil {
-				for _, b := range bundles {
+				for i := range bundles {
 					installed = append(installed, installedBundleEntry{
-						slug:    b.Slug,
-						version: b.Version,
-						harness: b.Harness,
+						namespace: bundles[i].Namespace,
+						slug:      bundles[i].Slug,
+						ref:       bundles[i].Ref,
+						version:   bundles[i].Version,
+						harness:   bundles[i].Harness,
 					})
 				}
 			}
@@ -108,7 +112,7 @@ func cmdLoadBundleLists(workDir string) tea.Cmd {
 }
 
 // cmdResolveBundle resolves a bundle slug/version via the API.
-func cmdResolveBundle(ctx context.Context, c *client.Client, namespace, slug, version, harness string) tea.Cmd {
+func cmdResolveBundle(ctx context.Context, c *client.Client, namespace, slug, version string) tea.Cmd {
 	return func() tea.Msg {
 		resolved, err := c.ResolveBundle(navBaseCtx(ctx), namespace, slug, version)
 		if err != nil {
@@ -116,7 +120,6 @@ func cmdResolveBundle(ctx context.Context, c *client.Client, namespace, slug, ve
 				err:     err,
 				slug:    slug,
 				version: version,
-				harness: harness,
 			}
 		}
 
@@ -125,7 +128,6 @@ func cmdResolveBundle(ctx context.Context, c *client.Client, namespace, slug, ve
 			slug:       slug,
 			version:    resolved.Version,
 			assetCount: len(resolved.Manifest.Layers),
-			harness:    harness,
 			resolved:   resolved,
 		}
 	}
@@ -133,12 +135,11 @@ func cmdResolveBundle(ctx context.Context, c *client.Client, namespace, slug, ve
 
 // cmdCheckBundleCache checks if the bundle is cached; if so, returns a cache hit.
 // Otherwise, starts downloading assets.
-func cmdCheckBundleCache(ctx context.Context, deps *Dependencies, namespace, slug, version, harness string) tea.Cmd {
+func cmdCheckBundleCache(ctx context.Context, deps *Dependencies, namespace, slug, version string) tea.Cmd {
 	return func() tea.Msg {
 		if deps == nil || deps.Client == nil {
 			return bundleDownloadErrorMsg{
-				err:     fmt.Errorf("client not available"),
-				harness: harness,
+				err: fmt.Errorf("client not available"),
 			}
 		}
 
@@ -146,7 +147,6 @@ func cmdCheckBundleCache(ctx context.Context, deps *Dependencies, namespace, slu
 		if bundle.IsCached(namespace, slug, version) {
 			return bundleCacheHitMsg{
 				cachePath: bundle.CachePath(namespace, slug, version),
-				harness:   harness,
 			}
 		}
 
@@ -156,8 +156,7 @@ func cmdCheckBundleCache(ctx context.Context, deps *Dependencies, namespace, slu
 		resolved, err := deps.Client.ResolveBundle(resolveCtx, namespace, slug, version)
 		if err != nil {
 			return bundleDownloadErrorMsg{
-				err:     fmt.Errorf("resolve bundle: %w", err),
-				harness: harness,
+				err: fmt.Errorf("resolve bundle: %w", err),
 			}
 		}
 
@@ -167,16 +166,66 @@ func cmdCheckBundleCache(ctx context.Context, deps *Dependencies, namespace, slu
 
 		if err := downloadBundle(resolveCtx, deps.Client, resolved, cachePath); err != nil {
 			return bundleDownloadErrorMsg{
-				err:     err,
-				harness: harness,
+				err: err,
 			}
 		}
 
 		return bundleDownloadCompleteMsg{
 			cachePath: cachePath,
-			harness:   harness,
 		}
 	}
+}
+
+// cmdCheckInstallConflicts checks which target files already exist in workDir.
+func cmdCheckInstallConflicts(cachePath, harnessName, workDir string) tea.Cmd {
+	return func() tea.Msg {
+		manifest, err := loadManifestFromCache(cachePath)
+		if err != nil {
+			return bundleInstallConflictsMsg{}
+		}
+
+		spec, ok := harnesslib.GetProvider(harnessName)
+		if !ok {
+			return bundleInstallConflictsMsg{}
+		}
+
+		mapper := bundle.NewProviderMapper(spec)
+
+		var conflicts []string
+
+		for _, layer := range manifest.Manifest.Layers {
+			targetPath, mapErr := mapper.MapAsset(workDir, layer)
+			if mapErr != nil || targetPath == "" {
+				continue
+			}
+
+			if _, statErr := os.Stat(targetPath); statErr == nil {
+				conflicts = append(conflicts, targetPath)
+			}
+		}
+
+		return bundleInstallConflictsMsg{
+			hasConflicts:  len(conflicts) > 0,
+			conflictPaths: conflicts,
+		}
+	}
+}
+
+// loadManifestFromCache reads and parses the manifest.json from the cache directory.
+func loadManifestFromCache(cachePath string) (*client.BundleResolveResponse, error) {
+	manifestPath := filepath.Join(cachePath, "manifest.json")
+
+	data, err := os.ReadFile(manifestPath) //nolint:gosec // G304: controlled cache path
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", manifestPath, err)
+	}
+
+	var resolved client.BundleResolveResponse
+	if err := json.Unmarshal(data, &resolved); err != nil {
+		return nil, fmt.Errorf("parse manifest: %w", err)
+	}
+
+	return &resolved, nil
 }
 
 // downloadBundle downloads all assets, verifies them, and writes the manifest.

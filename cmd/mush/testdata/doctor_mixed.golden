@@ -1,10 +1,17 @@
 Mush Doctor
 ============
 
-✓ API Connectivity    https://api.musher.dev (42ms)
-✗ Authentication      Not authenticated
+✓ Directory Structure    Config, state, and cache directories OK
+✓ Config File            No config file (using defaults)
+⚠ Credentials File       Credentials file too permissive (0644)
+    chmod 600 /home/user/.config/mush/api-key
+✓ Proxy Environment      No proxy environment variables detected
+✓ Custom CA Bundle       Not configured
+✓ API Connectivity       https://api.musher.dev (42ms)
+✓ Clock Skew             Within tolerance (1s)
+✗ Authentication         Not authenticated
     Run 'mush auth login' to authenticate
-⚠ CLI Version         v2.2.0 (v2.3.0 available)
+⚠ CLI Version            v2.2.0 (v2.3.0 available)
     Run 'mush update' to update
 
-1 passed, 1 failed, 1 warning(s)
+6 passed, 1 failed, 2 warning(s)

@@ -1,0 +1,23 @@
+Pull a bundle and install its assets into the harness's native directory
+structure in the current project directory.
+
+Usage:
+  mush bundle install <namespace/slug>[:<version>] [flags]
+
+Examples:
+  mush bundle install acme/my-kit --harness claude
+  mush bundle install acme/my-kit:0.1.0 --harness claude --force
+
+Flags:
+  -f, --force            Overwrite existing files
+      --harness string   Harness type to install for (required)
+  -h, --help             help for install
+
+Global Flags:
+      --api-key string   API key override (prefer MUSH_API_KEY env var)
+      --api-url string   Override Musher API URL for this command
+      --json             Output in JSON format
+      --no-color         Disable colored output
+      --no-input         Disable interactive prompts
+      --no-tui           Disable interactive TUI navigation
+      --quiet            Minimal output (for CI)

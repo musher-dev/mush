@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Validate that CLI commands referenced in docs still work.
+# Called by: task check:docs (see Taskfile.yml)
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

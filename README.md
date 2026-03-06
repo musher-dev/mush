@@ -5,15 +5,15 @@
 [![Go](https://img.shields.io/github/go-mod/go-version/musher-dev/mush)](https://go.dev/)
 [![License](https://img.shields.io/github/license/musher-dev/mush)](./LICENSE)
 
-Local worker runtime for the [Musher](https://musher.dev) platform.
+Portable agent bundles for local coding agents.
 
 ![Mush CLI Demo](docs/vhs/gif/demo.gif)
 
-- Connects dev machines to the Musher job queue via long-polling
-- Executes jobs locally using Claude Code (PTY) or Bash harnesses
-- Interactive watch UI with live output, copy mode, and graceful interrupt handling
-- Manages versioned agent bundles (pull, install, load)
+- Browse, load, and install versioned agent bundles from the Musher Hub
+- Run bundles ephemerally or install assets into your project
+- Interactive TUI for discovery, download, and harness selection
 - Built-in diagnostics, self-update, and shell completions
+- Remote job runner for platform-driven execution (advanced)
 
 ## Installation
 
@@ -40,44 +40,30 @@ go install github.com/musher-dev/mush/cmd/mush@latest
 ## Quick Start
 
 ```bash
-mush init              # Guided setup (authenticates + validates)
-mush init --force --api-key "$MUSH_API_KEY" --habitat <slug>   # Non-interactive bootstrap
-mush habitat list      # View available habitats
-mush worker start      # Start processing jobs
+mush bundle load acme/my-kit              # Ephemeral session
+mush bundle install acme/my-kit --harness claude  # Install into project
+mush bundle list                           # See cached/installed
 ```
 
-Run `mush doctor` to verify your setup at any time.
+Browse public bundles on [Musher Hub](https://hub.musher.dev). Run `mush doctor` to verify your setup.
 
 ## Commands
 
 Mush uses noun-verb command structure. Run `mush <command> --help` for details.
 
-### Core
+### Bundles
 
 ```
-mush init                      Guided onboarding wizard
-mush doctor                    Run diagnostic checks
-mush update                    Update to the latest version
-mush version                   Show version information
-mush completion <shell>        Generate shell completion scripts
+mush bundle load <namespace/slug>[:<version>]        Load a bundle into an ephemeral session
+mush bundle install <namespace/slug>[:<version>]     Install bundle assets into the current project
+mush bundle list               List local bundle cache and installed bundles
+mush bundle info <namespace/slug>[:<version>]        Show local details for a bundle reference
+mush bundle uninstall <namespace/slug>[:<version>]   Remove installed bundle assets
 ```
 
-### Worker
+### Account
 
 ```
-mush worker start                      Start the worker and process jobs
-mush worker start --habitat <slug>     Connect to specific habitat
-mush worker start --harness <type>     Use a specific harness (claude or bash)
-mush worker start --dry-run            Verify connection without claiming jobs
-mush worker status                     Show worker status
-mush worker stop                       Gracefully disconnect
-```
-
-### Resources
-
-```
-mush habitat list              List available habitats
-
 mush auth login                Authenticate with your API key
 mush auth status               Show authentication status
 mush auth logout               Clear stored credentials
@@ -95,26 +81,28 @@ mush history view <id>         View transcript events for a session
 mush history prune             Delete sessions older than a duration
 ```
 
-### Bundles
+### Setup
 
 ```
-mush bundle load <slug>        Load a bundle into an ephemeral session
-mush bundle install <slug>     Install bundle assets into the current project
-mush bundle list               List local bundle cache and installed bundles
-mush bundle info <slug>        Show local details for a bundle
-mush bundle uninstall <slug>   Remove installed bundle assets
+mush init                      Guided onboarding wizard
+mush doctor                    Run diagnostic checks
+mush update                    Update to the latest version
+mush version                   Show version information
+mush completion <shell>        Generate shell completion scripts
 ```
 
-Bundle resolution goes through `/api/v1/bundles:resolve` and uses returned registry credentials for OCI pulls. If none are returned, Mush falls back to your local OCI keychain.
+### Advanced: Remote Runner
 
-## Watch Controls
+> The remote runner connects dev machines to the Musher job queue for platform-driven execution.
 
-When running `mush worker start` in watch mode:
+```
+mush worker start                      Start the worker and process jobs
+mush worker start --habitat <slug>     Connect to specific habitat
+mush worker start --harness <type>     Use a specific harness (claude or bash)
+mush worker start --dry-run            Verify connection without claiming jobs
 
-- `Ctrl+C` during an active Claude job: first press sends interrupt to Claude; second press within 2s exits watch mode.
-- `Ctrl+C` while idle: exits watch mode immediately.
-- `Ctrl+Q`: exits watch mode immediately.
-- `Ctrl+S`: toggles copy mode (`Esc` returns to live input).
+mush habitat list              List available habitats
+```
 
 ## Configuration
 
@@ -151,27 +139,9 @@ mush --api-url http://localhost:8080 doctor
 
 For enterprise TLS interception/proxy environments, set `MUSH_NETWORK_CA_CERT_FILE` to a PEM CA bundle trusted by your organization.
 
-## How It Works
-
-```mermaid
-flowchart LR
-    A[Issue Tracker] --> B[Musher Queue]
-    B --> C[mush worker]
-    C --> D[Claude Code / Bash]
-    D --> E[Result]
-```
-
-1. **Authenticate** — Mush authenticates with the Musher platform
-2. **Select Habitat** — Choose an execution context for job routing
-3. **Link** — Mush links to the habitat and polls for jobs
-4. **Claim** — When a job is available, Mush claims it (acquires a lease)
-5. **Execute** — Jobs run in an interactive watch UI (Claude via PTY; Bash via subprocess)
-6. **Heartbeat** — While executing, Mush sends heartbeats to maintain the lease
-7. **Complete** — Results are reported back to the platform
-
 ## Contributing
 
-See [CONTRIBUTING.md](./CONTRIBUTING.md) for development setup, code style, and testing.
+See [CONTRIBUTING.md](./.github/CONTRIBUTING.md) for development setup, code style, and testing.
 
 ## License
 

@@ -190,13 +190,13 @@ func newRootCmd() *cobra.Command {
 
 	rootCmd := &cobra.Command{
 		Use:   "mush",
-		Short: "Local worker runtime for the Musher platform",
-		Long: `Claim and execute jobs from the Musher job stream using
-your local agent runtime, with full access to your dev
-environment.
+		Short: "Portable agent bundles for local coding agents",
+		Long: `Load, install, and manage agent bundles from the Musher Hub.
+Browse bundles, run them ephemerally, or install assets into
+your project's harness directory.
 
-Get started:  mush init`,
-		Example:       `  mush`,
+Get started:  mush bundle load`,
+		Example:       `  mush bundle load acme/my-kit`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		Args:          noArgs,
@@ -223,6 +223,10 @@ Get started:  mush init`,
 
 				if result.Action == nav.ActionHarnessInstall {
 					return handleHarnessInstall(cmd.Context(), out, result)
+				}
+
+				if result.Action == nav.ActionBundleInstall {
+					return handleBundleInstallNavResult(cmd, out, result)
 				}
 
 				return nil
@@ -380,22 +384,24 @@ Get started:  mush init`,
 
 	// Command groups for organized help output
 	rootCmd.AddGroup(
-		&cobra.Group{ID: "core", Title: "Core Commands:"},
+		&cobra.Group{ID: "bundles", Title: "Bundle Commands:"},
 		&cobra.Group{ID: "account", Title: "Account & Configuration:"},
 		&cobra.Group{ID: "setup", Title: "Setup & Diagnostics:"},
+		&cobra.Group{ID: "advanced", Title: "Advanced:"},
 	)
 
-	// Core commands
-	workerCmd := newWorkerCmd()
-	workerCmd.GroupID = "core"
-	rootCmd.AddCommand(workerCmd)
-
+	// Bundle commands (primary workflow)
 	bundleCmd := newBundleCmd()
-	bundleCmd.GroupID = "core"
+	bundleCmd.GroupID = "bundles"
 	rootCmd.AddCommand(bundleCmd)
 
+	// Advanced commands (remote runner)
+	workerCmd := newWorkerCmd()
+	workerCmd.GroupID = "advanced"
+	rootCmd.AddCommand(workerCmd)
+
 	habitatCmd := newHabitatCmd()
-	habitatCmd.GroupID = "core"
+	habitatCmd.GroupID = "advanced"
 	rootCmd.AddCommand(habitatCmd)
 
 	// Account & Configuration commands

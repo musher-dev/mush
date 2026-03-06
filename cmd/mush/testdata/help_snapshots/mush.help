@@ -1,0 +1,47 @@
+Load, install, and manage agent bundles from the Musher Hub.
+Browse bundles, run them ephemerally, or install assets into
+your project's harness directory.
+
+Get started:  mush bundle load
+
+Usage:
+  mush [flags]
+  mush [command]
+
+Examples:
+  mush bundle load acme/my-kit
+
+Bundle Commands:
+  bundle      Manage agent bundles
+
+Account & Configuration:
+  auth        Manage authentication
+  config      Manage configuration
+  history     Inspect transcript history from PTY sessions
+
+Setup & Diagnostics:
+  completion  Generate shell completion scripts
+  doctor      Diagnose common issues
+  init        Setup Mush for first use
+  paths       Show where Mush stores files
+  update      Update mush to the latest version
+  version     Show version information
+
+Advanced:
+  habitat     Manage habitats
+  worker      Manage the local worker runtime
+
+Additional Commands:
+  help        Help about any command
+
+Flags:
+      --api-key string   API key override (prefer MUSH_API_KEY env var)
+      --api-url string   Override Musher API URL for this command
+  -h, --help             help for mush
+      --json             Output in JSON format
+      --no-color         Disable colored output
+      --no-input         Disable interactive prompts
+      --no-tui           Disable interactive TUI navigation
+      --quiet            Minimal output (for CI)
+
+Use "mush [command] --help" for more information about a command.

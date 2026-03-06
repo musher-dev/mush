@@ -2,12 +2,16 @@
 
 ## What This Is
 
-Mush is a **consumer-side agent runtime** — the local worker that connects developer machines to the Musher job queue. It claims jobs, executes them locally via Claude Code or Bash harnesses, and reports results back to the platform.
+Mush provides **portable agent bundles for local coding agents** — the CLI
+that loads, installs, and manages versioned agent bundles from the Musher Hub.
+It also functions as a remote job runner, connecting developer machines to
+the Musher job queue.
 
-**IS**: Agent runtime, job consumer, bundle installer, local executor.
-**IS NOT**: Platform management CLI. Mush does not create workspaces, manage routes, configure queues, or publish bundles — that is the Musher web UI and API.
+**IS**: Bundle loader, bundle installer, local executor, remote job runner.
+**IS NOT**: Platform management CLI. Mush does not create workspaces, manage
+routes, configure queues, or publish bundles.
 
-Think `docker run`, not `docker hub` — Mush consumes and executes, it does not publish or administer.
+Think `npm install` + `docker run` — Mush fetches and runs bundles locally.
 
 ## Directory Overview
 
@@ -74,7 +78,7 @@ API transport, credential/config state, platform operations, shared primitives.
 
 ## Development
 
-See `@CONTRIBUTING.md` for setup, workflow, commit conventions (Conventional Commits), and code style.
+See `@.github/CONTRIBUTING.md` for setup, workflow, commit conventions (Conventional Commits), and code style.
 See `@Taskfile.yml` for all available build/test/lint targets.
 
 Essential commands:

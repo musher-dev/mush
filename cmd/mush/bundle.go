@@ -22,6 +22,7 @@ import (
 	"github.com/musher-dev/mush/internal/observability"
 	"github.com/musher-dev/mush/internal/output"
 	"github.com/musher-dev/mush/internal/prompt"
+	"github.com/musher-dev/mush/internal/tui/nav"
 )
 
 func newBundleCmd() *cobra.Command {
@@ -51,11 +52,12 @@ func newBundleLoadCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "load <namespace/slug>[:<version>]",
 		Short: "Load a bundle into an ephemeral session",
-		Long: `Pull a bundle and launch a harness with the bundle's assets injected
-into a temporary directory. The session is interactive — exit the harness
-(Ctrl+Q) to clean up.`,
-		Example: `  mush bundle load acme/my-kit --harness claude
-  mush bundle load acme/my-kit:0.1.0 --harness claude`,
+		Long: `Pull a bundle and launch the TUI at the Ready screen where you can choose
+to Run or Install. Use --no-tui to skip the TUI and launch the harness
+directly (requires --harness).`,
+		Example: `  mush bundle load acme/my-kit
+  mush bundle load acme/my-kit:0.1.0
+  mush bundle load acme/my-kit --no-tui --harness claude`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := output.FromContext(cmd.Context())
@@ -76,15 +78,6 @@ into a temporary directory. The session is interactive — exit the harness
 
 			logger = logger.With(slog.String("bundle.slug", ref.Slug), slog.String("bundle.namespace", ref.Namespace))
 
-			// Validate harness type.
-			if harnessType == "" {
-				return &clierrors.CLIError{
-					Message: "Harness type is required for bundle load",
-					Hint:    fmt.Sprintf("Use --harness flag. Available: %s", joinNames(harness.RegisteredNames())),
-					Code:    clierrors.ExitUsage,
-				}
-			}
-
 			// Check for TTY before anything else — it's the most fundamental requirement.
 			if !out.Terminal().IsTTY {
 				return &clierrors.CLIError{
@@ -94,14 +87,17 @@ into a temporary directory. The session is interactive — exit the harness
 				}
 			}
 
-			normalized, err := normalizeHarnessType(harnessType)
-			if err != nil {
-				return err
-			}
+			// Determine TUI vs direct mode.
+			noTUI, _ := cmd.Root().PersistentFlags().GetBool("no-tui")
+			useTUI := shouldShowTUI(noTUI, out)
 
-			info, ok := harness.Lookup(normalized)
-			if !ok || !info.Available() {
-				return clierrors.HarnessNotAvailable(normalized)
+			// In direct mode, --harness is required.
+			if !useTUI && harnessType == "" {
+				return &clierrors.CLIError{
+					Message: "Harness type is required in --no-tui mode",
+					Hint:    fmt.Sprintf("Use --harness flag. Available: %s", joinNames(harness.RegisteredNames())),
+					Code:    clierrors.ExitUsage,
+				}
 			}
 
 			// Authenticate (anonymous fallback for public bundles).
@@ -131,7 +127,43 @@ into a temporary directory. The session is interactive — exit the harness
 				}
 
 				return clierrors.Wrap(clierrors.ExitNetwork, "Failed to pull bundle", err).
-					WithHint("Check your network connection and bundle slug")
+					WithHint("Check your network connection and bundle reference")
+			}
+
+			// TUI path: launch nav at the bundle action screen.
+			if useTUI {
+				deps := buildTUIDeps()
+				deps.InitialBundle = &nav.BundleSeed{
+					Namespace: ref.Namespace,
+					Slug:      ref.Slug,
+					Version:   resolved.Version,
+					CachePath: cachePath,
+				}
+
+				result, navErr := nav.Run(cmd.Context(), deps)
+				if navErr != nil {
+					return clierrors.Wrap(clierrors.ExitGeneral, "Interactive TUI failed", navErr)
+				}
+
+				switch result.Action {
+				case nav.ActionBundleLoad:
+					return handleBundleLoadNavResult(cmd, out, result)
+				case nav.ActionBundleInstall:
+					return handleBundleInstallNavResult(cmd, out, result)
+				default:
+					return nil
+				}
+			}
+
+			// Direct (--no-tui) path: validate harness and launch directly.
+			normalized, err := normalizeHarnessType(harnessType)
+			if err != nil {
+				return err
+			}
+
+			info, ok := harness.Lookup(normalized)
+			if !ok || !info.Available() {
+				return clierrors.HarnessNotAvailable(normalized)
 			}
 
 			// Get the mapper for this harness type.
@@ -153,9 +185,6 @@ into a temporary directory. The session is interactive — exit the harness
 			defer cleanup()
 
 			// Inject discoverable assets (agents, skills) into the project directory.
-			// For add_dir mode harnesses these are excluded from the temp dir
-			// (via PrepareLoad) to avoid duplication, since the harness discovers
-			// them from both CWD and --add-dir.
 			projectDir, err := os.Getwd()
 			if err != nil {
 				return clierrors.Wrap(clierrors.ExitGeneral, "Failed to get working directory", err)
@@ -253,9 +282,8 @@ into a temporary directory. The session is interactive — exit the harness
 		},
 	}
 
-	cmd.Flags().StringVar(&harnessType, "harness", "", "Harness type to use (required)")
+	cmd.Flags().StringVar(&harnessType, "harness", "", "Harness type to use (required with --no-tui)")
 	cmd.Flags().BoolVar(&forceSidebar, "force-sidebar", false, "Skip terminal probe and force sidebar rendering")
-	_ = cmd.MarkFlagRequired("harness")
 
 	return cmd
 }
@@ -334,7 +362,7 @@ structure in the current project directory.`,
 				}
 
 				return clierrors.Wrap(clierrors.ExitNetwork, "Failed to pull bundle", err).
-					WithHint("Check your network connection and bundle slug")
+					WithHint("Check your network connection and bundle reference")
 			}
 
 			// Get the mapper for this harness type.
@@ -372,7 +400,9 @@ structure in the current project directory.`,
 
 			// Track the installation.
 			trackErr := bundle.TrackInstall(workDir, &bundle.InstalledBundle{
+				Namespace: ref.Namespace,
 				Slug:      ref.Slug,
+				Ref:       ref.Namespace + "/" + ref.Slug,
 				Version:   resolved.Version,
 				Harness:   normalized,
 				Assets:    installedPaths,
@@ -445,15 +475,15 @@ current project directory.`,
 				out.Print("  (none)\n")
 			} else {
 				sort.Slice(installed, func(i, j int) bool {
-					if installed[i].Slug != installed[j].Slug {
-						return installed[i].Slug < installed[j].Slug
+					if installed[i].Ref != installed[j].Ref {
+						return installed[i].Ref < installed[j].Ref
 					}
 
 					return installed[i].Harness < installed[j].Harness
 				})
 
-				for _, item := range installed {
-					out.Print("  %s:%s [%s] (%d assets)\n", item.Slug, item.Version, item.Harness, len(item.Assets))
+				for i := range installed {
+					out.Print("  %s:%s [%s] (%d assets)\n", installed[i].Ref, installed[i].Version, installed[i].Harness, len(installed[i].Assets))
 				}
 			}
 
@@ -464,21 +494,21 @@ current project directory.`,
 
 func newBundleInfoCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "info <slug>",
-		Short: "Show local details for a bundle slug",
-		Long: `Show cached versions and installation status for a specific bundle slug
+		Use:   "info <namespace/slug>[:<version>]",
+		Short: "Show local details for a bundle reference",
+		Long: `Show cached versions and installation status for a specific bundle reference
 in the current project directory.`,
-		Example: `  mush bundle info my-agent-kit`,
-		Args:    cobra.ExactArgs(1),
+		Example: `  mush bundle info acme/my-agent-kit
+  mush bundle info acme/my-agent-kit:1.0.0`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := output.FromContext(cmd.Context())
 
-			slug := strings.TrimSpace(args[0])
-
-			if slug == "" {
+			ref, err := bundle.ParseRef(strings.TrimSpace(args[0]))
+			if err != nil {
 				return &clierrors.CLIError{
-					Message: "Bundle slug is required",
-					Hint:    "Use: mush bundle info <slug>",
+					Message: err.Error(),
+					Hint:    "Use: mush bundle info <namespace/slug>[:<version>]",
 					Code:    clierrors.ExitUsage,
 				}
 			}
@@ -500,25 +530,37 @@ in the current project directory.`,
 
 			var cachedMatches []bundle.CachedBundle
 
-			for _, c := range cached {
-				if c.Slug == slug {
-					cachedMatches = append(cachedMatches, c)
+			for i := range cached {
+				if cached[i].Namespace != ref.Namespace || cached[i].Slug != ref.Slug {
+					continue
 				}
+
+				if ref.Version != "" && cached[i].Version != ref.Version {
+					continue
+				}
+
+				cachedMatches = append(cachedMatches, cached[i])
 			}
 
 			var installedMatches []bundle.InstalledBundle
 
-			for _, item := range installed {
-				if item.Slug == slug {
-					installedMatches = append(installedMatches, item)
+			for i := range installed {
+				if installed[i].Namespace != ref.Namespace || installed[i].Slug != ref.Slug {
+					continue
 				}
+
+				if ref.Version != "" && installed[i].Version != ref.Version {
+					continue
+				}
+
+				installedMatches = append(installedMatches, installed[i])
 			}
 
 			if len(cachedMatches) == 0 && len(installedMatches) == 0 {
-				return clierrors.BundleNotFound(slug)
+				return clierrors.BundleNotFound(ref.String())
 			}
 
-			out.Print("Bundle: %s\n\n", slug)
+			out.Print("Bundle: %s\n\n", ref.String())
 
 			out.Println("Cached versions:")
 
@@ -536,8 +578,8 @@ in the current project directory.`,
 			if len(installedMatches) == 0 {
 				out.Print("  (none)\n")
 			} else {
-				for _, item := range installedMatches {
-					out.Print("  %s [%s] (%d assets)\n", item.Version, item.Harness, len(item.Assets))
+				for i := range installedMatches {
+					out.Print("  %s:%s [%s] (%d assets)\n", installedMatches[i].Ref, installedMatches[i].Version, installedMatches[i].Harness, len(installedMatches[i].Assets))
 				}
 			}
 
@@ -553,18 +595,26 @@ func newBundleUninstallCmd() *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:   "uninstall <slug> --harness <type>",
+		Use:   "uninstall <namespace/slug>[:<version>] --harness <type>",
 		Short: "Remove installed bundle assets from the current project",
 		Long: `Remove previously installed bundle assets from the current project directory.
 
 Lists the files that will be removed and prompts for confirmation unless
 --force is passed.`,
-		Example: `  mush bundle uninstall my-kit --harness claude
-  mush bundle uninstall my-kit --harness claude --force`,
+		Example: `  mush bundle uninstall acme/my-kit --harness claude
+  mush bundle uninstall acme/my-kit:1.0.0 --harness claude --force`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := output.FromContext(cmd.Context())
-			slug := strings.TrimSpace(args[0])
+
+			ref, err := bundle.ParseRef(strings.TrimSpace(args[0]))
+			if err != nil {
+				return &clierrors.CLIError{
+					Message: err.Error(),
+					Hint:    "Use: mush bundle uninstall <namespace/slug>[:<version>] --harness <type>",
+					Code:    clierrors.ExitUsage,
+				}
+			}
 
 			if harnessType == "" {
 				return &clierrors.CLIError{
@@ -585,10 +635,10 @@ Lists the files that will be removed and prompts for confirmation unless
 			}
 
 			// Preview what will be removed.
-			entry, err := bundle.FindInstalled(workDir, slug, normalized)
+			entry, err := bundle.FindInstalled(workDir, ref, normalized)
 			if err != nil {
 				if errors.Is(err, bundle.ErrNotInstalled) {
-					return clierrors.BundleNotFound(slug)
+					return clierrors.BundleNotFound(ref.String())
 				}
 
 				return clierrors.Wrap(clierrors.ExitGeneral, "Failed to read installed bundles", err)
@@ -612,7 +662,7 @@ Lists the files that will be removed and prompts for confirmation unless
 				prompter := prompt.New(out)
 
 				confirmed, promptErr := prompter.Confirm(
-					fmt.Sprintf("Uninstall %s (%s)? This will remove %d file(s)", slug, normalized, len(entry.Assets)),
+					fmt.Sprintf("Uninstall %s (%s)? This will remove %d file(s)", ref.String(), normalized, len(entry.Assets)),
 					false,
 				)
 				if promptErr != nil {
@@ -625,7 +675,7 @@ Lists the files that will be removed and prompts for confirmation unless
 				}
 			}
 
-			removed, err := bundle.Uninstall(workDir, slug, normalized)
+			removed, err := bundle.Uninstall(workDir, ref, normalized)
 			if err != nil {
 				return clierrors.Wrap(clierrors.ExitGeneral, "Failed to uninstall bundle assets", err)
 			}
@@ -635,7 +685,7 @@ Lists the files that will be removed and prompts for confirmation unless
 			}
 
 			out.Println()
-			out.Success("Uninstalled %s for harness %s", slug, normalized)
+			out.Success("Uninstalled %s for harness %s", ref.String(), normalized)
 
 			return nil
 		},

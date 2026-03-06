@@ -29,7 +29,7 @@ After evaluation, the scroll region approach was chosen for its simplicity and r
 
 ---
 
-## Option 1: bubbleterm Approach (Deprecated)
+## Option 1: bubbleterm Approach (Historical)
 
 Uses bubbleterm's terminal emulator to render Claude Code output.
 
@@ -202,7 +202,7 @@ Control tmux from Go using `tmux send-keys` and `tmux display-message`.
 - No external dependencies
 - Uses standard ANSI sequences
 
-If scroll regions cause issues (flicker, compatibility), fall back to **Option 2** (bookend status).
+If scroll regions cause issues (flicker, terminal support), fall back to **Option 2** (bookend status).
 
 ---
 

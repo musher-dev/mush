@@ -407,20 +407,20 @@ func HarnessNotAvailable(harnessType string) *CLIError {
 	}
 }
 
-// CodexNotFound returns an error when Codex CLI is not available.
+// CodexNotFound returns an error when Codex is not available.
 func CodexNotFound() *CLIError {
 	return &CLIError{
-		Message: "Codex CLI not found",
-		Hint:    "Install OpenAI Codex CLI: https://github.com/openai/codex",
+		Message: "Codex not found",
+		Hint:    "Install OpenAI Codex: https://github.com/openai/codex",
 		Code:    ExitConfig,
 	}
 }
 
-// BundleNotFound returns an error for an unknown bundle.
-func BundleNotFound(slug string) *CLIError {
+// BundleNotFound returns an error for an unknown bundle reference.
+func BundleNotFound(ref string) *CLIError {
 	return &CLIError{
-		Message: fmt.Sprintf("Bundle not found: %s", slug),
-		Hint:    "Check the bundle slug or verify it exists in your workspace",
+		Message: fmt.Sprintf("Bundle not found: %s", ref),
+		Hint:    "Check the bundle reference or verify it exists in your workspace",
 		Code:    ExitGeneral,
 	}
 }

@@ -3,8 +3,6 @@ package main
 import (
 	"context"
 
-	"github.com/spf13/cobra"
-
 	"github.com/musher-dev/mush/internal/client"
 	clierrors "github.com/musher-dev/mush/internal/errors"
 	"github.com/musher-dev/mush/internal/output"
@@ -124,109 +122,4 @@ func resolveQueue(
 	out.Print("Filtering by queue: %s (%s)\n", selected.Name, selected.Slug)
 
 	return *selected, nil
-}
-
-// WorkerStatus represents worker status for JSON output.
-type WorkerStatus struct {
-	Source     string `json:"source"`
-	Credential string `json:"credential"`
-	Workspace  string `json:"workspace"`
-	Active     bool   `json:"active"`
-	RequestID  string `json:"request_id,omitempty"`
-	TraceID    string `json:"trace_id,omitempty"`
-}
-
-func newWorkerStatusCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "status",
-		Short: "Show worker status",
-		Long:  `Show the current worker status, authenticated identity, and habitat information.`,
-		Example: `  mush worker status
-  mush worker status --json`,
-		Args: noArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			out := output.FromContext(cmd.Context())
-
-			// Get credentials and create client
-			source, c, err := apiClientFactory()
-			if err != nil {
-				return err
-			}
-
-			// Validate connection with spinner
-			spin := out.Spinner("Checking connection")
-			spin.Start()
-
-			identity, meta, err := c.ValidateKeyWithMeta(cmd.Context())
-			if err != nil {
-				spin.StopWithFailure("Authentication failed")
-				return clierrors.AuthFailed(err)
-			}
-
-			spin.StopWithSuccess("Connected")
-
-			requestID := ""
-			traceID := ""
-
-			if meta != nil {
-				requestID = meta.RequestID
-				traceID = meta.TraceID
-			}
-
-			if out.JSON {
-				if err := out.PrintJSON(WorkerStatus{
-					Source:     string(source),
-					Credential: identity.CredentialName,
-					Workspace:  identity.WorkspaceName,
-					Active:     false,
-					RequestID:  requestID,
-					TraceID:    traceID,
-				}); err != nil {
-					return clierrors.Wrap(clierrors.ExitGeneral, "Failed to write JSON output", err)
-				}
-
-				return nil
-			}
-
-			out.Println()
-			out.Print("Source:     %s\n", source)
-			out.Print("Credential: %s\n", identity.CredentialName)
-			out.Print("Workspace:  %s\n", identity.WorkspaceName)
-
-			if requestID != "" {
-				out.Print("Request ID: %s\n", requestID)
-			}
-
-			if traceID != "" {
-				out.Print("Trace ID:   %s\n", traceID)
-			}
-
-			out.Println()
-			out.Muted("Worker: Not active")
-			out.Muted("Run 'mush worker start' to start processing jobs.")
-
-			return nil
-		},
-	}
-}
-
-// newWorkerStopCmd creates the worker stop command (graceful disconnect placeholder).
-func newWorkerStopCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "stop",
-		Short: "Gracefully disconnect from habitat",
-		Long: `Gracefully disconnect from the current habitat.
-
-Note: This is typically handled automatically via Ctrl+C when running 'mush worker start'.
-This command is provided for programmatic disconnection.`,
-		Example: `  mush worker stop`,
-		Args:    noArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			out := output.FromContext(cmd.Context())
-			out.Info("Workers are disconnected via Ctrl+C when running 'mush worker start'")
-			out.Muted("No active worker to disconnect.")
-
-			return nil
-		},
-	}
 }

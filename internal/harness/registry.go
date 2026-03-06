@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+
+	"github.com/musher-dev/mush/internal/harness/harnesstype"
 )
 
 // Info describes a registered harness type.
@@ -15,11 +17,11 @@ type Info struct {
 	Available func() bool
 
 	// New creates a new Executor instance for this harness type.
-	New func() Executor
+	New func() harnesstype.Executor
 
 	// MCPSpec describes MCP configuration support for this harness.
 	// Nil means no MCP support (e.g., bash).
-	MCPSpec *MCPSpec
+	MCPSpec *harnesstype.MCPSpec
 }
 
 var (

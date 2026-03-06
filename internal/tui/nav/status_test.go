@@ -355,7 +355,7 @@ func TestInstallKeyCollectsMissingHarnesses(t *testing.T) {
 	mdl.status.harnessReports = []*harness.HealthReport{
 		{
 			ProviderName: "codex",
-			DisplayName:  "Codex CLI",
+			DisplayName:  "Codex",
 			Results: []harness.HealthResult{
 				{Check: "Binary", Message: "codex not found", Status: harness.HealthFail},
 			},

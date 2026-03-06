@@ -1,0 +1,26 @@
+Inspect and manage transcript history captured during PTY harness sessions.
+
+Transcripts are stored locally and can be listed, viewed, or pruned to free
+disk space.
+
+Usage:
+  mush history [command]
+
+Available Commands:
+  list        List stored transcript sessions
+  prune       Delete transcript sessions older than a duration
+  view        View transcript events for a session
+
+Flags:
+  -h, --help   help for history
+
+Global Flags:
+      --api-key string   API key override (prefer MUSH_API_KEY env var)
+      --api-url string   Override Musher API URL for this command
+      --json             Output in JSON format
+      --no-color         Disable colored output
+      --no-input         Disable interactive prompts
+      --no-tui           Disable interactive TUI navigation
+      --quiet            Minimal output (for CI)
+
+Use "mush history [command] --help" for more information about a command.

@@ -13,7 +13,7 @@ func TestBundleInputScreen(t *testing.T) {
 
 	mdl := testModel()
 
-	// Press 'b' to go to bundle input.
+	// Press 'r' to go to bundle input.
 	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
 
 	if mdl.activeScreen != screenBundleInput {
@@ -21,16 +21,12 @@ func TestBundleInputScreen(t *testing.T) {
 	}
 
 	view := mdl.View()
-	if !strings.Contains(view, "Run harness") {
-		t.Error("bundle input view should contain 'Run harness'")
+	if !strings.Contains(view, "Load bundle") {
+		t.Error("bundle input view should contain 'Load bundle'")
 	}
 
-	if !strings.Contains(view, "claude") {
-		t.Error("bundle input view should contain 'claude' harness option")
-	}
-
-	if !strings.Contains(view, "codex") {
-		t.Error("bundle input view should contain 'codex' harness option")
+	if !strings.Contains(view, "namespace/slug") {
+		t.Error("bundle input view should contain slug input placeholder")
 	}
 }
 
@@ -73,67 +69,11 @@ func TestBundleInputTabSwitchesFocus(t *testing.T) {
 		t.Error("after tab, focus should be on list")
 	}
 
-	// Tab again switches to harness.
-	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyTab})
-
-	if mdl.bundleInput.focusArea != bundleFocusHarness {
-		t.Error("after second tab, focus should be on harness")
-	}
-
-	// Tab once more returns to input.
+	// Tab again returns to input (only 2 focus areas now).
 	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyTab})
 
 	if mdl.bundleInput.focusArea != bundleFocusInput {
-		t.Error("after third tab, focus should be back on input")
-	}
-}
-
-func TestBundleInputHarnessNavigation(t *testing.T) {
-	t.Parallel()
-
-	mdl := testModel()
-
-	// Go to bundle input and switch to harness panel (tab twice: input→list→harness).
-	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
-	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyTab})
-	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyTab})
-
-	if mdl.bundleInput.focusArea != bundleFocusHarness {
-		t.Fatalf("focusArea = %d, want bundleFocusHarness", mdl.bundleInput.focusArea)
-	}
-
-	if mdl.bundleInput.harnessCur != 0 {
-		t.Errorf("harnessCur = %d, want 0", mdl.bundleInput.harnessCur)
-	}
-
-	if len(mdl.harnesses) < 2 {
-		t.Fatalf("need at least 2 harnesses, got %d", len(mdl.harnesses))
-	}
-
-	// Move down.
-	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyDown})
-
-	if mdl.bundleInput.harnessCur != 1 {
-		t.Errorf("harnessCur = %d, want 1 after down", mdl.bundleInput.harnessCur)
-	}
-
-	// Move down until we hit the end, then verify it clamps.
-	last := len(mdl.harnesses) - 1
-	for mdl.bundleInput.harnessCur < last {
-		mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyDown})
-	}
-
-	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyDown})
-
-	if mdl.bundleInput.harnessCur != last {
-		t.Errorf("harnessCur = %d, want %d (clamped)", mdl.bundleInput.harnessCur, last)
-	}
-
-	// Move up.
-	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyUp})
-
-	if mdl.bundleInput.harnessCur != last-1 {
-		t.Errorf("harnessCur = %d, want %d after up", mdl.bundleInput.harnessCur, last-1)
+		t.Error("after second tab, focus should be back on input")
 	}
 }
 
@@ -188,25 +128,21 @@ func TestBundleResolvedMsg(t *testing.T) {
 		slug:       "test-bundle",
 		version:    "1.0.0",
 		assetCount: 3,
-		harness:    "claude",
 	}
 
 	mdl = updateModel(mdl, msg)
 
-	if mdl.activeScreen != screenBundleConfirm {
-		t.Errorf("activeScreen = %d, want screenBundleConfirm", mdl.activeScreen)
+	// Resolve now skips confirm and goes directly to progress (download/cache check).
+	if mdl.activeScreen != screenBundleProgress {
+		t.Errorf("activeScreen = %d, want screenBundleProgress", mdl.activeScreen)
 	}
 
-	if mdl.bundleConfirm.slug != "test-bundle" {
-		t.Errorf("confirm slug = %q, want 'test-bundle'", mdl.bundleConfirm.slug)
+	if mdl.bundleProgress.slug != "test-bundle" {
+		t.Errorf("progress slug = %q, want 'test-bundle'", mdl.bundleProgress.slug)
 	}
 
-	if mdl.bundleConfirm.version != "1.0.0" {
-		t.Errorf("confirm version = %q, want '1.0.0'", mdl.bundleConfirm.version)
-	}
-
-	if mdl.bundleConfirm.assetCount != 3 {
-		t.Errorf("confirm assetCount = %d, want 3", mdl.bundleConfirm.assetCount)
+	if mdl.bundleProgress.version != "1.0.0" {
+		t.Errorf("progress version = %q, want '1.0.0'", mdl.bundleProgress.version)
 	}
 }
 
@@ -220,7 +156,6 @@ func TestBundleResolveErrorMsg(t *testing.T) {
 		err:     fmt.Errorf("not found"),
 		slug:    "bad-bundle",
 		version: "",
-		harness: "claude",
 	}
 
 	mdl = updateModel(mdl, msg)
@@ -234,54 +169,6 @@ func TestBundleResolveErrorMsg(t *testing.T) {
 	}
 }
 
-func TestBundleConfirmTabSwitchesButtons(t *testing.T) {
-	t.Parallel()
-
-	mdl := testModel()
-	mdl.activeScreen = screenBundleConfirm
-	mdl.bundleConfirm = bundleConfirmState{
-		slug:       "test",
-		version:    "1.0.0",
-		assetCount: 1,
-		harness:    "claude",
-		buttonIdx:  0,
-	}
-
-	// Tab switches from Load to Cancel.
-	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyTab})
-
-	if mdl.bundleConfirm.buttonIdx != 1 {
-		t.Errorf("buttonIdx = %d, want 1 after tab", mdl.bundleConfirm.buttonIdx)
-	}
-
-	// Tab again back to Load.
-	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyTab})
-
-	if mdl.bundleConfirm.buttonIdx != 0 {
-		t.Errorf("buttonIdx = %d, want 0 after second tab", mdl.bundleConfirm.buttonIdx)
-	}
-}
-
-func TestBundleConfirmCancelGoesBack(t *testing.T) {
-	t.Parallel()
-
-	mdl := testModel()
-	mdl.pushScreen(screenBundleConfirm)
-	mdl.bundleConfirm = bundleConfirmState{
-		slug:      "test",
-		version:   "1.0.0",
-		harness:   "claude",
-		buttonIdx: 1, // Cancel button focused
-	}
-
-	// Enter on Cancel goes back.
-	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyEnter})
-
-	if mdl.activeScreen != screenHome {
-		t.Errorf("activeScreen = %d, want screenHome after cancel", mdl.activeScreen)
-	}
-}
-
 func TestBundleCacheHitMsg(t *testing.T) {
 	t.Parallel()
 
@@ -292,30 +179,28 @@ func TestBundleCacheHitMsg(t *testing.T) {
 
 	msg := bundleCacheHitMsg{
 		cachePath: "/tmp/cache/test/1.0.0",
-		harness:   "claude",
 	}
 
 	mdl = updateModel(mdl, msg)
 
-	if mdl.activeScreen != screenBundleComplete {
-		t.Errorf("activeScreen = %d, want screenBundleComplete", mdl.activeScreen)
+	if mdl.activeScreen != screenBundleAction {
+		t.Errorf("activeScreen = %d, want screenBundleAction", mdl.activeScreen)
 	}
 
-	if mdl.bundleComplete.cachePath != "/tmp/cache/test/1.0.0" {
-		t.Errorf("cachePath = %q, want '/tmp/cache/test/1.0.0'", mdl.bundleComplete.cachePath)
+	if mdl.bundleAction.cachePath != "/tmp/cache/test/1.0.0" {
+		t.Errorf("cachePath = %q, want '/tmp/cache/test/1.0.0'", mdl.bundleAction.cachePath)
 	}
 }
 
-func TestBundleCompleteEscGoesHome(t *testing.T) {
+func TestBundleActionEscGoesHome(t *testing.T) {
 	t.Parallel()
 
 	mdl := testModel()
-	mdl.pushScreen(screenBundleComplete)
-	mdl.bundleComplete = bundleCompleteState{
+	mdl.pushScreen(screenBundleAction)
+	mdl.bundleAction = bundleActionState{
 		namespace: "acme",
 		slug:      "test",
 		version:   "1.0.0",
-		harness:   "claude",
 		cachePath: "/tmp/test",
 	}
 
@@ -327,24 +212,81 @@ func TestBundleCompleteEscGoesHome(t *testing.T) {
 	}
 }
 
-func TestBundleCompleteLaunchSetsResult(t *testing.T) {
+func TestBundleActionRunPushesHarness(t *testing.T) {
 	t.Parallel()
 
 	mdl := testModel()
-	mdl.pushScreen(screenBundleComplete)
-	mdl.bundleComplete = bundleCompleteState{
+	mdl.pushScreen(screenBundleAction)
+	mdl.bundleAction = bundleActionState{
 		namespace: "acme",
 		slug:      "test",
 		version:   "1.0.0",
-		harness:   "claude",
 		cachePath: "/tmp/test",
+		buttonIdx: 0, // Run
 	}
 
-	// Enter launches (sets result and quits).
+	// Enter selects Run → pushes harness screen.
+	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyEnter})
+
+	if mdl.activeScreen != screenBundleHarness {
+		t.Errorf("activeScreen = %d, want screenBundleHarness", mdl.activeScreen)
+	}
+
+	if mdl.bundleHarness.forInstall {
+		t.Error("forInstall should be false for Run action")
+	}
+}
+
+func TestBundleActionInstallPushesHarness(t *testing.T) {
+	t.Parallel()
+
+	mdl := testModel()
+	mdl.pushScreen(screenBundleAction)
+	mdl.bundleAction = bundleActionState{
+		namespace: "acme",
+		slug:      "test",
+		version:   "1.0.0",
+		cachePath: "/tmp/test",
+		buttonIdx: 1, // Install
+	}
+
+	// Enter selects Install → pushes harness screen.
+	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyEnter})
+
+	if mdl.activeScreen != screenBundleHarness {
+		t.Errorf("activeScreen = %d, want screenBundleHarness", mdl.activeScreen)
+	}
+
+	if !mdl.bundleHarness.forInstall {
+		t.Error("forInstall should be true for Install action")
+	}
+}
+
+func TestBundleHarnessSelectRun(t *testing.T) {
+	t.Parallel()
+
+	mdl := testModel()
+	mdl.pushScreen(screenBundleHarness)
+
+	// Build installed indices for the test harnesses.
+	var installed []int
+	for i := range mdl.harnesses {
+		installed = append(installed, i)
+	}
+
+	mdl.bundleHarness = bundleHarnessState{
+		namespace: "acme",
+		slug:      "test",
+		version:   "1.0.0",
+		cachePath: "/tmp/test",
+		installed: installed,
+	}
+
+	// Enter selects harness → exits with ActionBundleLoad.
 	_, cmd := mdl.Update(tea.KeyMsg{Type: tea.KeyEnter})
 
 	if mdl.result == nil {
-		t.Fatal("result should be set after launch")
+		t.Fatal("result should be set after harness selection")
 	}
 
 	if mdl.result.Action != ActionBundleLoad {
@@ -370,6 +312,109 @@ func TestBundleCompleteLaunchSetsResult(t *testing.T) {
 	}
 }
 
+func TestBundleHarnessSelectInstall(t *testing.T) {
+	t.Parallel()
+
+	mdl := testModel()
+	mdl.pushScreen(screenBundleHarness)
+
+	var installed []int
+	for i := range mdl.harnesses {
+		installed = append(installed, i)
+	}
+
+	mdl.bundleHarness = bundleHarnessState{
+		namespace:  "acme",
+		slug:       "test",
+		version:    "1.0.0",
+		cachePath:  "/tmp/test",
+		installed:  installed,
+		forInstall: true,
+	}
+
+	// Enter selects harness → pushes install confirm screen.
+	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyEnter})
+
+	if mdl.activeScreen != screenBundleInstallConfirm {
+		t.Errorf("activeScreen = %d, want screenBundleInstallConfirm", mdl.activeScreen)
+	}
+
+	if mdl.bundleInstallConfirm.namespace != "acme" {
+		t.Errorf("namespace = %q, want 'acme'", mdl.bundleInstallConfirm.namespace)
+	}
+}
+
+func TestBundleInstallConfirmWithoutConflicts(t *testing.T) {
+	t.Parallel()
+
+	mdl := testModel()
+	mdl.pushScreen(screenBundleInstallConfirm)
+	mdl.bundleInstallConfirm = bundleInstallConfirmState{
+		namespace:    "acme",
+		slug:         "test",
+		version:      "1.0.0",
+		cachePath:    "/tmp/test",
+		harness:      "claude",
+		hasConflicts: false,
+		buttonIdx:    0, // Install button
+	}
+
+	// Enter on Install → exits with ActionBundleInstall.
+	_, cmd := mdl.Update(tea.KeyMsg{Type: tea.KeyEnter})
+
+	if mdl.result == nil {
+		t.Fatal("result should be set after install")
+	}
+
+	if mdl.result.Action != ActionBundleInstall {
+		t.Errorf("result.Action = %d, want ActionBundleInstall", mdl.result.Action)
+	}
+
+	if mdl.result.Force {
+		t.Error("force should be false without conflicts")
+	}
+
+	if cmd == nil {
+		t.Fatal("expected quit command")
+	}
+}
+
+func TestBundleInstallConfirmWithConflicts(t *testing.T) {
+	t.Parallel()
+
+	mdl := testModel()
+	mdl.pushScreen(screenBundleInstallConfirm)
+	mdl.bundleInstallConfirm = bundleInstallConfirmState{
+		namespace:     "acme",
+		slug:          "test",
+		version:       "1.0.0",
+		cachePath:     "/tmp/test",
+		harness:       "claude",
+		hasConflicts:  true,
+		conflictPaths: []string{"/path/to/conflict"},
+		buttonIdx:     1, // Install button (shifted due to toggle at 0)
+	}
+
+	// Enter on Install → exits with ActionBundleInstall (force=false).
+	_, cmd := mdl.Update(tea.KeyMsg{Type: tea.KeyEnter})
+
+	if mdl.result == nil {
+		t.Fatal("result should be set after install")
+	}
+
+	if mdl.result.Action != ActionBundleInstall {
+		t.Errorf("result.Action = %d, want ActionBundleInstall", mdl.result.Action)
+	}
+
+	if mdl.result.Force {
+		t.Error("force should be false when toggle not checked")
+	}
+
+	if cmd == nil {
+		t.Fatal("expected quit command")
+	}
+}
+
 func TestBundleErrorRetry(t *testing.T) {
 	t.Parallel()
 
@@ -379,7 +424,6 @@ func TestBundleErrorRetry(t *testing.T) {
 		message: "not found",
 		slug:    "test-bundle",
 		version: "1.0.0",
-		harness: "claude",
 	}
 
 	// 'r' should attempt retry — but without a client it stays on error.
@@ -406,6 +450,71 @@ func TestBundleErrorEscGoesBack(t *testing.T) {
 
 	if mdl.activeScreen != screenHome {
 		t.Errorf("activeScreen = %d, want screenHome after esc from error", mdl.activeScreen)
+	}
+}
+
+func TestBundleActionScreenFromSeed(t *testing.T) {
+	t.Parallel()
+
+	deps := &Dependencies{
+		InitialBundle: &BundleSeed{
+			Namespace: "acme",
+			Slug:      "seeded-kit",
+			Version:   "2.0.0",
+			CachePath: "/tmp/seeded",
+		},
+	}
+
+	mdl := newModel(t.Context(), deps)
+
+	if mdl.activeScreen != screenBundleAction {
+		t.Fatalf("activeScreen = %d, want screenBundleAction", mdl.activeScreen)
+	}
+
+	if mdl.bundleAction.namespace != "acme" {
+		t.Errorf("namespace = %q, want 'acme'", mdl.bundleAction.namespace)
+	}
+
+	if mdl.bundleAction.slug != "seeded-kit" {
+		t.Errorf("slug = %q, want 'seeded-kit'", mdl.bundleAction.slug)
+	}
+
+	if mdl.bundleAction.version != "2.0.0" {
+		t.Errorf("version = %q, want '2.0.0'", mdl.bundleAction.version)
+	}
+
+	if mdl.bundleAction.cachePath != "/tmp/seeded" {
+		t.Errorf("cachePath = %q, want '/tmp/seeded'", mdl.bundleAction.cachePath)
+	}
+
+	if len(mdl.screenStack) != 1 || mdl.screenStack[0] != screenHome {
+		t.Errorf("screenStack = %v, want [screenHome]", mdl.screenStack)
+	}
+}
+
+func TestBundleActionScreenSeedEscGoesHome(t *testing.T) {
+	t.Parallel()
+
+	deps := &Dependencies{
+		InitialBundle: &BundleSeed{
+			Namespace: "acme",
+			Slug:      "seeded-kit",
+			Version:   "2.0.0",
+			CachePath: "/tmp/seeded",
+		},
+	}
+
+	mdl := newModel(t.Context(), deps)
+
+	if mdl.activeScreen != screenBundleAction {
+		t.Fatalf("expected bundle action screen from seed")
+	}
+
+	// Esc should return to home.
+	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyEscape})
+
+	if mdl.activeScreen != screenHome {
+		t.Errorf("activeScreen = %d, want screenHome after esc", mdl.activeScreen)
 	}
 }
 
@@ -441,8 +550,7 @@ func TestBundleDownloadErrorMsg(t *testing.T) {
 	mdl.bundleProgress.version = "1.0.0"
 
 	msg := bundleDownloadErrorMsg{
-		err:     fmt.Errorf("network error"),
-		harness: "claude",
+		err: fmt.Errorf("network error"),
 	}
 
 	mdl = updateModel(mdl, msg)
@@ -453,43 +561,6 @@ func TestBundleDownloadErrorMsg(t *testing.T) {
 
 	if !strings.Contains(mdl.bundleError.message, "network error") {
 		t.Errorf("error message = %q, want to contain 'network error'", mdl.bundleError.message)
-	}
-}
-
-func TestBundleInputTwoPanelView(t *testing.T) {
-	t.Parallel()
-
-	mdl := testModel()
-
-	// Simulate a wide terminal to trigger two-panel mode.
-	mdl = updateModel(mdl, tea.WindowSizeMsg{Width: 130, Height: 40})
-
-	// Navigate to bundle input screen.
-	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
-
-	if mdl.activeScreen != screenBundleInput {
-		t.Fatalf("activeScreen = %d, want screenBundleInput", mdl.activeScreen)
-	}
-
-	view := mdl.View()
-	if !strings.Contains(view, "Run harness") {
-		t.Error("two-panel view should contain 'Run harness' panel title")
-	}
-
-	if !strings.Contains(view, "Harness") {
-		t.Error("two-panel view should contain 'Harness' panel title")
-	}
-
-	if !strings.Contains(view, "namespace/slug") {
-		t.Error("two-panel view should contain slug input placeholder")
-	}
-
-	if !strings.Contains(view, "Find a bundle on the Hub") {
-		t.Error("two-panel view should contain 'Find a bundle on the Hub' action link")
-	}
-
-	if !strings.Contains(view, "switch panel") {
-		t.Error("two-panel footer should contain 'switch panel' hint")
 	}
 }
 
@@ -511,16 +582,6 @@ func TestBundleScreenViews(t *testing.T) {
 			check: "Resolving",
 		},
 		{
-			name:   "confirm",
-			screen: screenBundleConfirm,
-			setup: func(m *model) {
-				m.bundleConfirm = bundleConfirmState{
-					slug: "test", version: "1.0.0", assetCount: 2, harness: "claude",
-				}
-			},
-			check: "Confirm",
-		},
-		{
 			name:   "progress",
 			screen: screenBundleProgress,
 			setup: func(m *model) {
@@ -531,14 +592,39 @@ func TestBundleScreenViews(t *testing.T) {
 			check: "Downloading",
 		},
 		{
-			name:   "complete",
-			screen: screenBundleComplete,
+			name:   "action",
+			screen: screenBundleAction,
 			setup: func(m *model) {
-				m.bundleComplete = bundleCompleteState{
+				m.bundleAction = bundleActionState{
 					slug: "test", version: "1.0.0", cachePath: "/tmp/test",
 				}
 			},
 			check: "ready",
+		},
+		{
+			name:   "harness",
+			screen: screenBundleHarness,
+			setup: func(m *model) {
+				var installed []int
+				for i := range m.harnesses {
+					installed = append(installed, i)
+				}
+
+				m.bundleHarness = bundleHarnessState{
+					slug: "test", version: "1.0.0", installed: installed,
+				}
+			},
+			check: "Harness",
+		},
+		{
+			name:   "install_confirm",
+			screen: screenBundleInstallConfirm,
+			setup: func(m *model) {
+				m.bundleInstallConfirm = bundleInstallConfirmState{
+					slug: "test", version: "1.0.0", harness: "claude",
+				}
+			},
+			check: "Install",
 		},
 		{
 			name:   "error",

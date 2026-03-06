@@ -14,31 +14,34 @@ import (
 	"github.com/musher-dev/mush/internal/doctor"
 	"github.com/musher-dev/mush/internal/harness"
 	"github.com/musher-dev/mush/internal/transcript"
+	"github.com/musher-dev/mush/internal/update"
 )
 
 // screen identifies which screen is currently active.
 type screen int
 
 const (
-	screenHome            screen = iota
-	screenBundleInput            // text input for slug + harness selector
-	screenBundleResolving        // spinner during API resolve
-	screenBundleConfirm          // show details, confirm load
-	screenBundleProgress         // download progress bar
-	screenBundleComplete         // success, launch button
-	screenBundleError            // error + retry/back
-	screenWorkerHabitats         // habitat list (inline spinner → selection)
-	screenWorkerQueues           // queue list (inline spinner → selection)
-	screenWorkerHarness          // harness selector (local, no spinner)
-	screenWorkerChecking         // spinner: instruction availability check
-	screenWorkerConfirm          // summary + start/cancel buttons
-	screenWorkerError            // error + retry/back
-	screenHubExplore             // hub browse/search
-	screenHubDetail              // hub bundle detail view
-	screenStatus                 // connectivity diagnostics
-	screenHistory                // transcript session list
-	screenHistoryDetail          // transcript session detail viewer
-	screenPlaceholder            // coming-soon for unimplemented items
+	screenHome                 screen = iota
+	screenBundleInput                 // text input for slug (no harness selector)
+	screenBundleResolving             // spinner during API resolve
+	screenBundleConfirm               // show details, confirm download
+	screenBundleProgress              // download progress bar
+	screenBundleAction                // Run / Install choice
+	screenBundleHarness               // harness selection (shared by Run and Install paths)
+	screenBundleInstallConfirm        // install confirmation with optional force toggle
+	screenBundleError                 // error + retry/back
+	screenWorkerHabitats              // habitat list (inline spinner → selection)
+	screenWorkerQueues                // queue list (inline spinner → selection)
+	screenWorkerHarness               // harness selector (local, no spinner)
+	screenWorkerChecking              // spinner: instruction availability check
+	screenWorkerConfirm               // summary + start/cancel buttons
+	screenWorkerError                 // error + retry/back
+	screenHubExplore                  // hub browse/search
+	screenHubDetail                   // hub bundle detail view
+	screenStatus                      // connectivity diagnostics
+	screenHistory                     // transcript session list
+	screenHistoryDetail               // transcript session detail viewer
+	screenPlaceholder                 // coming-soon for unimplemented items
 )
 
 // menuItem represents a single entry in the home menu.
@@ -74,16 +77,14 @@ func loadHarnesses() []harnessOption {
 type bundleInputFocus int
 
 const (
-	bundleFocusInput   bundleInputFocus = iota // text input
-	bundleFocusList                            // recent/installed/action list
-	bundleFocusHarness                         // harness selector
+	bundleFocusInput bundleInputFocus = iota // text input
+	bundleFocusList                          // recent/installed/action list
 )
 
 // bundleInputState holds state for the bundle input screen.
 type bundleInputState struct {
-	textInput  textinput.Model
-	harnessCur int              // selected harness index
-	focusArea  bundleInputFocus // which area is focused
+	textInput textinput.Model
+	focusArea bundleInputFocus // which area is focused
 
 	// Enriched bundle selection.
 	recentBundles    []recentBundleEntry
@@ -102,9 +103,11 @@ type recentBundleEntry struct {
 
 // installedBundleEntry is an installed bundle for the Run harness screen.
 type installedBundleEntry struct {
-	slug    string
-	version string
-	harness string
+	namespace string
+	slug      string
+	ref       string
+	version   string
+	harness   string
 }
 
 // bundleResolveState holds state for the resolving screen.
@@ -122,8 +125,7 @@ type bundleConfirmState struct {
 	slug       string
 	version    string
 	assetCount int
-	harness    string
-	buttonIdx  int // 0=Load, 1=Cancel
+	buttonIdx  int // 0=Download, 1=Cancel
 }
 
 // bundleProgressState holds state for the download progress screen.
@@ -137,13 +139,38 @@ type bundleProgressState struct {
 	total     int
 }
 
-// bundleCompleteState holds state for the completion screen.
-type bundleCompleteState struct {
+// bundleActionState holds state for the Run/Install action choice screen.
+type bundleActionState struct {
 	namespace string
 	slug      string
 	version   string
-	harness   string
 	cachePath string
+	buttonIdx int // 0=Run, 1=Install
+}
+
+// bundleHarnessState holds state for the harness selection screen (shared by Run and Install).
+type bundleHarnessState struct {
+	namespace  string
+	slug       string
+	version    string
+	cachePath  string
+	cursor     int   // selected index within installed list
+	installed  []int // indices into model.harnesses for installed harnesses
+	forInstall bool  // true=Install path, false=Run path
+}
+
+// bundleInstallConfirmState holds state for the install confirmation screen.
+type bundleInstallConfirmState struct {
+	namespace     string
+	slug          string
+	version       string
+	cachePath     string
+	harness       string
+	hasConflicts  bool     // true if existing files detected
+	force         bool     // overwrite toggle (only shown if hasConflicts)
+	buttonIdx     int      // 0=Install, 1=Cancel
+	targetDir     string   // CWD
+	conflictPaths []string // which files conflict
 }
 
 // bundleErrorState holds state for the error screen.
@@ -153,7 +180,6 @@ type bundleErrorState struct {
 	namespace string
 	slug      string
 	version   string
-	harness   string
 	buttonIdx int // 0=Retry, 1=Back
 }
 
@@ -327,6 +353,10 @@ type model struct {
 	ctx             context.Context
 	result          *Result
 
+	// Update availability
+	updateAvailable bool
+	updateVersion   string
+
 	// Harness options (from registry)
 	harnesses []harnessOption
 
@@ -339,12 +369,14 @@ type model struct {
 	ctxInfo contextInfo
 
 	// Bundle sub-states
-	bundleInput    bundleInputState
-	bundleResolve  bundleResolveState
-	bundleConfirm  bundleConfirmState
-	bundleProgress bundleProgressState
-	bundleComplete bundleCompleteState
-	bundleError    bundleErrorState
+	bundleInput          bundleInputState
+	bundleResolve        bundleResolveState
+	bundleConfirm        bundleConfirmState
+	bundleProgress       bundleProgressState
+	bundleAction         bundleActionState
+	bundleHarness        bundleHarnessState
+	bundleInstallConfirm bundleInstallConfirmState
+	bundleError          bundleErrorState
 
 	// Hub sub-states
 	hubExplore hubExploreState
@@ -415,7 +447,7 @@ func newModel(ctx context.Context, deps *Dependencies) *model {
 
 	prog := progress.New(progress.WithDefaultGradient())
 
-	return &model{
+	mdl := &model{
 		width:     defaultWidth,
 		height:    defaultHeight,
 		harnesses: loadHarnesses(),
@@ -429,7 +461,7 @@ func newModel(ctx context.Context, deps *Dependencies) *model {
 		cursor: 1, // skip first section header
 		items: []menuItem{
 			{label: "DEVELOP", isSection: true},
-			{label: "Run harness", hotkey: 'r', description: "Launch a harness session with a bundle"},
+			{label: "Load bundle", hotkey: 'r', description: "Load a bundle to run or install"},
 			{label: "Find a bundle", hotkey: 'f', description: "Browse and install bundles from the Hub"},
 			{label: "OPERATE", isSection: true},
 			{label: "Start runner", hotkey: 'w', description: "Connect to a queue and process jobs"},
@@ -479,6 +511,20 @@ func newModel(ctx context.Context, deps *Dependencies) *model {
 			spinner: historyDetailSpinner,
 		},
 	}
+
+	// If a bundle seed is provided, start directly at the action screen.
+	if deps != nil && deps.InitialBundle != nil {
+		mdl.bundleAction = bundleActionState{
+			namespace: deps.InitialBundle.Namespace,
+			slug:      deps.InitialBundle.Slug,
+			version:   deps.InitialBundle.Version,
+			cachePath: deps.InitialBundle.CachePath,
+		}
+		mdl.activeScreen = screenBundleAction
+		mdl.screenStack = []screen{screenHome}
+	}
+
+	return mdl
 }
 
 // pushScreen pushes the current screen onto the stack and switches to the target.
@@ -505,9 +551,52 @@ func (m *model) popScreen() {
 	}
 }
 
+// updateCheckMsg carries the result of a background update check.
+type updateCheckMsg struct {
+	available bool
+	version   string
+}
+
+// cmdCheckUpdate checks for available updates asynchronously.
+func cmdCheckUpdate(ctx context.Context) tea.Cmd {
+	return func() tea.Msg {
+		if update.IsDisabled() || buildinfo.Version == "dev" {
+			return updateCheckMsg{}
+		}
+
+		state, err := update.LoadState()
+		if err != nil {
+			return updateCheckMsg{}
+		}
+
+		// If cache is stale, refresh it in the background.
+		if state.ShouldCheck() {
+			updater, err := update.NewUpdater()
+			if err == nil {
+				info, err := updater.CheckLatest(ctx, buildinfo.Version)
+				if err == nil {
+					state = &update.State{
+						LastCheckedAt:  state.LastCheckedAt,
+						LatestVersion:  info.LatestVersion,
+						CurrentVersion: buildinfo.Version,
+						ReleaseURL:     info.ReleaseURL,
+					}
+					_ = update.SaveState(state)
+				}
+			}
+		}
+
+		if state.HasUpdate(buildinfo.Version) {
+			return updateCheckMsg{available: true, version: state.LatestVersion}
+		}
+
+		return updateCheckMsg{}
+	}
+}
+
 // Init satisfies tea.Model. Fires async context loading and harness status detection.
 func (m *model) Init() tea.Cmd {
-	return tea.Batch(cmdLoadContext(m.ctx, m.deps), cmdLoadHarnessStatuses(m.ctx))
+	return tea.Batch(cmdLoadContext(m.ctx, m.deps), cmdLoadHarnessStatuses(m.ctx), cmdCheckUpdate(m.ctx))
 }
 
 // Update handles messages and returns the updated model.
@@ -522,6 +611,12 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyMsg:
 		return m.handleKey(msg)
+
+	case updateCheckMsg:
+		m.updateAvailable = msg.available
+		m.updateVersion = msg.version
+
+		return m, nil
 
 	case contextInfoMsg:
 		m.ctxInfo = contextInfo{
@@ -554,6 +649,9 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case bundleDownloadErrorMsg:
 		return m.handleBundleDownloadError(msg)
+
+	case bundleInstallConflictsMsg:
+		return m.handleBundleInstallConflicts(msg)
 
 	case workerHabitatsLoadedMsg:
 		return m.handleWorkerHabitatsLoaded(msg)
@@ -719,12 +817,14 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleBundleInputKey(msg)
 	case screenBundleResolving:
 		return m.handleBundleResolvingKey(msg)
-	case screenBundleConfirm:
-		return m.handleBundleConfirmKey(msg)
 	case screenBundleProgress:
 		return m.handleBundleProgressKey(msg)
-	case screenBundleComplete:
-		return m.handleBundleCompleteKey(msg)
+	case screenBundleAction:
+		return m.handleBundleActionKey(msg)
+	case screenBundleHarness:
+		return m.handleBundleHarnessKey(msg)
+	case screenBundleInstallConfirm:
+		return m.handleBundleInstallConfirmKey(msg)
 	case screenBundleError:
 		return m.handleBundleErrorKey(msg)
 	case screenWorkerHabitats:
@@ -976,12 +1076,14 @@ func (m *model) View() string {
 		return renderBundleInput(m)
 	case screenBundleResolving:
 		return renderBundleResolving(m)
-	case screenBundleConfirm:
-		return renderBundleConfirm(m)
 	case screenBundleProgress:
 		return renderBundleProgress(m)
-	case screenBundleComplete:
-		return renderBundleComplete(m)
+	case screenBundleAction:
+		return renderBundleAction(m)
+	case screenBundleHarness:
+		return renderBundleHarness(m)
+	case screenBundleInstallConfirm:
+		return renderBundleInstallConfirm(m)
 	case screenBundleError:
 		return renderBundleError(m)
 	case screenWorkerHabitats:

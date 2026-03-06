@@ -74,12 +74,7 @@ func topBarLine(s *state.Snapshot) string {
 	}
 
 	// Keyboard shortcut hints — always visible for discoverability.
-	hints := []string{"^C Int", "^S Copy", "^Q Quit"}
-	if s.SidebarAvailable {
-		hints = append([]string{"^G Sidebar"}, hints...)
-	}
-
-	parts = append(parts, dimGray+strings.Join(hints, "  ")+barReset)
+	parts = append(parts, dimGray+"^C Int  ^S Copy  ^Q Quit"+barReset)
 
 	line := strings.Join(parts, sep)
 	line = barBG + barFG + " " + line

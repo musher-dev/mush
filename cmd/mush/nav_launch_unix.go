@@ -184,6 +184,68 @@ func loadCachedBundleResolve(cachePath string) (*client.BundleResolveResponse, e
 	return &resolved, nil
 }
 
+func handleBundleInstallNavResult(_ *cobra.Command, out *output.Writer, result *nav.Result) error {
+	if result.CachePath == "" {
+		return &clierrors.CLIError{
+			Message: "Missing bundle cache path from navigation result",
+			Hint:    "Re-run the bundle flow and install again",
+			Code:    clierrors.ExitGeneral,
+		}
+	}
+
+	normalized, err := validateNavHarness(result.Harness)
+	if err != nil {
+		return err
+	}
+
+	resolved, err := loadCachedBundleResolve(result.CachePath)
+	if err != nil {
+		return clierrors.Wrap(clierrors.ExitGeneral, "Failed to read cached bundle manifest", err).
+			WithHint("Re-run the bundle flow to refresh cache")
+	}
+
+	mapper := mapperForHarness(normalized)
+	if mapper == nil {
+		return &clierrors.CLIError{
+			Message: fmt.Sprintf("No asset mapper for harness type: %s", normalized),
+			Hint:    "This harness type does not support bundle assets",
+			Code:    clierrors.ExitUsage,
+		}
+	}
+
+	workDir, err := os.Getwd()
+	if err != nil {
+		return clierrors.Wrap(clierrors.ExitGeneral, "Failed to get working directory", err)
+	}
+
+	installed, installErr := bundle.InstallFromCache(workDir, result.CachePath, &resolved.Manifest, mapper, result.Force)
+	if installErr != nil {
+		return clierrors.Wrap(clierrors.ExitGeneral, "Bundle install failed", installErr)
+	}
+
+	for _, relPath := range installed {
+		out.Success("Installed: %s", relPath)
+	}
+
+	ref := result.BundleNamespace + "/" + result.BundleSlug
+
+	trackErr := bundle.TrackInstall(workDir, &bundle.InstalledBundle{
+		Namespace: result.BundleNamespace,
+		Slug:      result.BundleSlug,
+		Ref:       ref,
+		Version:   result.BundleVer,
+		Harness:   normalized,
+		Assets:    installed,
+	})
+	if trackErr != nil {
+		out.Warning("Failed to track install: %v", trackErr)
+	}
+
+	out.Success("Bundle %s v%s installed for %s", ref, result.BundleVer, normalized)
+
+	return nil
+}
+
 func loadRunnerConfigIfAvailable(cmd *cobra.Command, out *output.Writer) *client.RunnerConfigResponse {
 	_, c, _, err := tryAPIClient()
 	if err != nil || c == nil {

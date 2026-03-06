@@ -1,258 +1,172 @@
 # Adding a New Harness
 
-This guide walks through adding a new execution harness to Mush. A harness connects Mush's job execution system to an external tool (like Claude Code or Codex CLI).
+This guide explains how to add a new harness provider to Mush using the current module-based provider architecture.
 
 ## Architecture overview
 
-The harness system has two layers that must stay in sync:
+Each harness is implemented as a provider module under:
 
-1. **YAML provider spec** (`internal/harness/providers/{name}.yaml`) — Declarative metadata: binary name, CLI flags, asset paths, MCP config format, and health-check info. Loaded at package init via `//go:embed`.
+`internal/harness/providers/{name}/`
 
-2. **Go executor** (`internal/harness/{name}_executor.go`) — The runtime implementation. Registers itself in `init()` via `harness.Register()`, wiring the provider spec to a concrete `Executor` implementation.
+A provider module contains:
 
-The provider spec drives health checks (`mush doctor`), availability detection, and asset mapping. The executor drives job execution. Both are required — a YAML without a matching `Register()` call will appear in health checks but cannot execute jobs, and a `Register()` without matching YAML will panic at startup.
+1. `spec.yaml`
+   Declarative provider metadata (binary, status checks, MCP and bundle mapping settings).
+2. `module.go`
+   Embeds and parses `spec.yaml`, then exports a `Module` (`harnesstype.Module`).
+3. `executor.go` (unix build)
+   Runtime implementation that satisfies `harnesstype.Executor`.
+
+At startup:
+
+- On unix, provider modules are registered in `internal/harness/builtins.go`.
+- On non-unix, only provider specs are registered in `internal/harness/builtins_nonunix.go`.
+
+This separation keeps health/status metadata available cross-platform while execution remains unix-only.
 
 ## File checklist
 
-| Action | File | Purpose |
-|--------|------|---------|
-| Create | `internal/harness/providers/{name}.yaml` | Provider spec (metadata, flags, health) |
-| Create | `internal/harness/{name}_executor.go` | Executor implementation |
-| Create | `internal/harness/{name}_executor_test.go` | Tests |
+Create these files:
 
-No other files need modification — the `//go:embed providers/*.yaml` directive and `init()` registration handle discovery automatically.
+- `internal/harness/providers/{name}/spec.yaml`
+- `internal/harness/providers/{name}/module.go`
+- `internal/harness/providers/{name}/executor.go` (`//go:build unix`)
+- `internal/harness/providers/{name}/executor_test.go` (recommended)
 
-## Step 1: Create the YAML provider spec
+Update these registries:
 
-Create `internal/harness/providers/{name}.yaml`. Here is an annotated template with every field:
+- `internal/harness/builtins.go` (add module to unix built-ins)
+- `internal/harness/builtins_nonunix.go` (register spec for non-unix)
+
+## Step 1: Write `spec.yaml`
+
+`spec.yaml` is parsed into `harnesstype.ProviderSpec`.
 
 ```yaml
-# Required. Must be unique across all providers. This is the harness type
-# identifier used in Register(), Lookup(), and job execution configs.
 name: myharness
-
-# Required for display. Shown in `mush doctor` output and UI.
 displayName: My Harness
-
-# Short description of the tool.
 description: My AI coding assistant
-
-# The CLI binary name. Used by AvailableFunc() to check if the tool is
-# installed via exec.LookPath(). If empty, the harness is always considered
-# available — useful for built-in executors that don't depend on an
-# external binary.
 binary: myharness
 
-# Optional. Harness-specific config directory paths.
 directories:
-  project: .myharness        # Project-level config directory
-  user: ~/.myharness          # User-level config directory
+  project: .myharness
+  user: ~/.myharness
 
-# Optional. How bundle directories are passed to the harness CLI.
 bundleDir:
-  mode: add_dir               # One of: "add_dir", "cd_flag", "cwd"
-  flag: "--add-dir"            # CLI flag (required for add_dir and cd_flag modes)
+  mode: add_dir
+  flag: --add-dir
 
-# Optional. CLI flag names for MCP config injection.
 cli:
-  mcpConfig: "--mcp-config"   # Flag to pass the ephemeral MCP config file path
+  mcpConfig: --mcp-config
 
-# Optional. Where bundle assets are mapped in the harness's native structure.
 assets:
   skillDir: .myharness/skills
   agentDir: .myharness/agents
   toolConfigFile: .myharness/config.json
 
-# Optional. MCP configuration support.
 mcp:
-  format: json                 # "json" or "toml" (see gotchas below)
+  format: json
   configPath: .myharness/mcp.json
 
-# Optional. Health-check and install metadata for `mush doctor`.
 status:
-  versionArgs: ["--version"]   # Args passed to binary to get version string
-  installHint: "npm install -g myharness"  # Shown when binary not found
-  installCommand: ["npm", "install", "-g", "myharness"]  # Programmatic install
-  configDir: "~/.myharness"    # Checked for existence
-  authCheck:                   # Optional file-based credential check
-    path: "~/.myharness/credentials.json"
-    description: "Credentials"
+  versionArgs: ["--version"]
+  installHint: npm install -g myharness
+  installCommand: ["npm", "install", "-g", "myharness"]
+  configDir: ~/.myharness
+  authCheck:
+    path: ~/.myharness/credentials.json
+    description: Credentials
 ```
 
-**Validation rules** (enforced at startup, panic on violation):
+Validation is enforced by `harnesstype.MustParseSpec`:
 
-- `name` is required and must be unique across all provider YAML files
-- `bundleDir.mode` must be one of `add_dir`, `cd_flag`, `cwd` (if specified)
-- `mcp.format` must be `json` or `toml` (if specified)
+- `name` is required
+- `bundleDir.mode` must be one of `add_dir`, `cd_flag`, `cwd`
+- `mcp.format` must be `json` or `toml`
 
-## Step 2: Create the executor
-
-Create `internal/harness/{name}_executor.go`. The file must have a `//go:build unix` constraint (see [gotchas](#gotchas)).
+## Step 2: Export `Module` in `module.go`
 
 ```go
 //go:build unix
 
-package harness
+package myharness
 
 import (
-	"context"
-	"fmt"
+    _ "embed"
 
-	"github.com/musher-dev/mush/internal/client"
+    "github.com/musher-dev/mush/internal/harness/harnesstype"
 )
 
-// MyHarnessExecutor runs jobs via MyHarness.
-type MyHarnessExecutor struct {
-	opts SetupOptions
+//go:embed spec.yaml
+var specData []byte
+
+var spec = harnesstype.MustParseSpec(specData)
+
+var Module = harnesstype.Module{
+    Spec: spec,
+    NewExecutor: func() harnesstype.Executor {
+        return NewExecutor()
+    },
+    MCPSpec: &harnesstype.MCPSpec{
+        Def:         spec.MCP,
+        BuildConfig: harnesstype.BuildJSONMCPConfig,
+    },
 }
-
-func init() {
-	Register(Info{
-		Name:      "myharness",                                   // Must match YAML name
-		Available: AvailableFunc("myharness"),                    // Must match YAML name
-		New:       func() Executor { return &MyHarnessExecutor{} },
-
-		// Include MCPSpec only if your harness supports MCP.
-		// Set BuildConfig to BuildJSONMCPConfig or BuildTOMLMCPConfig
-		// depending on your provider's mcp.format.
-		MCPSpec: &MCPSpec{
-			Def:         mustGetProvider("myharness").MCP,
-			BuildConfig: BuildJSONMCPConfig,
-		},
-	})
-}
-
-func (e *MyHarnessExecutor) Setup(ctx context.Context, opts *SetupOptions) error {
-	e.opts = *opts
-
-	// Initialize your harness (start process, verify binary, etc.)
-
-	if opts.OnReady != nil {
-		opts.OnReady()
-	}
-	return nil
-}
-
-func (e *MyHarnessExecutor) Execute(ctx context.Context, job *client.Job) (*ExecResult, error) {
-	prompt, err := getPromptFromJob(job)
-	if err != nil {
-		return nil, &ExecError{Reason: "prompt_error", Message: err.Error()}
-	}
-
-	// Run the job using `prompt` as the instruction.
-	// Use job.Execution for working directory, environment, etc.
-	_ = prompt
-
-	return &ExecResult{
-		OutputData: map[string]any{
-			"success":    true,
-			"output":     "result text",
-			"durationMs": 0,
-		},
-	}, nil
-}
-
-func (e *MyHarnessExecutor) Reset(_ context.Context) error {
-	// Prepare for the next job. No-op for one-shot executors.
-	return nil
-}
-
-func (e *MyHarnessExecutor) Teardown() {
-	// Release all resources (close PTY, kill processes, remove temp files).
-}
-
-// Compile-time interface checks.
-var _ Executor = (*MyHarnessExecutor)(nil)
 ```
 
-Key details:
+Use `MCPSpec: nil` if the harness does not support MCP.
 
-- The `init()` name **must** match the YAML `name` field exactly. `mustGetProvider()` will panic if they don't match.
-- Use `getPromptFromJob(job)` to extract the rendered instruction from a job — it handles nil checks and server-side render errors.
-- Always return `*ExecError` (not plain errors) from `Execute` so the worker can classify failures and decide on retries.
+## Step 3: Implement `executor.go`
 
-## Step 3: Implement optional interfaces
+The executor must satisfy `harnesstype.Executor`:
 
-The worker and TUI check for these via type assertions. Implement only what your harness needs.
+- `Setup(ctx, opts)`
+- `Execute(ctx, job)`
+- `Reset(ctx)`
+- `Teardown()`
 
-| Interface | Methods | When to implement |
-|-----------|---------|-------------------|
-| `Resizable` | `Resize(rows, cols int)` | Harness runs in a PTY that should respond to terminal resize |
-| `InputReceiver` | `WriteInput(p []byte) (int, error)` | Harness has an interactive session that accepts stdin (bundle load mode, TUI passthrough) |
-| `Refreshable` | `NeedsRefresh(cfg) bool`, `ApplyRefresh(ctx, cfg) error` | Harness should hot-reload when MCP config changes at runtime |
-| `SignalDirConsumer` | `SetSignalDir(dir string)` | Harness uses signal files for completion detection (persistent PTY pattern) |
-| `TranscriptSource` | `WantsTranscript() bool` | Harness output should be saved to job transcript history |
-| `InterruptHandler` | `Interrupt() error` | Harness should forward Ctrl+C to its underlying process |
+Optional interfaces are detected via type assertions:
 
-**Reference**: `ClaudeExecutor` implements all 6 optional interfaces. `CodexExecutor` implements only `InputReceiver`.
+- `harnesstype.Resizable`
+- `harnesstype.InputReceiver`
+- `harnesstype.Refreshable`
+- `harnesstype.SignalDirConsumer`
+- `harnesstype.TranscriptSource`
+- `harnesstype.InterruptHandler`
 
-## Step 4: Write tests
+Use `harnesstype.GetPromptFromJob(job)` for prompt extraction and return `*harnesstype.ExecError` for classified failures.
 
-Follow the patterns in existing test files (`claude_executor_test.go`, `codex_executor_test.go`). Key testing patterns:
+## Step 4: Register built-ins
 
-- Test `init()` registration: verify `Lookup("myharness")` returns your Info
-- Test `Setup` with a mock binary or test fixture
-- Test `Execute` with constructed `client.Job` values
-- Test error paths: missing prompt, context cancellation, process failures
-- Use compile-time interface checks: `var _ Executor = (*MyHarnessExecutor)(nil)`
+Add the new module to unix registration in `internal/harness/builtins.go`.
 
-## Step 5: Verify
+Add spec registration for non-unix in `internal/harness/builtins_nonunix.go`.
+
+If you skip non-unix registration, provider metadata will be missing from non-unix flows that rely on `GetProvider`/`ProviderNames`.
+
+## Step 5: Test and verify
+
+Recommended:
 
 ```bash
-task build        # Confirms compilation (YAML embed + init registration)
-task check        # Full quality gate: fmt + lint + vuln + test
-mush doctor       # Should show your harness in health check output
+go test ./internal/harness/...
+go test ./internal/harness/providers/{name}/...
 ```
 
-## Execution patterns
+Full checks:
 
-The two existing executors demonstrate the two main patterns:
-
-### Persistent PTY (Claude)
-
-A long-lived PTY process stays running across jobs. Jobs are injected as text into the PTY stdin. Completion is detected via a signal file created by a Claude Code hook.
-
-- **Pros**: Fast job-to-job transitions, no startup overhead per job
-- **Cons**: Complex prompt detection, signal file coordination, PTY lifecycle management
-- **Key interfaces**: All 6 optional interfaces
-
-### One-shot subprocess (Codex)
-
-Each job spawns a fresh process. Output is captured from a temp file. The process exit signals completion.
-
-- **Pros**: Simple lifecycle, clean isolation between jobs
-- **Cons**: Startup overhead per job
-- **Key interfaces**: `InputReceiver` only (for bundle load mode)
-
-## Result shape conventions
-
-`Execute` should return `ExecResult.OutputData` as:
-
-```go
-map[string]any{
-    "success":    true,           // bool: whether the job succeeded
-    "output":     "result text",  // string: captured output (ANSI-stripped)
-    "durationMs": 1234,           // int: wall-clock execution time in ms
-}
+```bash
+task build
+task check
 ```
-
-On failure, return `*ExecError` with an appropriate `Reason`:
-
-| Reason | Meaning | Retry |
-|--------|---------|-------|
-| `"prompt_error"` | Failed to extract prompt from job | No |
-| `"timeout"` | Context deadline exceeded | Yes |
-| `"execution_error"` | General execution failure | Depends |
-| `"codex_error"` | Codex-specific process failure | Yes |
 
 ## Gotchas
 
-1. **Provider spec and registry are decoupled.** Nothing enforces that every YAML provider has a matching `Register()` call. A YAML-only provider appears in `ProviderNames()` and health checks but will fail silently when the worker tries to execute a job. A `Register()` without matching YAML panics at `mustGetProvider()`. Always create both files together and verify with `task build`.
+1. Module wiring and builtins registration are separate.
+A valid provider folder is not active until `builtins.go`/`builtins_nonunix.go` imports and registers it.
 
-2. **Empty `binary` means always available.** `AvailableFunc` returns `true` when the provider spec has an empty `binary` field (`provider.go:169`). This is intentional for built-in executors but surprising if you forget to set `binary` in your YAML.
+2. `binary: ""` means always available.
+`harnesstype.AvailableFunc` returns `true` when no binary is set.
 
-3. **No `binary` validation in `validateProviderSpec`.** The validator checks `name`, `bundleDir.mode`, and `mcp.format`, but does not validate `binary` or `displayName`. A provider with no `binary` and no `displayName` passes validation silently.
-
-4. **Unix-only constraint.** Both existing executors require `//go:build unix` because they use PTY and signal APIs. Non-unix platforms stub out the worker command entirely (`cmd/mush/worker_other.go`). Your executor must include this build tag.
-
-5. **MCP format limited to json/toml.** Adding a new MCP format requires changes in three places: a new `Build*MCPConfig` function in `mcp_config.go`, a validation case in `validateProviderSpec` (`provider.go`), and file extension handling in `CreateMCPConfigFile` (`mcp_config.go`).
+3. Keep unix constraints consistent.
+Executor runtime uses unix facilities for PTY/signal behavior; non-unix should only expose metadata.

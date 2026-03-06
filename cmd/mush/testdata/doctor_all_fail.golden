@@ -1,10 +1,18 @@
 Mush Doctor
 ============
 
-✗ API Connectivity    https://api.musher.dev
+✗ Directory Structure    Cannot resolve directories
+    $HOME must be set
+✓ Config File            No config file (using defaults)
+✓ Credentials File       Not present (using keyring or env)
+✓ Proxy Environment      No proxy environment variables detected
+✓ Custom CA Bundle       Not configured
+✗ API Connectivity       https://api.musher.dev
     connection refused
-✗ Authentication      Not authenticated
+⚠ Clock Skew             Clock skew check skipped
+    API not reachable
+✗ Authentication         Not authenticated
     Run 'mush auth login' to authenticate
-⚠ CLI Version         Development build (version check skipped)
+⚠ CLI Version            Development build (version check skipped)
 
-0 passed, 2 failed, 1 warning(s)
+4 passed, 3 failed, 2 warning(s)

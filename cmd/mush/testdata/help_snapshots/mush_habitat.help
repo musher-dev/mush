@@ -1,0 +1,24 @@
+Commands for listing and selecting habitats.
+
+Habitats are execution contexts within your workspace where harnesses connect
+and jobs are routed. You must select a habitat before starting a worker to receive jobs.
+
+Usage:
+  mush habitat [command]
+
+Available Commands:
+  list        List available habitats
+
+Flags:
+  -h, --help   help for habitat
+
+Global Flags:
+      --api-key string   API key override (prefer MUSH_API_KEY env var)
+      --api-url string   Override Musher API URL for this command
+      --json             Output in JSON format
+      --no-color         Disable colored output
+      --no-input         Disable interactive prompts
+      --no-tui           Disable interactive TUI navigation
+      --quiet            Minimal output (for CI)
+
+Use "mush habitat [command] --help" for more information about a command.

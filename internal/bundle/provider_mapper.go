@@ -6,16 +6,16 @@ import (
 	"path/filepath"
 
 	"github.com/musher-dev/mush/internal/client"
-	"github.com/musher-dev/mush/internal/harness"
+	"github.com/musher-dev/mush/internal/harness/harnesstype"
 )
 
 // providerMapper maps bundle assets using a YAML-driven ProviderSpec.
 type providerMapper struct {
-	spec *harness.ProviderSpec
+	spec *harnesstype.ProviderSpec
 }
 
 // NewProviderMapper creates an AssetMapper driven by a ProviderSpec.
-func NewProviderMapper(spec *harness.ProviderSpec) AssetMapper {
+func NewProviderMapper(spec *harnesstype.ProviderSpec) AssetMapper {
 	return &providerMapper{spec: spec}
 }
 

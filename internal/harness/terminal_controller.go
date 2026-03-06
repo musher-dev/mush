@@ -17,6 +17,7 @@ import (
 
 	"golang.org/x/term"
 
+	"github.com/musher-dev/mush/internal/harness/harnesstype"
 	"github.com/musher-dev/mush/internal/harness/ui/layout"
 	"github.com/musher-dev/mush/internal/tui/ansi"
 )
@@ -43,7 +44,6 @@ type TerminalController struct {
 	sidebarQuarantined atomic.Bool // recoverable disable (rate limit exceeded)
 	tamperCount        atomic.Int32
 	tamperWindowStart  atomic.Int64 // UnixNano of window start
-	sidebarUserOff     atomic.Bool
 	altScreenActive    atomic.Bool
 	termSeqTail        []byte
 	termSeqMu          sync.Mutex
@@ -59,7 +59,7 @@ type TerminalController struct {
 	filterTermWidth    atomic.Int32
 
 	// Set once in Run(), read-only thereafter.
-	executors          map[string]Executor
+	executors          map[string]harnesstype.Executor
 	supportedHarnesses []string
 
 	// Callbacks wired by RootModel.
@@ -128,7 +128,7 @@ func (tc *TerminalController) Dimensions() (w, h int) {
 // Returns false during alt-screen mode so the output filter does not
 // rewrite/drop sequences that full-screen TUI programs need.
 func (tc *TerminalController) SidebarEnabled() bool {
-	return tc.lrMarginSupported.Load() && !tc.sidebarForcedOff.Load() && !tc.sidebarQuarantined.Load() && !tc.sidebarUserOff.Load() && !tc.altScreenActive.Load()
+	return tc.lrMarginSupported.Load() && !tc.sidebarForcedOff.Load() && !tc.sidebarQuarantined.Load() && !tc.altScreenActive.Load()
 }
 
 // AltScreenActive returns true when the alt-screen buffer is active.
@@ -139,11 +139,6 @@ func (tc *TerminalController) AltScreenActive() bool {
 // LRMarginSupported returns whether the terminal supports LR margins.
 func (tc *TerminalController) LRMarginSupported() bool {
 	return tc.lrMarginSupported.Load()
-}
-
-// SidebarAvailable returns whether the sidebar could be shown (LR supported, not force-disabled, not quarantined).
-func (tc *TerminalController) SidebarAvailable() bool {
-	return tc.lrMarginSupported.Load() && !tc.sidebarForcedOff.Load() && !tc.sidebarQuarantined.Load()
 }
 
 // storeFilterDims updates the atomic frame dimensions read by the sidebarFilter.
@@ -250,7 +245,7 @@ func (tc *TerminalController) disableSidebar() {
 	rows := layout.PtyRowsForFrame(newFrame)
 
 	for _, executor := range tc.executors {
-		if r, ok := executor.(Resizable); ok {
+		if r, ok := executor.(harnesstype.Resizable); ok {
 			r.Resize(rows, newFrame.PaneWidth)
 		}
 	}
@@ -365,12 +360,12 @@ func (tc *TerminalController) quarantineSidebar(ev terminalEvent) {
 	rows := layout.PtyRowsForFrame(newFrame)
 
 	for _, executor := range tc.executors {
-		if r, ok := executor.(Resizable); ok {
+		if r, ok := executor.(harnesstype.Resizable); ok {
 			r.Resize(rows, newFrame.PaneWidth)
 		}
 	}
 
-	tc.setLastError("sidebar quarantined: repeated layout resets by child process (\x07 to retry)")
+	tc.setLastError("sidebar quarantined: repeated layout resets by child process")
 
 	slog.Default().Warn(
 		"sidebar quarantined due to repeated layout-tamper events",
@@ -403,130 +398,6 @@ func terminalEventName(ev terminalEvent) string {
 	default:
 		return fmt.Sprintf("unknown(%d)", ev)
 	}
-}
-
-// reprobeAndEnableSidebar re-runs the LR margin probe inline (called from
-// copyInput via toggleSidebar when lrMarginSupported is false). If the probe
-// succeeds, the sidebar is enabled and the layout is reconfigured.
-func (tc *TerminalController) reprobeAndEnableSidebar() {
-	// Unsafe to probe while any executor PTY is active — the probe reads
-	// stdin and writes escape sequences that would corrupt the child process.
-	// This covers both worker mode (job PTY running) and bundle-load mode
-	// (interactive Claude PTY alive but no job loop).
-	if tc.ptyActive != nil && tc.ptyActive() {
-		return
-	}
-
-	supported := tc.detectLRMarginSupport()
-	if !supported {
-		return
-	}
-
-	tc.lrMarginSupported.Store(true)
-
-	// Replay any keystrokes the user typed during the probe window.
-	if len(tc.probeLeftoverInput) > 0 {
-		leftover := tc.probeLeftoverInput
-		tc.probeLeftoverInput = nil
-
-		for _, harnessType := range tc.supportedHarnesses {
-			if executor, ok := tc.executors[harnessType]; ok {
-				if ir, ok := executor.(InputReceiver); ok {
-					_, _ = ir.WriteInput(leftover)
-
-					break
-				}
-			}
-		}
-	}
-
-	tc.sidebarUserOff.Store(false)
-
-	tc.sidebarDisableMu.Lock()
-	tc.mu.Lock()
-
-	newFrame := layout.ComputeFrame(tc.width, tc.height, tc.SidebarEnabled())
-	tc.storeFilterDims(newFrame)
-	_, _ = fmt.Fprint(os.Stdout, layout.ResizeSequence(newFrame, tc.SidebarEnabled()))
-
-	tc.mu.Unlock()
-	tc.sidebarDisableMu.Unlock()
-
-	rows := layout.PtyRowsForFrame(newFrame)
-
-	for _, executor := range tc.executors {
-		if r, ok := executor.(Resizable); ok {
-			r.Resize(rows, newFrame.PaneWidth)
-		}
-	}
-
-	tc.drawStatusBar()
-}
-
-func (tc *TerminalController) toggleSidebar() {
-	if tc.sidebarForcedOff.Load() || tc.altScreenActive.Load() {
-		return
-	}
-
-	// Quarantine recovery: clear flag, reset tamper counters, re-enable.
-	if tc.sidebarQuarantined.Load() {
-		tc.sidebarQuarantined.Store(false)
-		tc.tamperCount.Store(0)
-		tc.tamperWindowStart.Store(0)
-
-		tc.sidebarDisableMu.Lock()
-		tc.mu.Lock()
-		newFrame := layout.ComputeFrame(tc.width, tc.height, tc.SidebarEnabled())
-		tc.storeFilterDims(newFrame)
-		_, _ = fmt.Fprint(os.Stdout, layout.ResizeSequence(newFrame, tc.SidebarEnabled()))
-		tc.mu.Unlock()
-		tc.sidebarDisableMu.Unlock()
-
-		rows := layout.PtyRowsForFrame(newFrame)
-
-		for _, executor := range tc.executors {
-			if r, ok := executor.(Resizable); ok {
-				r.Resize(rows, newFrame.PaneWidth)
-			}
-		}
-
-		tc.drawStatusBar()
-
-		return
-	}
-
-	if !tc.lrMarginSupported.Load() {
-		tc.reprobeAndEnableSidebar()
-		return
-	}
-
-	tc.sidebarDisableMu.Lock()
-
-	tc.mu.Lock()
-	oldFrame := layout.ComputeFrame(tc.width, tc.height, tc.SidebarEnabled())
-	termWidth := tc.width
-
-	tc.sidebarUserOff.Store(!tc.sidebarUserOff.Load())
-
-	newFrame := layout.ComputeFrame(tc.width, tc.height, tc.SidebarEnabled())
-	tc.storeFilterDims(newFrame)
-	_, _ = fmt.Fprint(os.Stdout, layout.ResizeSequence(newFrame, tc.SidebarEnabled()))
-	tc.mu.Unlock()
-	tc.sidebarDisableMu.Unlock()
-
-	if oldFrame.SidebarVisible && !newFrame.SidebarVisible {
-		tc.clearSidebarArea(oldFrame.SidebarWidth+1, oldFrame.Height, termWidth)
-	}
-
-	rows := layout.PtyRowsForFrame(newFrame)
-
-	for _, executor := range tc.executors {
-		if r, ok := executor.(Resizable); ok {
-			r.Resize(rows, newFrame.PaneWidth)
-		}
-	}
-
-	tc.drawStatusBar()
 }
 
 func (tc *TerminalController) readTerminalSize() (width, height int, err error) {
@@ -588,7 +459,7 @@ func (tc *TerminalController) handleResize(width, height int) {
 		rows := layout.PtyRowsForFrame(frame)
 
 		for _, executor := range tc.executors {
-			if r, ok := executor.(Resizable); ok {
+			if r, ok := executor.(harnesstype.Resizable); ok {
 				r.Resize(rows, frame.PaneWidth)
 			}
 		}
@@ -623,9 +494,9 @@ func (tc *TerminalController) handleResize(width, height int) {
 
 	rows := layout.PtyRowsForFrame(newFrame)
 
-	// Resize all Resizable executors.
+	// Resize all harnesstype.Resizable executors.
 	for _, executor := range tc.executors {
-		if r, ok := executor.(Resizable); ok {
+		if r, ok := executor.(harnesstype.Resizable); ok {
 			r.Resize(rows, newFrame.PaneWidth)
 		}
 	}

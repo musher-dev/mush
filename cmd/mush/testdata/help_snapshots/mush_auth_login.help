@@ -1,0 +1,25 @@
+Authenticate with the Musher platform.
+
+Your API key will be stored securely in your system's keyring
+(macOS Keychain, Windows Credential Manager, or Linux Secret Service).
+
+You can also set the MUSH_API_KEY environment variable.
+
+Usage:
+  mush auth login [flags]
+
+Examples:
+  mush auth login
+  mush --api-key sk-... auth login
+
+Flags:
+  -h, --help   help for login
+
+Global Flags:
+      --api-key string   API key override (prefer MUSH_API_KEY env var)
+      --api-url string   Override Musher API URL for this command
+      --json             Output in JSON format
+      --no-color         Disable colored output
+      --no-input         Disable interactive prompts
+      --no-tui           Disable interactive TUI navigation
+      --quiet            Minimal output (for CI)

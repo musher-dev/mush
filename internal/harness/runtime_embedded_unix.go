@@ -18,6 +18,7 @@ import (
 
 	"github.com/musher-dev/mush/internal/buildinfo"
 	"github.com/musher-dev/mush/internal/config"
+	"github.com/musher-dev/mush/internal/harness/harnesstype"
 	harnessstate "github.com/musher-dev/mush/internal/harness/state"
 	"github.com/musher-dev/mush/internal/harness/ui/layout"
 	statusui "github.com/musher-dev/mush/internal/harness/ui/status"
@@ -52,12 +53,11 @@ type embeddedRuntime struct {
 	height int
 	frame  layout.Frame
 
-	sidebarUserOff bool
-	copyMode       bool
-	lastCtrlCAt    time.Time
+	copyMode    bool
+	lastCtrlCAt time.Time
 
 	jobs      *JobLoop
-	executors map[string]Executor
+	executors map[string]harnesstype.Executor
 
 	cfg                *config.Config
 	supportedHarnesses []string
@@ -97,7 +97,7 @@ func newEmbeddedRuntime(ctx context.Context, cfg *Config) *embeddedRuntime {
 		initialStatus = StatusStarting
 	}
 
-	executors := make(map[string]Executor)
+	executors := make(map[string]harnesstype.Executor)
 	loadedCfg := config.Load()
 
 	r := &embeddedRuntime{
@@ -240,7 +240,7 @@ func (r *embeddedRuntime) setupExecutors() error {
 
 		executor := info.New()
 
-		setupOpts := SetupOptions{
+		setupOpts := harnesstype.SetupOptions{
 			TermWriter:     r,
 			TermWidth:      r.frame.PaneWidth,
 			TermHeight:     ptyRows,
@@ -405,10 +405,6 @@ func (r *embeddedRuntime) handleKey(ev *tcell.EventKey) bool {
 		r.signalDone()
 
 		return true
-	case tcell.KeyCtrlG:
-		r.toggleSidebar()
-
-		return false
 	case tcell.KeyCtrlS:
 		r.copyMode = !r.copyMode
 		r.draw()
@@ -438,7 +434,7 @@ func (r *embeddedRuntime) handleKey(ev *tcell.EventKey) bool {
 
 	for _, harnessType := range r.supportedHarnesses {
 		if executor, ok := r.executors[harnessType]; ok {
-			if ir, ok := executor.(InputReceiver); ok {
+			if ir, ok := executor.(harnesstype.InputReceiver); ok {
 				_, _ = ir.WriteInput(keyBytes)
 
 				break
@@ -566,7 +562,7 @@ func (r *embeddedRuntime) handleCtrlC() bool {
 	r.lastCtrlCAt = now
 
 	if executor, ok := r.executors[r.jobs.CurrentJobHarnessType()]; ok {
-		if ih, ok := executor.(InterruptHandler); ok {
+		if ih, ok := executor.(harnesstype.InterruptHandler); ok {
 			_ = ih.Interrupt()
 		}
 	}
@@ -574,11 +570,6 @@ func (r *embeddedRuntime) handleCtrlC() bool {
 	r.infof("Interrupt sent to agent. Press Ctrl+C again within %s to exit watch mode.", r.ctrlCExitWindow.Round(time.Second))
 
 	return false
-}
-
-func (r *embeddedRuntime) toggleSidebar() {
-	r.sidebarUserOff = !r.sidebarUserOff
-	r.handleResize(r.width, r.height)
 }
 
 func (r *embeddedRuntime) updateStatusLoop() {
@@ -603,12 +594,12 @@ func (r *embeddedRuntime) handleResize(width, height int) {
 
 	width, height = clampTerminalSize(width, height)
 	r.width, r.height = width, height
-	r.frame = layout.ComputeFrame(width, height, !r.sidebarUserOff)
+	r.frame = layout.ComputeFrame(width, height, true)
 	r.vt.Resize(r.frame.PaneWidth, layout.PtyRowsForFrame(r.frame))
 
 	rows := layout.PtyRowsForFrame(r.frame)
 	for _, executor := range r.executors {
-		if rs, ok := executor.(Resizable); ok {
+		if rs, ok := executor.(harnesstype.Resizable); ok {
 			rs.Resize(rows, r.frame.PaneWidth)
 		}
 	}
@@ -688,12 +679,7 @@ func (r *embeddedRuntime) renderTopBar() {
 		spans = append(spans, styledSpan{"  Job: " + snap.JobID, barStyle})
 	}
 
-	hints := []string{"^C Int", "^S Copy", "^Q Quit"}
-	if snap.SidebarAvailable {
-		hints = append([]string{"^G Sidebar"}, hints...)
-	}
-
-	right := strings.Join(hints, " | ")
+	right := "^C Int | ^S Copy | ^Q Quit"
 
 	// Calculate left width for fitting.
 	leftWidth := 0
@@ -889,7 +875,6 @@ func (r *embeddedRuntime) statusSnapshot() harnessstate.Snapshot {
 		Width:              r.width,
 		Height:             r.height,
 		SidebarVisible:     frame.SidebarVisible,
-		SidebarAvailable:   true,
 		SidebarWidth:       frame.SidebarWidth,
 		PaneXStart:         frame.PaneXStart,
 		PaneWidth:          frame.PaneWidth,

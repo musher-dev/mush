@@ -1,0 +1,29 @@
+name: cursor
+displayName: Cursor Agent
+description: Cursor coding agent CLI
+binary: cursor-agent
+
+directories:
+  project: .cursor
+  user: ~/.cursor
+
+bundleDir:
+  mode: cwd
+
+assets:
+  skillDir: .cursor/rules
+  agentDir: .cursor/agents
+  toolConfigFile: .cursor/agent.json
+
+mcp:
+  format: json
+  configPath: .cursor/agent.json
+
+status:
+  versionArgs: ["--version"]
+  installHint: "npm install -g @cursor/agent"
+  installCommand: ["npm", "install", "-g", "@cursor/agent"]
+  configDir: "~/.cursor"
+  authCheck:
+    path: "~/.cursor/credentials.json"
+    description: "Credentials"

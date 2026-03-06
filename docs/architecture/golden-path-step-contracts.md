@@ -60,7 +60,7 @@ This contract defines the hardened CLI golden path in this repository.
   - Claimed job can be released safely
 - Invariants:
   - Required response fields are contract-tested in CI
-  - CLI/API boundary changes must keep backward-compatible decoding
+  - CLI/API boundary changes must preserve contract decoding for existing payloads
 
 ## Contract Fixtures
 
