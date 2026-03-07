@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.11.0](https://github.com/musher-dev/mush/compare/v3.10.0...v3.11.0) (2026-03-07)
+
+
+### Features
+
+* **update:** add staged background auto-update agent ([#94](https://github.com/musher-dev/mush/issues/94)) ([6728a7e](https://github.com/musher-dev/mush/commit/6728a7e5b00b53d5aa65e311401b9d062120d699))
+
 ## [3.10.0](https://github.com/musher-dev/mush/compare/v3.9.0...v3.10.0) (2026-03-07)
 
 
