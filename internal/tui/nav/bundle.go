@@ -2,9 +2,12 @@ package nav
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+
+	"github.com/musher-dev/mush/internal/client"
 )
 
 // renderBundleInput renders the bundle reference input screen.
@@ -224,14 +227,15 @@ func renderBundleAction(mdl *model) string {
 	installBtn := renderButton(&mdl.styles, "Install", mdl.bundleAction.buttonIdx == 1)
 	buttons := lipgloss.JoinHorizontal(lipgloss.Center, runBtn, "  ", installBtn)
 
+	contentsSection := renderBundleContents(&mdl.styles, mdl.bundleAction.layers, mdl.styles.layout, mdl.styles.menuWidth)
+
 	lines := []string{
 		renderStatusDot(&mdl.styles.statusOK, "Bundle ready"),
 		"",
 		mdl.styles.sectionTitle.Render("Bundle"),
 		mdl.styles.progressText.Render(mdl.bundleAction.namespace + "/" + mdl.bundleAction.slug + " v" + mdl.bundleAction.version),
 		"",
-		mdl.styles.sectionTitle.Render("Cached at"),
-		mdl.styles.placeholder.Render(mdl.bundleAction.cachePath),
+		contentsSection,
 		"",
 		buttons,
 	}
@@ -380,4 +384,133 @@ func renderBundleError(mdl *model) string {
 		mdl.bundleError.hint,
 		mdl.bundleError.buttonIdx,
 	)
+}
+
+// assetGroup holds aggregated info for one asset type.
+type assetGroup struct {
+	label string
+	order int
+	count int
+	size  int64
+	paths []string
+}
+
+// assetTypeInfo maps asset type strings to display labels and sort order.
+var assetTypeInfo = map[string]struct {
+	label string
+	order int
+}{
+	"skill":            {label: "Skills", order: 1},
+	"agent_definition": {label: "Agents", order: 2},
+	"tool_config":      {label: "Tools", order: 3},
+}
+
+// groupLayers groups bundle layers by asset type, sorted by fixed order.
+func groupLayers(layers []client.BundleLayer) []assetGroup {
+	grouped := make(map[string]*assetGroup)
+
+	for _, layer := range layers {
+		info, ok := assetTypeInfo[layer.AssetType]
+		if !ok {
+			info = struct {
+				label string
+				order int
+			}{label: layer.AssetType, order: 99} //nolint:mnd // unknown types sort last
+		}
+
+		group, exists := grouped[layer.AssetType]
+		if !exists {
+			group = &assetGroup{label: info.label, order: info.order}
+			grouped[layer.AssetType] = group
+		}
+
+		group.count++
+		group.size += layer.SizeBytes
+		group.paths = append(group.paths, layer.LogicalPath)
+	}
+
+	result := make([]assetGroup, 0, len(grouped))
+	for _, group := range grouped {
+		result = append(result, *group)
+	}
+
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].order < result[j].order
+	})
+
+	return result
+}
+
+// formatBytes returns a human-readable size string.
+func formatBytes(n int64) string {
+	const (
+		kiloByte = 1024
+		megaByte = 1024 * 1024
+	)
+
+	switch {
+	case n >= megaByte:
+		return fmt.Sprintf("%.1f MB", float64(n)/float64(megaByte))
+	case n >= kiloByte:
+		return fmt.Sprintf("%.1f KB", float64(n)/float64(kiloByte))
+	default:
+		return fmt.Sprintf("%d B", n)
+	}
+}
+
+// maxPathsShown is the maximum number of file paths shown per group before truncation.
+const maxPathsShown = 3
+
+// renderBundleContents renders the Contents section for the bundle action screen.
+func renderBundleContents(styles *theme, layers []client.BundleLayer, layout layoutMode, availWidth int) string {
+	title := styles.sectionTitle.Render("Contents")
+
+	if len(layers) == 0 {
+		return title + "\n" + styles.placeholder.Render("No assets")
+	}
+
+	groups := groupLayers(layers)
+	lines := []string{title}
+
+	// Available width for content inside the panel (minus border/padding).
+	contentWidth := availWidth - 8 //nolint:mnd // border + padding
+	if contentWidth < 20 {         //nolint:mnd // minimum usable width
+		contentWidth = 20
+	}
+
+	for _, group := range groups {
+		// Group header: "Skills (2)                   1.8 KB"
+		header := fmt.Sprintf("%s (%d)", group.label, group.count)
+		sizeStr := formatBytes(group.size)
+
+		pad := contentWidth - lipgloss.Width(header) - lipgloss.Width(sizeStr)
+		if pad < 1 {
+			pad = 1
+		}
+
+		headerLine := styles.sectionTitle.Render(header) + strings.Repeat(" ", pad) + styles.placeholder.Render(sizeStr)
+		lines = append(lines, headerLine)
+
+		// File paths (skip in compact/minimal layouts).
+		if layout >= layoutSingle {
+			showCount := len(group.paths)
+			truncated := false
+
+			if showCount > maxPathsShown {
+				showCount = maxPathsShown - 1 // show N-1 + "more" line
+				truncated = true
+			}
+
+			for _, path := range group.paths[:showCount] {
+				lines = append(lines, styles.placeholder.Render("  "+path))
+			}
+
+			if truncated {
+				remaining := len(group.paths) - showCount
+				lines = append(lines, styles.placeholder.Render(fmt.Sprintf("  +%d more", remaining)))
+			}
+		}
+	}
+
+	return strings.Join(lines, "\n")
 }

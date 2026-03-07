@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/musher-dev/mush/internal/bundle"
+	"github.com/musher-dev/mush/internal/client"
 )
 
 // handleBundleListLoaded processes the async-loaded recent/installed bundle lists.
@@ -506,11 +507,17 @@ func isForbiddenError(err error) bool {
 
 // handleBundleCacheHit processes a cache hit.
 func (m *model) handleBundleCacheHit(msg bundleCacheHitMsg) (tea.Model, tea.Cmd) {
+	var layers []client.BundleLayer
+	if manifest, err := loadManifestFromCache(msg.cachePath); err == nil {
+		layers = manifest.Manifest.Layers
+	}
+
 	m.bundleAction = bundleActionState{
 		namespace: m.bundleProgress.namespace,
 		slug:      m.bundleProgress.slug,
 		version:   m.bundleProgress.version,
 		cachePath: msg.cachePath,
+		layers:    layers,
 	}
 
 	// Replace progress screen with action choice.
@@ -530,11 +537,17 @@ func (m *model) handleBundleDownloadProgress(msg bundleDownloadProgressMsg) (tea
 
 // handleBundleDownloadComplete processes download completion.
 func (m *model) handleBundleDownloadComplete(msg bundleDownloadCompleteMsg) (tea.Model, tea.Cmd) {
+	var layers []client.BundleLayer
+	if manifest, err := loadManifestFromCache(msg.cachePath); err == nil {
+		layers = manifest.Manifest.Layers
+	}
+
 	m.bundleAction = bundleActionState{
 		namespace: m.bundleProgress.namespace,
 		slug:      m.bundleProgress.slug,
 		version:   m.bundleProgress.version,
 		cachePath: msg.cachePath,
+		layers:    layers,
 	}
 
 	// Replace progress screen with action choice.

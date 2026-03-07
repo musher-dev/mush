@@ -61,8 +61,8 @@ func TestInstallFromCache_CodexIndividualAgentsAndToolConfig(t *testing.T) {
 		t.Fatalf("InstallFromCache() installed %d paths, want 4", len(installed))
 	}
 
-	// Verify individual agent files.
-	for _, name := range []string{"agents/researcher.md", "agents/reviewer.md"} {
+	// Verify individual agent files (agents/ prefix is stripped by stripMatchingPrefix).
+	for _, name := range []string{"researcher.md", "reviewer.md"} {
 		agentPath := filepath.Join(workDir, ".codex", "agents", name)
 
 		if _, statErr := os.Stat(agentPath); statErr != nil {
@@ -94,7 +94,7 @@ func TestInstallFromCache_Conflict(t *testing.T) {
 		t.Fatalf("WriteFile(cache) error = %v", err)
 	}
 
-	existingPath := filepath.Join(workDir, ".claude", "skills", "skills", "web", "SKILL.md")
+	existingPath := filepath.Join(workDir, ".claude", "skills", "web", "SKILL.md")
 	if err := os.MkdirAll(filepath.Dir(existingPath), 0o755); err != nil {
 		t.Fatalf("MkdirAll(existing) error = %v", err)
 	}
@@ -184,7 +184,7 @@ func TestInjectAssetsForLoad_HappyPath(t *testing.T) {
 		t.Fatalf("agent content = %q, want %q", string(data), "Agent content")
 	}
 
-	skillPath := filepath.Join(projectDir, ".claude", "skills", "skills", "web", "SKILL.md")
+	skillPath := filepath.Join(projectDir, ".claude", "skills", "web", "SKILL.md")
 
 	data, err = os.ReadFile(skillPath)
 	if err != nil {
@@ -383,8 +383,8 @@ func TestInjectAssetsForLoad_NestedLogicalPath(t *testing.T) {
 		t.Fatalf("InjectAssetsForLoad() injected %d, want 1", len(injected))
 	}
 
-	// Should be at .claude/agents/agents/shaping-architect.md (mapper joins AgentDir + LogicalPath).
-	targetPath := filepath.Join(projectDir, ".claude", "agents", "agents", "shaping-architect.md")
+	// Should be at .claude/agents/shaping-architect.md (agents/ prefix stripped by stripMatchingPrefix).
+	targetPath := filepath.Join(projectDir, ".claude", "agents", "shaping-architect.md")
 
 	data, err := os.ReadFile(targetPath)
 	if err != nil {
@@ -459,7 +459,7 @@ func TestInjectAssetsForLoad_SkillFrontmatterWarning(t *testing.T) {
 	}
 
 	// Verify the injected file has repaired content.
-	skillPath := filepath.Join(projectDir, ".claude", "skills", "skills", "bad", "SKILL.md")
+	skillPath := filepath.Join(projectDir, ".claude", "skills", "bad", "SKILL.md")
 
 	data, readErr := os.ReadFile(skillPath)
 	if readErr != nil {

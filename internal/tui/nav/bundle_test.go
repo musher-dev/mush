@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/musher-dev/mush/internal/client"
 )
 
 func TestBundleInputScreen(t *testing.T) {
@@ -599,7 +601,7 @@ func TestBundleScreenViews(t *testing.T) {
 					slug: "test", version: "1.0.0", cachePath: "/tmp/test",
 				}
 			},
-			check: "ready",
+			check: "Contents",
 		},
 		{
 			name:   "harness",
@@ -649,5 +651,181 @@ func TestBundleScreenViews(t *testing.T) {
 				t.Errorf("view for %s should contain %q", test.name, test.check)
 			}
 		})
+	}
+}
+
+func TestFormatBytes(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		input int64
+		want  string
+	}{
+		{0, "0 B"},
+		{512, "512 B"},
+		{1023, "1023 B"},
+		{1024, "1.0 KB"},
+		{1843, "1.8 KB"},
+		{1048576, "1.0 MB"},
+		{2200000, "2.1 MB"},
+	}
+
+	for _, tt := range tests {
+		got := formatBytes(tt.input)
+		if got != tt.want {
+			t.Errorf("formatBytes(%d) = %q, want %q", tt.input, got, tt.want)
+		}
+	}
+}
+
+func TestGroupLayers(t *testing.T) {
+	t.Parallel()
+
+	layers := []client.BundleLayer{
+		{AssetType: "skill", LogicalPath: "skills/web/SKILL.md", SizeBytes: 1024},
+		{AssetType: "skill", LogicalPath: "skills/api/SKILL.md", SizeBytes: 800},
+		{AssetType: "agent_definition", LogicalPath: "agents/tools.yaml", SizeBytes: 420},
+		{AssetType: "tool_config", LogicalPath: "tools/mcp.json", SizeBytes: 2100},
+	}
+
+	groups := groupLayers(layers)
+
+	if len(groups) != 3 {
+		t.Fatalf("got %d groups, want 3", len(groups))
+	}
+
+	// Check ordering: Skills, Agents, Tools.
+	if groups[0].label != "Skills" {
+		t.Errorf("groups[0].label = %q, want Skills", groups[0].label)
+	}
+
+	if groups[1].label != "Agents" {
+		t.Errorf("groups[1].label = %q, want Agents", groups[1].label)
+	}
+
+	if groups[2].label != "Tools" {
+		t.Errorf("groups[2].label = %q, want Tools", groups[2].label)
+	}
+
+	// Check aggregation.
+	if groups[0].count != 2 {
+		t.Errorf("Skills count = %d, want 2", groups[0].count)
+	}
+
+	if groups[0].size != 1824 {
+		t.Errorf("Skills size = %d, want 1824", groups[0].size)
+	}
+
+	if len(groups[0].paths) != 2 {
+		t.Errorf("Skills paths len = %d, want 2", len(groups[0].paths))
+	}
+}
+
+func TestGroupLayersEmpty(t *testing.T) {
+	t.Parallel()
+
+	groups := groupLayers(nil)
+	if len(groups) != 0 {
+		t.Errorf("expected 0 groups for nil layers, got %d", len(groups))
+	}
+}
+
+func TestRenderBundleContentsEmpty(t *testing.T) {
+	t.Parallel()
+
+	styles := newTheme(80)
+	result := renderBundleContents(&styles, nil, layoutSingle, 60)
+
+	if !strings.Contains(result, "Contents") {
+		t.Error("should contain 'Contents' title")
+	}
+
+	if !strings.Contains(result, "No assets") {
+		t.Error("should contain 'No assets' placeholder")
+	}
+}
+
+func TestRenderBundleContentsSingleType(t *testing.T) {
+	t.Parallel()
+
+	styles := newTheme(80)
+	layers := []client.BundleLayer{
+		{AssetType: "skill", LogicalPath: "skills/web/SKILL.md", SizeBytes: 1024},
+	}
+
+	result := renderBundleContents(&styles, layers, layoutSingle, 60)
+
+	if !strings.Contains(result, "Skills (1)") {
+		t.Error("should contain 'Skills (1)'")
+	}
+
+	if !strings.Contains(result, "skills/web/SKILL.md") {
+		t.Error("should contain the file path")
+	}
+}
+
+func TestRenderBundleContentsMultiType(t *testing.T) {
+	t.Parallel()
+
+	styles := newTheme(80)
+	layers := []client.BundleLayer{
+		{AssetType: "skill", LogicalPath: "skills/web/SKILL.md", SizeBytes: 1024},
+		{AssetType: "agent_definition", LogicalPath: "agents/tools.yaml", SizeBytes: 420},
+		{AssetType: "tool_config", LogicalPath: "tools/mcp.json", SizeBytes: 2100},
+	}
+
+	result := renderBundleContents(&styles, layers, layoutSingle, 60)
+
+	if !strings.Contains(result, "Skills (1)") {
+		t.Error("should contain 'Skills (1)'")
+	}
+
+	if !strings.Contains(result, "Agents (1)") {
+		t.Error("should contain 'Agents (1)'")
+	}
+
+	if !strings.Contains(result, "Tools (1)") {
+		t.Error("should contain 'Tools (1)'")
+	}
+}
+
+func TestRenderBundleContentsTruncation(t *testing.T) {
+	t.Parallel()
+
+	styles := newTheme(80)
+	layers := []client.BundleLayer{
+		{AssetType: "skill", LogicalPath: "skills/a/SKILL.md", SizeBytes: 100},
+		{AssetType: "skill", LogicalPath: "skills/b/SKILL.md", SizeBytes: 100},
+		{AssetType: "skill", LogicalPath: "skills/c/SKILL.md", SizeBytes: 100},
+		{AssetType: "skill", LogicalPath: "skills/d/SKILL.md", SizeBytes: 100},
+	}
+
+	result := renderBundleContents(&styles, layers, layoutSingle, 60)
+
+	if !strings.Contains(result, "Skills (4)") {
+		t.Error("should contain 'Skills (4)'")
+	}
+
+	if !strings.Contains(result, "+2 more") {
+		t.Error("should contain '+2 more' truncation line")
+	}
+}
+
+func TestRenderBundleContentsCompactNoPaths(t *testing.T) {
+	t.Parallel()
+
+	styles := newTheme(50)
+	layers := []client.BundleLayer{
+		{AssetType: "skill", LogicalPath: "skills/web/SKILL.md", SizeBytes: 1024},
+	}
+
+	result := renderBundleContents(&styles, layers, layoutCompact, 50)
+
+	if !strings.Contains(result, "Skills (1)") {
+		t.Error("should contain group header")
+	}
+
+	if strings.Contains(result, "skills/web/SKILL.md") {
+		t.Error("compact layout should not contain file paths")
 	}
 }

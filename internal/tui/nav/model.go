@@ -146,7 +146,8 @@ type bundleActionState struct {
 	slug      string
 	version   string
 	cachePath string
-	buttonIdx int // 0=Run, 1=Install
+	buttonIdx int                  // 0=Run, 1=Install
+	layers    []client.BundleLayer // asset manifest layers
 }
 
 // bundleHarnessState holds state for the harness selection screen (shared by Run and Install).
@@ -515,11 +516,17 @@ func newModel(ctx context.Context, deps *Dependencies) *model {
 
 	// If a bundle seed is provided, start directly at the action screen.
 	if deps != nil && deps.InitialBundle != nil {
+		var layers []client.BundleLayer
+		if manifest, err := loadManifestFromCache(deps.InitialBundle.CachePath); err == nil {
+			layers = manifest.Manifest.Layers
+		}
+
 		mdl.bundleAction = bundleActionState{
 			namespace: deps.InitialBundle.Namespace,
 			slug:      deps.InitialBundle.Slug,
 			version:   deps.InitialBundle.Version,
 			cachePath: deps.InitialBundle.CachePath,
+			layers:    layers,
 		}
 		mdl.activeScreen = screenBundleAction
 		mdl.screenStack = []screen{screenHome}

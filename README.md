@@ -1,11 +1,22 @@
-# Mush
+<div align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/musher-dev/brand/main/dist/logo/svg/musher-logo-mark-light.svg" />
+    <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/musher-dev/brand/main/dist/logo/svg/musher-logo-mark-dark.svg" />
+    <img alt="Mush" src="https://raw.githubusercontent.com/musher-dev/brand/main/dist/logo/svg/musher-logo-mark-dark.svg" height="80" />
+  </picture>
+  <h3>Portable agent bundles for local coding agents.</h3>
 
-[![CI](https://github.com/musher-dev/mush/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/musher-dev/mush/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/musher-dev/mush)](https://github.com/musher-dev/mush/releases)
-[![Go](https://img.shields.io/github/go-mod/go-version/musher-dev/mush)](https://go.dev/)
-[![License](https://img.shields.io/github/license/musher-dev/mush)](./LICENSE)
+  <a href="https://github.com/musher-dev/mush/actions/workflows/ci.yml"><img src="https://github.com/musher-dev/mush/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI" /></a>
+  <a href="https://github.com/musher-dev/mush/releases"><img src="https://img.shields.io/github/v/release/musher-dev/mush" alt="Release" /></a>
+  <a href="https://go.dev/"><img src="https://img.shields.io/github/go-mod/go-version/musher-dev/mush" alt="Go" /></a>
+  <a href="./LICENSE"><img src="https://img.shields.io/github/license/musher-dev/mush" alt="License" /></a>
 
-Portable agent bundles for local coding agents.
+  <p>
+    <a href="https://docs.musher.dev">Documentation</a> ·
+    <a href="https://hub.musher.dev">Musher Hub</a> ·
+    <a href="https://discord.gg/SaVMzMgX2c">Discord</a>
+  </p>
+</div>
 
 ![Mush CLI Demo](docs/vhs/gif/demo.gif)
 
@@ -36,6 +47,13 @@ go install github.com/musher-dev/mush/cmd/mush@latest
 ```
 
 </details>
+
+Installer telemetry controls:
+
+- `MUSH_INSTALL_TRACKING=0` disables install tracking.
+- `MUSH_INSTALL_API_BASE_URL` overrides the telemetry/API host (default: `https://api.musher.dev`).
+- `MUSH_INSTALL_TRACKING_TIMEOUT` sets tracking request timeout in seconds (default: `2`).
+- `MUSH_INSTALL_DEVICE_ID` provides a custom stable device seed (hashed before sending).
 
 ## Quick Start
 
