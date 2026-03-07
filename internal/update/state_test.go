@@ -110,7 +110,7 @@ func TestShouldCheck_Fresh(t *testing.T) {
 	state := &State{
 		LastCheckedAt: time.Now(),
 	}
-	if state.ShouldCheck() {
+	if state.ShouldCheck(24 * time.Hour) {
 		t.Error("ShouldCheck returned true for fresh state")
 	}
 }
@@ -119,14 +119,14 @@ func TestShouldCheck_Stale(t *testing.T) {
 	state := &State{
 		LastCheckedAt: time.Now().Add(-25 * time.Hour),
 	}
-	if !state.ShouldCheck() {
+	if !state.ShouldCheck(24 * time.Hour) {
 		t.Error("ShouldCheck returned false for stale state")
 	}
 }
 
 func TestShouldCheck_ZeroTime(t *testing.T) {
 	state := &State{}
-	if !state.ShouldCheck() {
+	if !state.ShouldCheck(24 * time.Hour) {
 		t.Error("ShouldCheck returned false for zero-time state")
 	}
 }
@@ -189,6 +189,78 @@ func TestHasUpdate(t *testing.T) {
 				t.Errorf("HasUpdate(%q) = %v, want %v", tt.current, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestHasStagedUpdate(t *testing.T) {
+	tests := []struct {
+		name    string
+		state   State
+		current string
+		want    bool
+	}{
+		{
+			name:    "staged newer",
+			state:   State{StagedVersion: "2.0.0"},
+			current: "1.0.0",
+			want:    true,
+		},
+		{
+			name:    "staged same",
+			state:   State{StagedVersion: "1.0.0"},
+			current: "1.0.0",
+			want:    false,
+		},
+		{
+			name:    "staged older",
+			state:   State{StagedVersion: "0.9.0"},
+			current: "1.0.0",
+			want:    false,
+		},
+		{
+			name:    "empty staged",
+			state:   State{},
+			current: "1.0.0",
+			want:    false,
+		},
+		{
+			name:    "invalid staged",
+			state:   State{StagedVersion: "bad"},
+			current: "1.0.0",
+			want:    false,
+		},
+		{
+			name:    "invalid current",
+			state:   State{StagedVersion: "2.0.0"},
+			current: "dev",
+			want:    false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.state.HasStagedUpdate(tt.current)
+			if got != tt.want {
+				t.Errorf("HasStagedUpdate(%q) = %v, want %v", tt.current, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestClearStaged(t *testing.T) {
+	state := State{
+		StagedVersion: "2.0.0",
+		StagedAt:      time.Now(),
+	}
+
+	state.ClearStaged()
+
+	if state.StagedVersion != "" {
+		t.Errorf("StagedVersion = %q, want empty", state.StagedVersion)
+	}
+
+	if !state.StagedAt.IsZero() {
+		t.Errorf("StagedAt = %v, want zero", state.StagedAt)
 	}
 }
 

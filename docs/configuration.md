@@ -66,6 +66,8 @@ Mush reads `config.yaml` from the config root. The file is created automatically
 | `history.dir` | string | `<state root>/history` | `MUSH_HISTORY_DIR` | Transcript storage directory |
 | `history.scrollback_lines` | int | `10000` | `MUSH_HISTORY_SCROLLBACK_LINES` | In-memory scrollback ring buffer size (lines) |
 | `history.retention` | duration | `720h` (30 days) | `MUSH_HISTORY_RETENTION` | Retention period for `mush history prune` |
+| `update.auto_apply` | bool | `true` | `MUSH_UPDATE_AUTO_APPLY` | Enable staged background auto-apply on future runs |
+| `update.check_interval` | duration | `24h` | `MUSH_UPDATE_CHECK_INTERVAL` | Background update check cadence |
 
 Environment variables use the `MUSH_` prefix with dots replaced by underscores (e.g., `api.url` becomes `MUSH_API_URL`). Environment variables take precedence over the config file.
 
@@ -266,13 +268,21 @@ Mush caches the result of update checks in `<state root>/update-check.json` to a
   "lastCheckedAt": "2026-01-15T10:30:00Z",
   "latestVersion": "3.1.0",
   "currentVersion": "3.0.0",
-  "releaseURL": "https://github.com/musher-dev/mush/releases/tag/v3.1.0"
+  "releaseURL": "https://github.com/musher-dev/mush/releases/tag/v3.1.0",
+  "stagedVersion": "3.1.0",
+  "stagedAt": "2026-01-15T10:30:00Z",
+  "lastApplyAttemptAt": "2026-01-16T08:15:00Z",
+  "lastApplyError": "",
+  "installSource": "standalone",
+  "autoApplyBlockedReason": ""
 }
 ```
 
 ### Behavior
 
-- Mush checks for updates at most once every **24 hours**.
+- Mush checks for updates on a configurable cadence (`update.check_interval`, default: **24h**).
+- When an update is detected, Mush stages it in state for a future background apply.
+- Auto-apply runs only for standalone installs; managed installs (for example Homebrew) stay notify-only.
 - The state file is written atomically (temp file + rename) to prevent corruption from concurrent processes.
 - If the file is missing or corrupted, Mush treats it as empty and performs a fresh check.
 - Set `MUSH_UPDATE_DISABLED=1` to disable all update checks.
@@ -321,6 +331,8 @@ Summary of all environment variables that affect Mush behavior:
 | `MUSH_HISTORY_ENABLED` | Enable/disable transcript history |
 | `MUSH_HISTORY_SCROLLBACK_LINES` | In-memory scrollback ring buffer size |
 | `MUSH_HISTORY_RETENTION` | History retention period (Go duration, e.g., `720h`) |
+| `MUSH_UPDATE_AUTO_APPLY` | Enable/disable staged background auto-apply (`true`/`false`) |
+| `MUSH_UPDATE_CHECK_INTERVAL` | Background update check interval (Go duration, e.g., `24h`) |
 | `MUSH_WORKER_POLL_INTERVAL` | Job poll interval (Go duration, e.g., `30s`) |
 | `MUSH_WORKER_HEARTBEAT_INTERVAL` | Heartbeat interval (Go duration, e.g., `30s`) |
 | `MUSH_TUI` | Enable/disable interactive TUI for bare `mush` (`true` or `false`) |

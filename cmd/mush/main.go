@@ -5,12 +5,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/url"
 	"os"
 	"os/exec"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/fatih/color"
@@ -328,21 +328,14 @@ Get started:  mush bundle load`,
 				})
 			}
 
-			// Launch background update check; tracked by updateWg so PostRunE
-			// can wait for the state file write before reading it.
+			// Launch detached background update agent.
 			if shouldBackgroundCheck(cmd, version, quiet, jsonOutput) {
-				updateWg.Go(func() {
-					backgroundUpdateCheck(version)
-				})
+				launchDetachedUpdateAgent()
 			}
 
 			return nil
 		},
 		PersistentPostRunE: func(cmd *cobra.Command, args []string) error {
-			// Wait for the background update goroutine to finish writing
-			// the state file so we can read fresh results.
-			updateWg.Wait()
-
 			if shouldShowUpdateNotice(cmd, version, quiet, jsonOutput) {
 				showUpdateNotice(out, version)
 			}
@@ -429,6 +422,8 @@ Get started:  mush bundle load`,
 	updateCmd := newUpdateCmd()
 	updateCmd.GroupID = "setup"
 	rootCmd.AddCommand(updateCmd)
+
+	rootCmd.AddCommand(newUpdateAgentCmd())
 
 	pathsCmd := newPathsCmd()
 	pathsCmd.GroupID = "setup"
@@ -608,16 +603,13 @@ func newVersionCmd() *cobra.Command {
 	}
 }
 
-// updateWg tracks the background update goroutine so PersistentPostRunE can
-// wait for it to finish writing the state file before reading it.
-var updateWg sync.WaitGroup
-
 // skipUpdateCommands are commands that should not trigger background checks or show update notifications.
 var skipUpdateCommands = map[string]bool{
 	"update":     true,
 	"version":    true,
 	"completion": true,
 	"doctor":     true,
+	"__ua":       true,
 }
 
 // shouldBackgroundCheck returns true if a background update check should be launched.
@@ -629,36 +621,23 @@ func shouldBackgroundCheck(cmd *cobra.Command, ver string, quiet, jsonOut bool) 
 	return !skipUpdateCommands[cmd.Name()]
 }
 
-// backgroundUpdateCheck performs the update check in a goroutine and saves state.
-func backgroundUpdateCheck(currentVersion string) {
-	state, err := update.LoadState()
+func launchDetachedUpdateAgent() {
+	execPath, err := os.Executable()
 	if err != nil {
 		return
 	}
 
-	if !state.ShouldCheck() {
+	cmd := exec.CommandContext(context.Background(), execPath, "__ua", "--quiet", "--no-input", "--no-color") //nolint:gosec // internal self-spawn
+	cmd.Stdout = io.Discard
+	cmd.Stderr = io.Discard
+
+	if err := cmd.Start(); err != nil {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	updater, err := update.NewUpdater()
-	if err != nil {
-		return
-	}
-
-	info, err := updater.CheckLatest(ctx, currentVersion)
-	if err != nil {
-		return
-	}
-
-	_ = update.SaveState(&update.State{
-		LastCheckedAt:  time.Now(),
-		LatestVersion:  info.LatestVersion,
-		CurrentVersion: currentVersion,
-		ReleaseURL:     info.ReleaseURL,
-	})
+	go func() {
+		_ = cmd.Wait()
+	}()
 }
 
 // shouldShowUpdateNotice returns true if an update notice should be shown after command execution.
@@ -680,6 +659,20 @@ func showUpdateNotice(out *output.Writer, currentVersion string) {
 	if state.HasUpdate(currentVersion) {
 		out.Print("\n")
 		out.Info("A new version of mush is available: v%s → v%s", currentVersion, state.LatestVersion)
+
+		source := update.InstallSource(state.InstallSource)
+		if state.AutoApplyBlockedReason == "managed_install" {
+			if hint := update.UpgradeHint(source); hint != "" {
+				out.Muted("  Installed via %s. Run '%s'", state.InstallSource, hint)
+				return
+			}
+		}
+
+		if state.StagedVersion != "" && state.AutoApplyBlockedReason == "" {
+			out.Muted("  Update staged in background and will apply on a future run")
+			return
+		}
+
 		out.Muted("  Run 'mush update' to update")
 	}
 }
