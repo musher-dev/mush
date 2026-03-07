@@ -314,6 +314,7 @@ func (m *model) hubInstallSelected() (tea.Model, tea.Cmd) {
 			hint:      "This bundle has no published versions yet — check back later",
 			namespace: selected.Publisher.Handle,
 			slug:      selected.Slug,
+			buttonIdx: 1, // Default to Back — retry would hit the same 404.
 		}
 
 		m.pushScreen(screenBundleError)
@@ -338,6 +339,7 @@ func (m *model) hubInstallFromDetail() (tea.Model, tea.Cmd) {
 			hint:      "This bundle has no published versions yet — check back later",
 			namespace: detail.Publisher.Handle,
 			slug:      detail.Slug,
+			buttonIdx: 1, // Default to Back — retry would hit the same 404.
 		}
 
 		m.pushScreen(screenBundleError)

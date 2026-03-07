@@ -616,6 +616,10 @@ func TestHubInstallSelectedEmptyVersionShowsError(t *testing.T) {
 	if !strings.Contains(mdl.bundleError.message, "No published versions") {
 		t.Errorf("error message = %q, want to contain 'No published versions'", mdl.bundleError.message)
 	}
+
+	if mdl.bundleError.buttonIdx != 1 {
+		t.Errorf("buttonIdx = %d, want 1 (Back) — retry would hit the same 404", mdl.bundleError.buttonIdx)
+	}
 }
 
 func TestHubInstallFromDetailEmptyVersionShowsError(t *testing.T) {
@@ -640,6 +644,10 @@ func TestHubInstallFromDetailEmptyVersionShowsError(t *testing.T) {
 
 	if !strings.Contains(mdl.bundleError.message, "No published versions") {
 		t.Errorf("error message = %q, want to contain 'No published versions'", mdl.bundleError.message)
+	}
+
+	if mdl.bundleError.buttonIdx != 1 {
+		t.Errorf("buttonIdx = %d, want 1 (Back) — retry would hit the same 404", mdl.bundleError.buttonIdx)
 	}
 }
 
