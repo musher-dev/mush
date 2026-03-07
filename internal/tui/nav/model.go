@@ -249,8 +249,6 @@ type workerErrorState struct {
 // hubExploreState holds state for the hub explore screen.
 type hubExploreState struct {
 	searchInput  textinput.Model
-	categories   []client.HubCategory
-	categoryCur  int // -1=All, 0..N for categories
 	loading      bool
 	spinner      spinner.Model
 	query        string // committed search query
@@ -261,7 +259,7 @@ type hubExploreState struct {
 	hasMore      bool
 	results      []client.HubBundleSummary
 	resultCur    int // cursor in results list
-	focusArea    int // 0=search, 1=categories, 2=list
+	focusArea    int // 0=search, 1=list
 	errorMsg     string
 }
 
@@ -478,7 +476,6 @@ func newModel(ctx context.Context, deps *Dependencies) *model {
 		ctxInfo:      contextInfo{loading: true},
 		hubExplore: hubExploreState{
 			searchInput: hubSearchInput,
-			categoryCur: -1,
 			spinner:     hubExploreSpinner,
 		},
 		hubDetail: hubDetailState{
@@ -687,9 +684,6 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case hubDetailErrorMsg:
 		return m.handleHubDetailError(msg)
-
-	case hubCategoriesLoadedMsg:
-		return m.handleHubCategoriesLoaded(msg)
 
 	case hubDebounceTickMsg:
 		return m.handleHubDebounceTick(msg)
@@ -1003,7 +997,6 @@ func (m *model) activateMenuItem(idx int) (tea.Model, tea.Cmd) {
 
 		m.hubExplore = hubExploreState{
 			searchInput: searchField,
-			categoryCur: -1,
 			loading:     true,
 			spinner:     m.hubExplore.spinner,
 			searchID:    m.hubExplore.searchID + 1,
@@ -1016,7 +1009,6 @@ func (m *model) activateMenuItem(idx int) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(
 			m.hubExplore.spinner.Tick,
 			cmdSearchHub(m.ctx, baseURL, "", "", "trending", hubSearchLimit, "", false, m.hubExplore.searchID),
-			cmdListHubCategories(m.ctx, baseURL),
 		)
 
 	case 'h':

@@ -40,11 +40,6 @@ type hubDetailErrorMsg struct {
 	slug      string
 }
 
-// hubCategoriesLoadedMsg carries loaded hub categories.
-type hubCategoriesLoadedMsg struct {
-	categories []client.HubCategory
-}
-
 // hubDebounceTickMsg is sent after the debounce delay to trigger a search.
 type hubDebounceTickMsg struct {
 	id    int
@@ -93,21 +88,6 @@ func cmdGetHubDetail(ctx context.Context, baseURL, publisher, slug string) tea.C
 		}
 
 		return hubDetailLoadedMsg{detail: detail}
-	}
-}
-
-// cmdListHubCategories fetches hub categories.
-func cmdListHubCategories(ctx context.Context, baseURL string) tea.Cmd {
-	return func() tea.Msg {
-		c := client.New(baseURL, "")
-
-		cats, err := c.ListHubCategories(navBaseCtx(ctx))
-		if err != nil {
-			// Non-fatal: categories are optional.
-			return hubCategoriesLoadedMsg{categories: nil}
-		}
-
-		return hubCategoriesLoadedMsg{categories: cats}
 	}
 }
 

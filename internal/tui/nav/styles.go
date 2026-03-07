@@ -115,7 +115,6 @@ type theme struct {
 	progressText lipgloss.Style
 
 	// Hub
-	hubTypeBadge      lipgloss.Style
 	hubStats          lipgloss.Style
 	hubTrustVerified  lipgloss.Style
 	hubTrustCommunity lipgloss.Style
@@ -295,10 +294,6 @@ func newTheme(width int) theme {
 
 		progressText: lipgloss.NewStyle().
 			Foreground(colorText),
-
-		hubTypeBadge: lipgloss.NewStyle().
-			Foreground(colorAccentDim).
-			Bold(true),
 
 		hubStats: lipgloss.NewStyle().
 			Foreground(colorMuted),

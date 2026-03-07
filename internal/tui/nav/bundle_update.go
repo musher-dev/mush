@@ -142,7 +142,6 @@ func (m *model) activateBundleHubLink() (tea.Model, tea.Cmd) {
 
 	m.hubExplore = hubExploreState{
 		searchInput: searchField,
-		categoryCur: -1,
 		loading:     true,
 		spinner:     m.hubExplore.spinner,
 		searchID:    m.hubExplore.searchID + 1,
@@ -155,7 +154,6 @@ func (m *model) activateBundleHubLink() (tea.Model, tea.Cmd) {
 	return m, tea.Batch(
 		m.hubExplore.spinner.Tick,
 		cmdSearchHub(m.ctx, baseURL, "", "", "trending", hubSearchLimit, "", false, m.hubExplore.searchID),
-		cmdListHubCategories(m.ctx, baseURL),
 	)
 }
 
