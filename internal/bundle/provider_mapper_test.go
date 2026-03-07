@@ -57,7 +57,7 @@ func TestProviderMapper_PrepareLoad_Claude(t *testing.T) {
 		t.Fatal("agent_definition should NOT be in tmpDir for add_dir mode harness")
 	}
 
-	skillPath := filepath.Join(tmpDir, ".claude", "skills", "skills", "web", "SKILL.md")
+	skillPath := filepath.Join(tmpDir, ".claude", "skills", "web", "SKILL.md")
 	if _, statErr := os.Stat(skillPath); statErr == nil {
 		t.Fatal("skill should NOT be in tmpDir for add_dir mode harness")
 	}
@@ -72,6 +72,26 @@ func TestProviderMapper_PrepareLoad_Claude(t *testing.T) {
 
 	if len(data) == 0 {
 		t.Fatal("tool_config file is empty")
+	}
+}
+
+func TestStripMatchingPrefix(t *testing.T) {
+	tests := []struct {
+		dir, logicalPath, want string
+	}{
+		{".claude/skills", "skills/web/SKILL.md", "web/SKILL.md"},
+		{".claude/skills", "generate-skill/SKILL.md", "generate-skill/SKILL.md"},
+		{".claude/agents", "agents/test-agent.md", "test-agent.md"},
+		{".claude/agents", "researcher.md", "researcher.md"},
+		{".codex/agents", "agents/a.md", "a.md"},
+		{".codex/agents", "other/a.md", "other/a.md"},
+	}
+
+	for _, tt := range tests {
+		got := stripMatchingPrefix(tt.dir, tt.logicalPath)
+		if got != tt.want {
+			t.Errorf("stripMatchingPrefix(%q, %q) = %q, want %q", tt.dir, tt.logicalPath, got, tt.want)
+		}
 	}
 }
 

@@ -14,7 +14,7 @@ func (m *model) handleHubExploreKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case key.Matches(msg, m.keys.Tab):
-		m.hubExplore.focusArea = (m.hubExplore.focusArea + 1) % 3 //nolint:mnd // 3 focus areas
+		m.hubExplore.focusArea = (m.hubExplore.focusArea + 1) % 2 //nolint:mnd // 2 focus areas
 
 		if m.hubExplore.focusArea == 0 {
 			m.hubExplore.searchInput.Focus()
@@ -29,8 +29,6 @@ func (m *model) handleHubExploreKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case 0:
 		return m.handleHubSearchKey(msg)
 	case 1:
-		return m.handleHubCategoryKey(msg)
-	case 2: //nolint:mnd // focus area 2 = list
 		return m.handleHubListKey(msg)
 	}
 
@@ -49,11 +47,10 @@ func (m *model) handleHubSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.hubExplore.searchID++
 
 		baseURL := m.apiBaseURL()
-		bundleType := m.hubSelectedCategory()
 
 		return m, tea.Batch(
 			m.hubExplore.spinner.Tick,
-			cmdSearchHub(m.ctx, baseURL, query, bundleType, "trending", hubSearchLimit, "", false, m.hubExplore.searchID),
+			cmdSearchHub(m.ctx, baseURL, query, "", "trending", hubSearchLimit, "", false, m.hubExplore.searchID),
 		)
 	}
 
@@ -74,28 +71,6 @@ func (m *model) handleHubSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, cmd
-}
-
-// handleHubCategoryKey handles key events when categories are focused.
-func (m *model) handleHubCategoryKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	maxCat := len(m.hubExplore.categories)
-
-	switch {
-	case key.Matches(msg, m.keys.Down):
-		if m.hubExplore.categoryCur < maxCat-1 {
-			m.hubExplore.categoryCur++
-		}
-
-	case key.Matches(msg, m.keys.Up):
-		if m.hubExplore.categoryCur > -1 {
-			m.hubExplore.categoryCur--
-		}
-
-	case key.Matches(msg, m.keys.Select):
-		return m.hubApplyFilter()
-	}
-
-	return m, nil
 }
 
 // handleHubListKey handles key events when the results list is focused.
@@ -219,12 +194,6 @@ func (m *model) handleHubDetailError(msg hubDetailErrorMsg) (tea.Model, tea.Cmd)
 	return m, nil
 }
 
-func (m *model) handleHubCategoriesLoaded(msg hubCategoriesLoadedMsg) (tea.Model, tea.Cmd) {
-	m.hubExplore.categories = msg.categories
-
-	return m, nil
-}
-
 func (m *model) handleHubDebounceTick(msg hubDebounceTickMsg) (tea.Model, tea.Cmd) {
 	// Ignore stale ticks.
 	if msg.id != m.hubExplore.debounceID {
@@ -244,11 +213,10 @@ func (m *model) handleHubDebounceTick(msg hubDebounceTickMsg) (tea.Model, tea.Cm
 	m.hubExplore.searchID++
 
 	baseURL := m.apiBaseURL()
-	bundleType := m.hubSelectedCategory()
 
 	return m, tea.Batch(
 		m.hubExplore.spinner.Tick,
-		cmdSearchHub(m.ctx, baseURL, msg.query, bundleType, "trending", hubSearchLimit, "", false, m.hubExplore.searchID),
+		cmdSearchHub(m.ctx, baseURL, msg.query, "", "trending", hubSearchLimit, "", false, m.hubExplore.searchID),
 	)
 }
 
@@ -266,7 +234,6 @@ func (m *model) hubDetailContentLineCount() int {
 	count := 3 // name + ref + blank
 
 	metaFields := []string{
-		m.hubDetail.detail.BundleType,
 		m.hubDetail.detail.LatestVersion,
 		m.hubDetail.detail.License,
 	}
@@ -306,33 +273,6 @@ func (m *model) apiBaseURL() string {
 	}
 
 	return "https://api.musher.dev"
-}
-
-// hubSelectedCategory returns the slug of the currently selected category, or "" for "All".
-func (m *model) hubSelectedCategory() string {
-	if m.hubExplore.categoryCur < 0 || m.hubExplore.categoryCur >= len(m.hubExplore.categories) {
-		return ""
-	}
-
-	return m.hubExplore.categories[m.hubExplore.categoryCur].Slug
-}
-
-// hubApplyFilter fires a new search with the current category filter.
-func (m *model) hubApplyFilter() (tea.Model, tea.Cmd) {
-	m.hubExplore.loading = true
-	m.hubExplore.results = nil
-	m.hubExplore.resultCur = 0
-	m.hubExplore.nextCursor = ""
-	m.hubExplore.searchID++
-
-	baseURL := m.apiBaseURL()
-	query := m.hubExplore.searchInput.Value()
-	bundleType := m.hubSelectedCategory()
-
-	return m, tea.Batch(
-		m.hubExplore.spinner.Tick,
-		cmdSearchHub(m.ctx, baseURL, query, bundleType, "trending", hubSearchLimit, "", false, m.hubExplore.searchID),
-	)
 }
 
 // hubViewDetail navigates to the detail screen for the selected bundle.
@@ -418,10 +358,9 @@ func (m *model) hubLoadMore() (tea.Model, tea.Cmd) {
 	m.hubExplore.searchID++
 
 	baseURL := m.apiBaseURL()
-	bundleType := m.hubSelectedCategory()
 
 	return m, tea.Batch(
 		m.hubExplore.spinner.Tick,
-		cmdSearchHub(m.ctx, baseURL, m.hubExplore.query, bundleType, "trending", hubSearchLimit, m.hubExplore.nextCursor, true, m.hubExplore.searchID),
+		cmdSearchHub(m.ctx, baseURL, m.hubExplore.query, "", "trending", hubSearchLimit, m.hubExplore.nextCursor, true, m.hubExplore.searchID),
 	)
 }

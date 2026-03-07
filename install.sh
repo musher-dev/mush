@@ -13,6 +13,7 @@ set -eu
 
 REPO="musher-dev/mush"
 BINARY="mush"
+APP_SLUG="mush"
 DEFAULT_PREFIX="$HOME/.local"
 BASE_URL="${MUSH_INSTALL_BASE_URL:-https://github.com/${REPO}}"
 
@@ -166,6 +167,165 @@ download() {
   else
     err "Neither curl nor wget found. Please install one and try again."
   fi
+}
+
+http_get_text() {
+  url="$1"
+
+  if has_curl; then
+    if [ "${MUSH_INSTALL_INSECURE:-}" = "1" ]; then
+      curl -fsSL --max-time "${MUSH_INSTALL_TRACKING_TIMEOUT:-2}" "$url" 2>/dev/null || return 1
+    else
+      curl --proto '=https' --tlsv1.2 -fsSL --max-time "${MUSH_INSTALL_TRACKING_TIMEOUT:-2}" \
+        "$url" 2>/dev/null || return 1
+    fi
+  elif has_wget; then
+    if [ "${MUSH_INSTALL_INSECURE:-}" = "1" ]; then
+      wget -q -O - --timeout="${MUSH_INSTALL_TRACKING_TIMEOUT:-2}" "$url" 2>/dev/null || return 1
+    else
+      wget --https-only -q -O - --timeout="${MUSH_INSTALL_TRACKING_TIMEOUT:-2}" \
+        "$url" 2>/dev/null || return 1
+    fi
+  else
+    return 1
+  fi
+}
+
+http_post_json() {
+  url="$1"
+  payload="$2"
+
+  if has_curl; then
+    if [ "${MUSH_INSTALL_INSECURE:-}" = "1" ]; then
+      curl -fsSL --max-time "${MUSH_INSTALL_TRACKING_TIMEOUT:-2}" \
+        -H 'Content-Type: application/json' -d "$payload" "$url" >/dev/null 2>&1 || return 1
+    else
+      curl --proto '=https' --tlsv1.2 -fsSL --max-time "${MUSH_INSTALL_TRACKING_TIMEOUT:-2}" \
+        -H 'Content-Type: application/json' -d "$payload" "$url" >/dev/null 2>&1 || return 1
+    fi
+  elif has_wget; then
+    if [ "${MUSH_INSTALL_INSECURE:-}" = "1" ]; then
+      wget -q -O /dev/null --timeout="${MUSH_INSTALL_TRACKING_TIMEOUT:-2}" \
+        --header='Content-Type: application/json' \
+        --post-data="$payload" "$url" >/dev/null 2>&1 || return 1
+    else
+      wget --https-only -q -O /dev/null --timeout="${MUSH_INSTALL_TRACKING_TIMEOUT:-2}" \
+        --header='Content-Type: application/json' \
+        --post-data="$payload" "$url" >/dev/null 2>&1 || return 1
+    fi
+  else
+    return 1
+  fi
+}
+
+trim_trailing_slash() {
+  value="$1"
+  while [ "${value%/}" != "$value" ]; do
+    value="${value%/}"
+  done
+  printf '%s' "$value"
+}
+
+json_escape() {
+  printf '%s' "$1" | sed \
+    -e 's/\\/\\\\/g' \
+    -e 's/"/\\"/g' \
+    -e 's/	/\\t/g' \
+    -e "s/$(printf '\r')/\\\\r/g" \
+    -e "s/$(printf '\n')/\\\\n/g"
+}
+
+resolve_client_application_id() {
+  api_v1="$1"
+  app_slug="$2"
+
+  body="$(http_get_text "${api_v1}/client-distribution/apps/${app_slug}" || true)"
+  [ -n "$body" ] || return 1
+
+  id="$(printf '%s' "$body" | tr -d '\n' | sed -n \
+    's/^[^"]*"id"[[:space:]]*:[[:space:]]*"\([0-9a-fA-F-]\{36\}\)".*/\1/p' | head -n 1)"
+  [ -n "$id" ] || return 1
+  printf '%s' "$id"
+}
+
+stable_device_fingerprint() {
+  source_id=""
+
+  if [ -n "${MUSH_INSTALL_DEVICE_ID:-}" ]; then
+    source_id="${MUSH_INSTALL_DEVICE_ID}"
+  elif [ -r /etc/machine-id ]; then
+    source_id="$(cat /etc/machine-id 2>/dev/null || true)"
+  elif [ -r /var/lib/dbus/machine-id ]; then
+    source_id="$(cat /var/lib/dbus/machine-id 2>/dev/null || true)"
+  elif command -v ioreg >/dev/null 2>&1; then
+    source_id="$(ioreg -rd1 -c IOPlatformExpertDevice 2>/dev/null |
+      awk -F'"' '/IOPlatformUUID/ { print $(NF-1); exit }')"
+  elif command -v hostid >/dev/null 2>&1; then
+    source_id="$(hostid 2>/dev/null || true)"
+  elif command -v uname >/dev/null 2>&1; then
+    source_id="$(uname -n 2>/dev/null || true)"
+  fi
+
+  [ -n "$source_id" ] || return 1
+
+  if command -v sha256sum >/dev/null 2>&1; then
+    printf '%s' "$source_id" | sha256sum | awk '{print $1}' | cut -c1-64
+  elif command -v shasum >/dev/null 2>&1; then
+    printf '%s' "$source_id" | shasum -a 256 | awk '{print $1}' | cut -c1-64
+  else
+    return 1
+  fi
+}
+
+tracking_enabled() {
+  [ "${MUSH_INSTALL_TRACKING:-1}" != "0" ]
+}
+
+track_install_attempt() {
+  api_v1="$1"
+  app_id="$2"
+  device_fingerprint="$3"
+  tag="$4"
+  os="$5"
+  arch="$6"
+  version="$7"
+  method="$8"
+
+  [ -n "$app_id" ] || return 0
+  [ -n "$device_fingerprint" ] || return 0
+
+  payload="$(printf '{"clientApplicationId":"%s","deviceFingerprint":"%s","events":[{"eventType":"install_attempt","eventSchemaVersion":1,"payload":{"method":"%s","tag":"%s","os":"%s","arch":"%s"}}],"clientVersion":"%s"}' \
+    "$app_id" \
+    "$device_fingerprint" \
+    "$(json_escape "$method")" \
+    "$(json_escape "$tag")" \
+    "$(json_escape "$os")" \
+    "$(json_escape "$arch")" \
+    "$(json_escape "$version")")"
+
+  http_post_json "${api_v1}/telemetry/events" "$payload" || true
+}
+
+track_install_success() {
+  api_v1="$1"
+  app_slug="$2"
+  device_fingerprint="$3"
+  version="$4"
+  os="$5"
+  arch="$6"
+  method="$7"
+
+  [ -n "$device_fingerprint" ] || return 0
+
+  payload="$(printf '{"version":"%s","os":"%s","arch":"%s","installationMethod":"%s","deviceFingerprint":"%s"}' \
+    "$(json_escape "$version")" \
+    "$(json_escape "$os")" \
+    "$(json_escape "$arch")" \
+    "$(json_escape "$method")" \
+    "$(json_escape "$device_fingerprint")")"
+
+  # This route is expected from platform issue #189; call is intentionally best-effort.
+  http_post_json "${api_v1}/client-distribution/apps/${app_slug}/downloads" "$payload" || true
 }
 
 # ── Version resolution ───────────────────────────────────────────────────────
@@ -389,6 +549,17 @@ main() {
   ARCH="$(detect_arch)"
   PREFIX="${PREFIX:-$DEFAULT_PREFIX}"
   BIN_DIR="${PREFIX}/bin"
+  TRACKING_API_BASE="$(trim_trailing_slash "${MUSH_INSTALL_API_BASE_URL:-https://api.musher.dev}")"
+  TRACKING_API_V1="${TRACKING_API_BASE}/api/v1"
+  TRACKING_APP_ID=""
+  TRACKING_DEVICE_FINGERPRINT=""
+  if has_curl; then
+    INSTALL_METHOD="curl"
+  elif has_wget; then
+    INSTALL_METHOD="wget"
+  else
+    INSTALL_METHOD="unknown"
+  fi
 
   bold "Mush CLI Installer"
   say ""
@@ -425,6 +596,20 @@ main() {
     esac
   fi
 
+  if tracking_enabled; then
+    TRACKING_APP_ID="$(resolve_client_application_id "$TRACKING_API_V1" "$APP_SLUG" || true)"
+    TRACKING_DEVICE_FINGERPRINT="$(stable_device_fingerprint || true)"
+    track_install_attempt \
+      "$TRACKING_API_V1" \
+      "$TRACKING_APP_ID" \
+      "$TRACKING_DEVICE_FINGERPRINT" \
+      "$TAG" \
+      "$OS" \
+      "$ARCH" \
+      "$VERSION" \
+      "$INSTALL_METHOD"
+  fi
+
   # Create temp directory with cleanup trap
   TMP_DIR="$(mktemp -d 2>/dev/null || mktemp -d -t mush)"
   trap 'rm -rf "$TMP_DIR"' EXIT INT TERM
@@ -451,6 +636,17 @@ main() {
 
   if [ "$INSTALL_TMUX" = true ]; then
     install_tmux
+  fi
+
+  if tracking_enabled; then
+    track_install_success \
+      "$TRACKING_API_V1" \
+      "$APP_SLUG" \
+      "$TRACKING_DEVICE_FINGERPRINT" \
+      "$VERSION" \
+      "$OS" \
+      "$ARCH" \
+      "$INSTALL_METHOD"
   fi
 
   say ""

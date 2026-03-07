@@ -57,18 +57,11 @@ func TestHubExploreTabCyclesFocus(t *testing.T) {
 		t.Fatalf("focusArea = %d, want 0 (search)", mdl.hubExplore.focusArea)
 	}
 
-	// Tab cycles to categories.
-	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyTab})
-
-	if mdl.hubExplore.focusArea != 1 {
-		t.Errorf("focusArea = %d, want 1 (categories)", mdl.hubExplore.focusArea)
-	}
-
 	// Tab cycles to list.
 	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyTab})
 
-	if mdl.hubExplore.focusArea != 2 {
-		t.Errorf("focusArea = %d, want 2 (list)", mdl.hubExplore.focusArea)
+	if mdl.hubExplore.focusArea != 1 {
+		t.Errorf("focusArea = %d, want 1 (list)", mdl.hubExplore.focusArea)
 	}
 
 	// Tab wraps back to search.
@@ -226,26 +219,6 @@ func TestHubDetailError(t *testing.T) {
 	}
 }
 
-func TestHubCategoriesLoaded(t *testing.T) {
-	t.Parallel()
-
-	mdl := testModel()
-	mdl.activeScreen = screenHubExplore
-
-	msg := hubCategoriesLoadedMsg{
-		categories: []client.HubCategory{
-			{Slug: "agents", DisplayName: "Agents"},
-			{Slug: "tools", DisplayName: "Tools"},
-		},
-	}
-
-	mdl = updateModel(mdl, msg)
-
-	if len(mdl.hubExplore.categories) != 2 {
-		t.Errorf("categories len = %d, want 2", len(mdl.hubExplore.categories))
-	}
-}
-
 func TestHubDebounceValidTick(t *testing.T) {
 	t.Parallel()
 
@@ -322,7 +295,7 @@ func TestHubListNavigationDown(t *testing.T) {
 
 	mdl := testModel()
 	mdl.activeScreen = screenHubExplore
-	mdl.hubExplore.focusArea = 2 // list focused
+	mdl.hubExplore.focusArea = 1 // list focused
 	mdl.hubExplore.results = []client.HubBundleSummary{
 		{Slug: "a"},
 		{Slug: "b"},
@@ -354,7 +327,7 @@ func TestHubListNavigationUp(t *testing.T) {
 
 	mdl := testModel()
 	mdl.activeScreen = screenHubExplore
-	mdl.hubExplore.focusArea = 2 // list focused
+	mdl.hubExplore.focusArea = 1 // list focused
 	mdl.hubExplore.results = []client.HubBundleSummary{{Slug: "a"}, {Slug: "b"}}
 	mdl.hubExplore.resultCur = 1
 
@@ -377,7 +350,7 @@ func TestHubEnterViewsDetail(t *testing.T) {
 
 	mdl := testModel()
 	mdl.activeScreen = screenHubExplore
-	mdl.hubExplore.focusArea = 2 // list focused
+	mdl.hubExplore.focusArea = 1 // list focused
 	mdl.hubExplore.results = []client.HubBundleSummary{
 		{Slug: "test-bundle", Publisher: client.HubPublisher{Handle: "acme"}},
 	}
@@ -415,7 +388,7 @@ func TestHubInstallWithoutClientShowsError(t *testing.T) {
 
 	mdl := testModel() // nil deps
 	mdl.activeScreen = screenHubExplore
-	mdl.hubExplore.focusArea = 2 // list focused
+	mdl.hubExplore.focusArea = 1 // list focused
 	mdl.hubExplore.results = []client.HubBundleSummary{
 		{Slug: "test-bundle", LatestVersion: "1.0.0"},
 	}
@@ -437,7 +410,7 @@ func TestHubSlashFocusesSearch(t *testing.T) {
 
 	mdl := testModel()
 	mdl.activeScreen = screenHubExplore
-	mdl.hubExplore.focusArea = 2 // list focused
+	mdl.hubExplore.focusArea = 1 // list focused
 
 	// Press '/' to focus search.
 	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})

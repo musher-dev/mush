@@ -15,9 +15,6 @@ func renderHubExplore(mdl *model) string {
 	searchLabel := mdl.styles.hintKey.Render("/") + " "
 	searchView := searchLabel + mdl.hubExplore.searchInput.View()
 
-	// Category tabs.
-	catTabs := renderCategoryTabs(mdl)
-
 	// Results area.
 	var resultsView string
 
@@ -34,8 +31,6 @@ func renderHubExplore(mdl *model) string {
 
 	body := lipgloss.JoinVertical(lipgloss.Left,
 		searchView,
-		"",
-		catTabs,
 		"",
 		resultsView,
 	)
@@ -57,33 +52,6 @@ func renderHubExplore(mdl *model) string {
 		lipgloss.Center, lipgloss.Center,
 		content,
 	)
-}
-
-// renderCategoryTabs renders the horizontal category tab bar.
-func renderCategoryTabs(mdl *model) string {
-	activeStyle := lipgloss.NewStyle().
-		Foreground(colorAccent).
-		Bold(true)
-	inactiveStyle := lipgloss.NewStyle().
-		Foreground(colorDim)
-
-	var tabs []string
-
-	if mdl.hubExplore.categoryCur == -1 {
-		tabs = append(tabs, activeStyle.Render("All"))
-	} else {
-		tabs = append(tabs, inactiveStyle.Render("All"))
-	}
-
-	for idx, cat := range mdl.hubExplore.categories {
-		if idx == mdl.hubExplore.categoryCur {
-			tabs = append(tabs, activeStyle.Render(cat.DisplayName))
-		} else {
-			tabs = append(tabs, inactiveStyle.Render(cat.DisplayName))
-		}
-	}
-
-	return strings.Join(tabs, "  ")
 }
 
 // renderHubResultsList renders the bundle results list.
@@ -128,8 +96,6 @@ func renderHubResultItem(mdl *model, idx int) string {
 		prefix = cursorActive
 	}
 
-	badge := hubTypeBadge(b.BundleType, &mdl.styles)
-
 	name := b.DisplayName
 	if name == "" {
 		name = b.Slug
@@ -147,7 +113,7 @@ func renderHubResultItem(mdl *model, idx int) string {
 		trustMark = " " + mdl.styles.hubTrustVerified.Render("\u2713")
 	}
 
-	line1 := prefix + badge + " " + nameStyle.Render(name) + "  " + mdl.styles.placeholder.Render(ref) + trustMark
+	line1 := prefix + nameStyle.Render(name) + "  " + mdl.styles.placeholder.Render(ref) + trustMark
 
 	// Summary line.
 	summary := b.Summary
@@ -242,7 +208,6 @@ func renderHubDetailContent(mdl *model) string {
 	}
 
 	metaRows := []struct{ label, value string }{
-		{"Type", detail.BundleType},
 		{"Version", detail.LatestVersion},
 		{"License", detail.License},
 		{"Stars", fmt.Sprintf("%d", detail.StarsCount)},
@@ -282,26 +247,6 @@ func renderHubDetailContent(mdl *model) string {
 	}
 
 	return strings.Join(lines, "\n")
-}
-
-// hubTypeBadge returns a short type badge like [A] [W] [T] [P] [D].
-func hubTypeBadge(bundleType string, styles *theme) string {
-	letter := "B"
-
-	switch bundleType {
-	case "agent":
-		letter = "A"
-	case "workflow":
-		letter = "W"
-	case "tool":
-		letter = "T"
-	case "prompt":
-		letter = "P"
-	case "dataset":
-		letter = "D"
-	}
-
-	return styles.hubTypeBadge.Render("[" + letter + "]")
 }
 
 // formatCount formats a number with K/M suffixes.

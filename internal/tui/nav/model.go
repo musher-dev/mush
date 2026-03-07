@@ -146,7 +146,8 @@ type bundleActionState struct {
 	slug      string
 	version   string
 	cachePath string
-	buttonIdx int // 0=Run, 1=Install
+	buttonIdx int                  // 0=Run, 1=Install
+	layers    []client.BundleLayer // asset manifest layers
 }
 
 // bundleHarnessState holds state for the harness selection screen (shared by Run and Install).
@@ -248,8 +249,6 @@ type workerErrorState struct {
 // hubExploreState holds state for the hub explore screen.
 type hubExploreState struct {
 	searchInput  textinput.Model
-	categories   []client.HubCategory
-	categoryCur  int // -1=All, 0..N for categories
 	loading      bool
 	spinner      spinner.Model
 	query        string // committed search query
@@ -260,7 +259,7 @@ type hubExploreState struct {
 	hasMore      bool
 	results      []client.HubBundleSummary
 	resultCur    int // cursor in results list
-	focusArea    int // 0=search, 1=categories, 2=list
+	focusArea    int // 0=search, 1=list
 	errorMsg     string
 }
 
@@ -477,7 +476,6 @@ func newModel(ctx context.Context, deps *Dependencies) *model {
 		ctxInfo:      contextInfo{loading: true},
 		hubExplore: hubExploreState{
 			searchInput: hubSearchInput,
-			categoryCur: -1,
 			spinner:     hubExploreSpinner,
 		},
 		hubDetail: hubDetailState{
@@ -515,11 +513,17 @@ func newModel(ctx context.Context, deps *Dependencies) *model {
 
 	// If a bundle seed is provided, start directly at the action screen.
 	if deps != nil && deps.InitialBundle != nil {
+		var layers []client.BundleLayer
+		if manifest, err := loadManifestFromCache(deps.InitialBundle.CachePath); err == nil {
+			layers = manifest.Manifest.Layers
+		}
+
 		mdl.bundleAction = bundleActionState{
 			namespace: deps.InitialBundle.Namespace,
 			slug:      deps.InitialBundle.Slug,
 			version:   deps.InitialBundle.Version,
 			cachePath: deps.InitialBundle.CachePath,
+			layers:    layers,
 		}
 		mdl.activeScreen = screenBundleAction
 		mdl.screenStack = []screen{screenHome}
@@ -680,9 +684,6 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case hubDetailErrorMsg:
 		return m.handleHubDetailError(msg)
-
-	case hubCategoriesLoadedMsg:
-		return m.handleHubCategoriesLoaded(msg)
 
 	case hubDebounceTickMsg:
 		return m.handleHubDebounceTick(msg)
@@ -996,7 +997,6 @@ func (m *model) activateMenuItem(idx int) (tea.Model, tea.Cmd) {
 
 		m.hubExplore = hubExploreState{
 			searchInput: searchField,
-			categoryCur: -1,
 			loading:     true,
 			spinner:     m.hubExplore.spinner,
 			searchID:    m.hubExplore.searchID + 1,
@@ -1009,7 +1009,6 @@ func (m *model) activateMenuItem(idx int) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(
 			m.hubExplore.spinner.Tick,
 			cmdSearchHub(m.ctx, baseURL, "", "", "trending", hubSearchLimit, "", false, m.hubExplore.searchID),
-			cmdListHubCategories(m.ctx, baseURL),
 		)
 
 	case 'h':

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"github.com/musher-dev/mush/internal/client"
 	"github.com/musher-dev/mush/internal/harness/harnesstype"
@@ -32,14 +33,28 @@ func (m *providerMapper) MapAsset(workDir string, layer client.BundleLayer) (str
 
 	switch layer.AssetType {
 	case "skill":
-		return filepath.Join(workDir, assets.SkillDir, layer.LogicalPath), nil
+		return filepath.Join(workDir, assets.SkillDir, stripMatchingPrefix(assets.SkillDir, layer.LogicalPath)), nil
 	case "agent_definition":
-		return filepath.Join(workDir, assets.AgentDir, layer.LogicalPath), nil
+		return filepath.Join(workDir, assets.AgentDir, stripMatchingPrefix(assets.AgentDir, layer.LogicalPath)), nil
 	case "tool_config":
 		return filepath.Join(workDir, assets.ToolConfigFile), nil
 	default:
 		return "", fmt.Errorf("unsupported asset type for %s: %s", m.spec.Name, layer.AssetType)
 	}
+}
+
+// stripMatchingPrefix removes the first path segment from logicalPath if it
+// matches the last segment of dir, preventing path doubling (e.g.,
+// dir=".claude/skills" + path="skills/web/SKILL.md" → "web/SKILL.md").
+func stripMatchingPrefix(dir, logicalPath string) string {
+	dirBase := filepath.Base(dir)
+
+	prefix := dirBase + "/"
+	if strings.HasPrefix(logicalPath, prefix) {
+		return logicalPath[len(prefix):]
+	}
+
+	return logicalPath
 }
 
 // PrepareLoad creates a temp directory with assets in the provider's native structure.
