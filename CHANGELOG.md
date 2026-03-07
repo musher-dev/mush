@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.10.0](https://github.com/musher-dev/mush/compare/v3.9.0...v3.10.0) (2026-03-07)
+
+
+### Features
+
+* **bundle:** add contents panel, install tracking, and fix asset path doubling ([#91](https://github.com/musher-dev/mush/issues/91)) ([b13002d](https://github.com/musher-dev/mush/commit/b13002dad817a700b5b1f05a14371da5bbeb525d))
+
 ## [3.9.0](https://github.com/musher-dev/mush/compare/v3.8.0...v3.9.0) (2026-03-06)
 
 
