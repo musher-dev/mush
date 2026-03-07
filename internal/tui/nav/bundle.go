@@ -435,7 +435,11 @@ func groupLayers(layers []client.BundleLayer) []assetGroup {
 	}
 
 	sort.Slice(result, func(i, j int) bool {
-		return result[i].order < result[j].order
+		if result[i].order != result[j].order {
+			return result[i].order < result[j].order
+		}
+
+		return result[i].label < result[j].label
 	})
 
 	return result
@@ -458,7 +462,8 @@ func formatBytes(n int64) string {
 	}
 }
 
-// maxPathsShown is the maximum number of file paths shown per group before truncation.
+// maxPathsShown controls path truncation: when a group has more paths than this,
+// only maxPathsShown-1 paths are shown followed by a "+N more" line.
 const maxPathsShown = 3
 
 // renderBundleContents renders the Contents section for the bundle action screen.

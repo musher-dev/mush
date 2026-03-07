@@ -227,7 +227,12 @@ trim_trailing_slash() {
 }
 
 json_escape() {
-  printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
+  printf '%s' "$1" | sed \
+    -e 's/\\/\\\\/g' \
+    -e 's/"/\\"/g' \
+    -e 's/	/\\t/g' \
+    -e "s/$(printf '\r')/\\\\r/g" \
+    -e "s/$(printf '\n')/\\\\n/g"
 }
 
 resolve_client_application_id() {
@@ -238,7 +243,7 @@ resolve_client_application_id() {
   [ -n "$body" ] || return 1
 
   id="$(printf '%s' "$body" | tr -d '\n' | sed -n \
-    's/.*"id"[[:space:]]*:[[:space:]]*"\([0-9a-fA-F-]\{36\}\)".*/\1/p' | head -n 1)"
+    's/^[^"]*"id"[[:space:]]*:[[:space:]]*"\([0-9a-fA-F-]\{36\}\)".*/\1/p' | head -n 1)"
   [ -n "$id" ] || return 1
   printf '%s' "$id"
 }
@@ -284,13 +289,15 @@ track_install_attempt() {
   os="$5"
   arch="$6"
   version="$7"
+  method="$8"
 
   [ -n "$app_id" ] || return 0
   [ -n "$device_fingerprint" ] || return 0
 
-  payload="$(printf '{"clientApplicationId":"%s","deviceFingerprint":"%s","events":[{"eventType":"install_attempt","eventSchemaVersion":1,"payload":{"method":"curl","tag":"%s","os":"%s","arch":"%s"}}],"clientVersion":"%s"}' \
+  payload="$(printf '{"clientApplicationId":"%s","deviceFingerprint":"%s","events":[{"eventType":"install_attempt","eventSchemaVersion":1,"payload":{"method":"%s","tag":"%s","os":"%s","arch":"%s"}}],"clientVersion":"%s"}' \
     "$app_id" \
     "$device_fingerprint" \
+    "$(json_escape "$method")" \
     "$(json_escape "$tag")" \
     "$(json_escape "$os")" \
     "$(json_escape "$arch")" \
@@ -306,13 +313,15 @@ track_install_success() {
   version="$4"
   os="$5"
   arch="$6"
+  method="$7"
 
   [ -n "$device_fingerprint" ] || return 0
 
-  payload="$(printf '{"version":"%s","os":"%s","arch":"%s","installationMethod":"curl","deviceFingerprint":"%s"}' \
+  payload="$(printf '{"version":"%s","os":"%s","arch":"%s","installationMethod":"%s","deviceFingerprint":"%s"}' \
     "$(json_escape "$version")" \
     "$(json_escape "$os")" \
     "$(json_escape "$arch")" \
+    "$(json_escape "$method")" \
     "$(json_escape "$device_fingerprint")")"
 
   # This route is expected from platform issue #189; call is intentionally best-effort.
@@ -544,6 +553,13 @@ main() {
   TRACKING_API_V1="${TRACKING_API_BASE}/api/v1"
   TRACKING_APP_ID=""
   TRACKING_DEVICE_FINGERPRINT=""
+  if has_curl; then
+    INSTALL_METHOD="curl"
+  elif has_wget; then
+    INSTALL_METHOD="wget"
+  else
+    INSTALL_METHOD="unknown"
+  fi
 
   bold "Mush CLI Installer"
   say ""
@@ -590,7 +606,8 @@ main() {
       "$TAG" \
       "$OS" \
       "$ARCH" \
-      "$VERSION"
+      "$VERSION" \
+      "$INSTALL_METHOD"
   fi
 
   # Create temp directory with cleanup trap
@@ -628,7 +645,8 @@ main() {
       "$TRACKING_DEVICE_FINGERPRINT" \
       "$VERSION" \
       "$OS" \
-      "$ARCH"
+      "$ARCH" \
+      "$INSTALL_METHOD"
   fi
 
   say ""
