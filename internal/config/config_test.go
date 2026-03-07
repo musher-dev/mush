@@ -24,6 +24,8 @@ func TestLoad_Defaults(t *testing.T) {
 	unsetEnvForTest(t, "MUSH_API_URL")
 	unsetEnvForTest(t, "MUSH_WORKER_POLL_INTERVAL")
 	unsetEnvForTest(t, "MUSH_WORKER_HEARTBEAT_INTERVAL")
+	unsetEnvForTest(t, "MUSH_UPDATE_AUTO_APPLY")
+	unsetEnvForTest(t, "MUSH_UPDATE_CHECK_INTERVAL")
 
 	cfg := Load()
 
@@ -53,6 +55,20 @@ func TestLoad_Defaults(t *testing.T) {
 				return c.HeartbeatInterval()
 			},
 			want: 30 * time.Second,
+		},
+		{
+			name: "default update auto apply",
+			accessor: func(c *Config) interface{} {
+				return c.UpdateAutoApply()
+			},
+			want: true,
+		},
+		{
+			name: "default update check interval",
+			accessor: func(c *Config) interface{} {
+				return c.UpdateCheckInterval()
+			},
+			want: 24 * time.Hour,
 		},
 	}
 
@@ -301,6 +317,57 @@ func TestConfig_HeartbeatInterval(t *testing.T) {
 
 			if got != tt.want {
 				t.Errorf("HeartbeatInterval() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestConfig_UpdateAutoApply(t *testing.T) {
+	tests := []struct {
+		name   string
+		envVal string
+		want   bool
+	}{
+		{name: "default", envVal: "", want: true},
+		{name: "env false", envVal: "false", want: false},
+		{name: "env true", envVal: "true", want: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			t.Setenv("HOME", tmpDir)
+			if tt.envVal == "" {
+				unsetEnvForTest(t, "MUSH_UPDATE_AUTO_APPLY")
+			} else {
+				t.Setenv("MUSH_UPDATE_AUTO_APPLY", tt.envVal)
+			}
+
+			cfg := Load()
+			if got := cfg.UpdateAutoApply(); got != tt.want {
+				t.Errorf("UpdateAutoApply() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestConfig_UpdateCheckInterval(t *testing.T) {
+	tests := []struct {
+		name   string
+		envVal string
+		want   time.Duration
+	}{
+		{name: "default", envVal: "", want: 24 * time.Hour},
+		{name: "env", envVal: "12h", want: 12 * time.Hour},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := runDurationConfigCase(t, "MUSH_UPDATE_CHECK_INTERVAL", tt.envVal, func(cfg *Config) time.Duration {
+				return cfg.UpdateCheckInterval()
+			})
+			if got != tt.want {
+				t.Errorf("UpdateCheckInterval() = %v, want %v", got, tt.want)
 			}
 		})
 	}

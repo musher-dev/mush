@@ -575,7 +575,7 @@ func cmdCheckUpdate(ctx context.Context) tea.Cmd {
 		}
 
 		// If cache is stale, refresh it in the background.
-		if state.ShouldCheck() {
+		if state.ShouldCheck(24 * time.Hour) {
 			updater, err := update.NewUpdater()
 			if err == nil {
 				info, err := updater.CheckLatest(ctx, buildinfo.Version)

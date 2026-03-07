@@ -27,6 +27,8 @@ const (
 	DefaultPollInterval = "30s"
 	// DefaultHeartbeatInterval is the default heartbeat interval as a duration string.
 	DefaultHeartbeatInterval = "30s"
+	// DefaultUpdateCheckInterval is the default background update check interval.
+	DefaultUpdateCheckInterval = "24h"
 )
 
 const (
@@ -53,6 +55,8 @@ func Load() *Config {
 	v.SetDefault("history.enabled", true)
 	v.SetDefault("history.scrollback_lines", 10000)
 	v.SetDefault("history.retention", (30 * 24 * time.Hour).String())
+	v.SetDefault("update.auto_apply", true)
+	v.SetDefault("update.check_interval", DefaultUpdateCheckInterval)
 
 	// Config file location
 	configDir, err := paths.ConfigRoot()
@@ -198,4 +202,14 @@ func (c *Config) HistoryRetention() time.Duration {
 	}
 
 	return d
+}
+
+// UpdateAutoApply returns whether background auto-apply is enabled.
+func (c *Config) UpdateAutoApply() bool {
+	return c.v.GetBool("update.auto_apply")
+}
+
+// UpdateCheckInterval returns the configured background update check interval.
+func (c *Config) UpdateCheckInterval() time.Duration {
+	return c.parseDuration("update.check_interval", 24*time.Hour)
 }

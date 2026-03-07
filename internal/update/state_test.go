@@ -110,7 +110,7 @@ func TestShouldCheck_Fresh(t *testing.T) {
 	state := &State{
 		LastCheckedAt: time.Now(),
 	}
-	if state.ShouldCheck() {
+	if state.ShouldCheck(24 * time.Hour) {
 		t.Error("ShouldCheck returned true for fresh state")
 	}
 }
@@ -119,14 +119,14 @@ func TestShouldCheck_Stale(t *testing.T) {
 	state := &State{
 		LastCheckedAt: time.Now().Add(-25 * time.Hour),
 	}
-	if !state.ShouldCheck() {
+	if !state.ShouldCheck(24 * time.Hour) {
 		t.Error("ShouldCheck returned false for stale state")
 	}
 }
 
 func TestShouldCheck_ZeroTime(t *testing.T) {
 	state := &State{}
-	if !state.ShouldCheck() {
+	if !state.ShouldCheck(24 * time.Hour) {
 		t.Error("ShouldCheck returned false for zero-time state")
 	}
 }

@@ -12,8 +12,8 @@ import (
 )
 
 const (
-	stateFileName = "update-check.json"
-	checkInterval = 24 * time.Hour
+	stateFileName        = "update-check.json"
+	defaultCheckInterval = 24 * time.Hour
 )
 
 // State holds cached update check results.
@@ -22,6 +22,15 @@ type State struct {
 	LatestVersion  string    `json:"latestVersion,omitempty"`
 	CurrentVersion string    `json:"currentVersion,omitempty"`
 	ReleaseURL     string    `json:"releaseURL,omitempty"`
+
+	StagedVersion string    `json:"stagedVersion,omitempty"`
+	StagedAt      time.Time `json:"stagedAt,omitempty"`
+
+	LastApplyAttemptAt time.Time `json:"lastApplyAttemptAt,omitempty"`
+	LastApplyError     string    `json:"lastApplyError,omitempty"`
+
+	InstallSource          string `json:"installSource,omitempty"`
+	AutoApplyBlockedReason string `json:"autoApplyBlockedReason,omitempty"`
 }
 
 // statePath returns the path to the state file.
@@ -115,12 +124,16 @@ func SaveState(state *State) error {
 }
 
 // ShouldCheck returns true if enough time has passed since the last check.
-func (s *State) ShouldCheck() bool {
+func (s *State) ShouldCheck(interval time.Duration) bool {
+	if interval <= 0 {
+		interval = defaultCheckInterval
+	}
+
 	if s.LastCheckedAt.IsZero() {
 		return true
 	}
 
-	return time.Since(s.LastCheckedAt) >= checkInterval
+	return time.Since(s.LastCheckedAt) >= interval
 }
 
 // HasUpdate returns true if the cached latest version is newer than current.
@@ -140,4 +153,29 @@ func (s *State) HasUpdate(currentVersion string) bool {
 	}
 
 	return latest.GreaterThan(current)
+}
+
+// HasStagedUpdate returns true if a newer staged version exists.
+func (s *State) HasStagedUpdate(currentVersion string) bool {
+	if s.StagedVersion == "" {
+		return false
+	}
+
+	current, err := semver.NewVersion(currentVersion)
+	if err != nil {
+		return false
+	}
+
+	staged, err := semver.NewVersion(s.StagedVersion)
+	if err != nil {
+		return false
+	}
+
+	return staged.GreaterThan(current)
+}
+
+// ClearStaged resets staged-update related fields.
+func (s *State) ClearStaged() {
+	s.StagedVersion = ""
+	s.StagedAt = time.Time{}
 }
