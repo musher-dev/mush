@@ -29,6 +29,7 @@ func RunAgent(cfg AgentConfig) error {
 
 		execPath, execErr := selfupdate.ExecutablePath()
 		source := InstallSourceUnknown
+
 		if execErr == nil {
 			source = DetectInstallSource(execPath)
 		}
@@ -42,7 +43,7 @@ func RunAgent(cfg AgentConfig) error {
 		}
 
 		if cfg.AutoApply && allowedBySource && state.HasStagedUpdate(cfg.CurrentVersion) {
-			if err := applyStaged(state, execPath); err == nil {
+			if applyErr := applyStaged(state, execPath); applyErr == nil {
 				return nil
 			}
 		}
@@ -73,6 +74,7 @@ func RunAgent(cfg AgentConfig) error {
 		if info.UpdateAvailable {
 			state.StagedVersion = info.LatestVersion
 			state.StagedAt = now
+
 			if !cfg.AutoApply {
 				state.AutoApplyBlockedReason = "auto_apply_disabled"
 			} else if !allowedBySource {
@@ -96,6 +98,7 @@ func applyStaged(state *State, execPath string) error {
 		state.LastApplyAttemptAt = time.Now()
 		state.LastApplyError = "background apply requires elevated permissions"
 		state.AutoApplyBlockedReason = "elevation_required"
+
 		return SaveState(state)
 	}
 
@@ -109,8 +112,10 @@ func applyStaged(state *State, execPath string) error {
 
 	_, err = updater.ApplyVersion(applyCtx, state.StagedVersion)
 	state.LastApplyAttemptAt = time.Now()
+
 	if err != nil {
 		state.LastApplyError = err.Error()
+
 		return SaveState(state)
 	}
 

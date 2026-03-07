@@ -38,6 +38,7 @@ func TestUpgradeHint(t *testing.T) {
 	if got := UpgradeHint(InstallSourceHomebrew); got != "brew upgrade mush" {
 		t.Errorf("UpgradeHint(homebrew) = %q", got)
 	}
+
 	if got := UpgradeHint(InstallSourceStandalone); got != "" {
 		t.Errorf("UpgradeHint(standalone) = %q, want empty", got)
 	}

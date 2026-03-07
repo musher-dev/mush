@@ -24,7 +24,7 @@ func lockPath() (string, error) {
 }
 
 // WithAgentLock executes fn only when the update-agent lock can be acquired.
-func WithAgentLock(fn func() error) error {
+func WithAgentLock(runFn func() error) error {
 	path, err := lockPath()
 	if err != nil {
 		return err
@@ -45,14 +45,16 @@ func WithAgentLock(fn func() error) error {
 
 	defer func() { _ = os.Remove(path) }()
 
-	return fn()
+	return runFn()
 }
 
 func tryAcquire(path string) (bool, error) {
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600) //nolint:gosec // lock path is derived from controlled state root
 	if err == nil {
-		defer file.Close()
+		defer func() { _ = file.Close() }()
+
 		_, _ = fmt.Fprintf(file, "pid=%d time=%s\n", os.Getpid(), time.Now().UTC().Format(time.RFC3339))
+
 		return true, nil
 	}
 
@@ -65,6 +67,7 @@ func tryAcquire(path string) (bool, error) {
 		if os.IsNotExist(statErr) {
 			return tryAcquire(path)
 		}
+
 		return false, fmt.Errorf("stat lock file: %w", statErr)
 	}
 

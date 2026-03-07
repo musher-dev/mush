@@ -9,9 +9,12 @@ import (
 type InstallSource string
 
 const (
-	InstallSourceUnknown    InstallSource = "unknown"
+	// InstallSourceUnknown means install provenance could not be detected.
+	InstallSourceUnknown InstallSource = "unknown"
+	// InstallSourceStandalone means mush appears to be a standalone binary install.
 	InstallSourceStandalone InstallSource = "standalone"
-	InstallSourceHomebrew   InstallSource = "homebrew"
+	// InstallSourceHomebrew means mush was installed via Homebrew formula.
+	InstallSourceHomebrew InstallSource = "homebrew"
 )
 
 // DetectInstallSource infers the installation source from the executable path.

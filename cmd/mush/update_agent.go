@@ -18,6 +18,7 @@ func newUpdateAgentCmd() *cobra.Command {
 		Args:    noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg := config.Load()
+
 			return update.RunAgent(update.AgentConfig{
 				CurrentVersion: buildinfo.Version,
 				CheckInterval:  cfg.UpdateCheckInterval(),

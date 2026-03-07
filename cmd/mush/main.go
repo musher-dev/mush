@@ -627,7 +627,7 @@ func launchDetachedUpdateAgent() {
 		return
 	}
 
-	cmd := exec.Command(execPath, "__ua", "--quiet", "--no-input", "--no-color") //nolint:gosec // internal self-spawn
+	cmd := exec.CommandContext(context.Background(), execPath, "__ua", "--quiet", "--no-input", "--no-color") //nolint:gosec // internal self-spawn
 	cmd.Stdout = io.Discard
 	cmd.Stderr = io.Discard
 

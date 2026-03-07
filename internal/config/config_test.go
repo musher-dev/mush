@@ -337,6 +337,7 @@ func TestConfig_UpdateAutoApply(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			tmpDir := t.TempDir()
 			t.Setenv("HOME", tmpDir)
+
 			if tt.envVal == "" {
 				unsetEnvForTest(t, "MUSH_UPDATE_AUTO_APPLY")
 			} else {

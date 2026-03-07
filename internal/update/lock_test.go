@@ -8,6 +8,7 @@ func TestWithAgentLock_Serializes(t *testing.T) {
 
 	if err := WithAgentLock(func() error {
 		called := false
+
 		if err := WithAgentLock(func() error {
 			called = true
 			return nil
@@ -25,6 +26,7 @@ func TestWithAgentLock_Serializes(t *testing.T) {
 	}
 
 	ran := false
+
 	if err := WithAgentLock(func() error {
 		ran = true
 		return nil

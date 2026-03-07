@@ -72,6 +72,7 @@ func runUpdate(cmd *cobra.Command, out *output.Writer, targetVersion string, for
 
 	execPath, execPathErr := selfupdate.ExecutablePath()
 	source := update.InstallSourceUnknown
+
 	if execPathErr == nil {
 		source = update.DetectInstallSource(execPath)
 	}
@@ -211,6 +212,7 @@ func updateToVersion(ctx context.Context, out *output.Writer, updater *update.Up
 func saveCheckState(current, latest, releaseURL string) {
 	execPath, err := selfupdate.ExecutablePath()
 	source := update.InstallSourceUnknown
+
 	if err == nil {
 		source = update.DetectInstallSource(execPath)
 	}
