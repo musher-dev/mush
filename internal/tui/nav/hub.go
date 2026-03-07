@@ -128,7 +128,12 @@ func renderHubResultItem(mdl *model, idx int) string {
 	// Stats line.
 	stars := fmt.Sprintf("\u2605 %d", b.StarsCount)
 	downloads := fmt.Sprintf("\u2193 %s", formatCount(b.DownloadsTotal))
+
 	ver := "v" + b.LatestVersion
+	if b.LatestVersion == "" {
+		ver = "unpublished"
+	}
+
 	line3 := "    " + mdl.styles.hubStats.Render(stars+"  "+downloads+"  "+ver)
 
 	return line1 + "\n" + line2 + "\n" + line3
