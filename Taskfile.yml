@@ -210,7 +210,25 @@ tasks:
       - sh: test -n "{{.CLI_ARGS}}"
         msg: "Provide targets via: task check:lint:files -- <files...>"
     cmds:
-      - golangci-lint run {{.CLI_ARGS}}
+      - |
+        set -euo pipefail
+        out_file="$(mktemp)"
+        if golangci-lint run {{.CLI_ARGS}} >"$out_file" 2>&1; then
+          cat "$out_file"
+          rm -f "$out_file"
+          exit 0
+        fi
+
+        cat "$out_file"
+        if grep -q "no go files to analyze" "$out_file"; then
+          echo "golangci-lint target-mode bug encountered; falling back to full lint run"
+          rm -f "$out_file"
+          golangci-lint run ./...
+          exit 0
+        fi
+
+        rm -f "$out_file"
+        exit 1
 
   check:vuln:
     desc: Run govulncheck
