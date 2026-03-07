@@ -308,6 +308,19 @@ func (m *model) hubInstallSelected() (tea.Model, tea.Cmd) {
 
 	selected := m.hubExplore.results[m.hubExplore.resultCur]
 
+	if selected.LatestVersion == "" {
+		m.bundleError = bundleErrorState{
+			message:   "No published versions",
+			hint:      "This bundle has no published versions yet — check back later",
+			namespace: selected.Publisher.Handle,
+			slug:      selected.Slug,
+		}
+
+		m.pushScreen(screenBundleError)
+
+		return m, nil
+	}
+
 	return m.hubInstall(selected.Publisher.Handle, selected.Slug, selected.LatestVersion)
 }
 
@@ -317,7 +330,22 @@ func (m *model) hubInstallFromDetail() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	return m.hubInstall(m.hubDetail.detail.Publisher.Handle, m.hubDetail.detail.Slug, m.hubDetail.detail.LatestVersion)
+	detail := m.hubDetail.detail
+
+	if detail.LatestVersion == "" {
+		m.bundleError = bundleErrorState{
+			message:   "No published versions",
+			hint:      "This bundle has no published versions yet — check back later",
+			namespace: detail.Publisher.Handle,
+			slug:      detail.Slug,
+		}
+
+		m.pushScreen(screenBundleError)
+
+		return m, nil
+	}
+
+	return m.hubInstall(detail.Publisher.Handle, detail.Slug, detail.LatestVersion)
 }
 
 // hubInstall bridges hub selection to the existing bundle resolve flow.

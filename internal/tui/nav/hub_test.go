@@ -596,6 +596,78 @@ func TestHubStaleSearchErrorDiscarded(t *testing.T) {
 	}
 }
 
+func TestHubInstallSelectedEmptyVersionShowsError(t *testing.T) {
+	t.Parallel()
+
+	mdl := testModel()
+	mdl.activeScreen = screenHubExplore
+	mdl.hubExplore.focusArea = 1 // list focused
+	mdl.hubExplore.results = []client.HubBundleSummary{
+		{Slug: "no-version-bundle", LatestVersion: "", Publisher: client.HubPublisher{Handle: "acme"}},
+	}
+
+	// Press 'i' to install.
+	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'i'}})
+
+	if mdl.activeScreen != screenBundleError {
+		t.Errorf("activeScreen = %d, want screenBundleError", mdl.activeScreen)
+	}
+
+	if !strings.Contains(mdl.bundleError.message, "No published versions") {
+		t.Errorf("error message = %q, want to contain 'No published versions'", mdl.bundleError.message)
+	}
+}
+
+func TestHubInstallFromDetailEmptyVersionShowsError(t *testing.T) {
+	t.Parallel()
+
+	mdl := testModel()
+	mdl.activeScreen = screenHubDetail
+	mdl.hubDetail.detail = &client.HubBundleDetail{
+		HubBundleSummary: client.HubBundleSummary{
+			Slug:          "no-version-bundle",
+			LatestVersion: "",
+			Publisher:     client.HubPublisher{Handle: "acme"},
+		},
+	}
+
+	// Press enter to install from detail.
+	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyEnter})
+
+	if mdl.activeScreen != screenBundleError {
+		t.Errorf("activeScreen = %d, want screenBundleError", mdl.activeScreen)
+	}
+
+	if !strings.Contains(mdl.bundleError.message, "No published versions") {
+		t.Errorf("error message = %q, want to contain 'No published versions'", mdl.bundleError.message)
+	}
+}
+
+func TestHubVersionDisplayEmpty(t *testing.T) {
+	t.Parallel()
+
+	mdl := testModel()
+	mdl.activeScreen = screenHubExplore
+	mdl.hubExplore.results = []client.HubBundleSummary{
+		{
+			Slug:          "empty-ver",
+			DisplayName:   "Empty Version",
+			LatestVersion: "",
+			Publisher:     client.HubPublisher{Handle: "acme"},
+		},
+	}
+
+	view := mdl.View()
+
+	if strings.Contains(view, "v\"") || strings.Contains(view, "v ") {
+		t.Error("view should not show bare 'v' for empty version")
+	}
+
+	if !strings.Contains(view, "unpublished") {
+		t.Error("view should show 'unpublished' for empty version")
+	}
+}
+
 func TestHubDetailScrolling(t *testing.T) {
 	t.Parallel()
 
