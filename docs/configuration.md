@@ -268,13 +268,19 @@ Mush caches the result of update checks in `<state root>/update-check.json` to a
   "lastCheckedAt": "2026-01-15T10:30:00Z",
   "latestVersion": "3.1.0",
   "currentVersion": "3.0.0",
-  "releaseURL": "https://github.com/musher-dev/mush/releases/tag/v3.1.0"
+  "releaseURL": "https://github.com/musher-dev/mush/releases/tag/v3.1.0",
+  "stagedVersion": "3.1.0",
+  "stagedAt": "2026-01-15T10:30:00Z",
+  "lastApplyAttemptAt": "2026-01-16T08:15:00Z",
+  "lastApplyError": "",
+  "installSource": "standalone",
+  "autoApplyBlockedReason": ""
 }
 ```
 
 ### Behavior
 
-- Mush checks for updates at most once every **24 hours**.
+- Mush checks for updates on a configurable cadence (`update.check_interval`, default: **24h**).
 - When an update is detected, Mush stages it in state for a future background apply.
 - Auto-apply runs only for standalone installs; managed installs (for example Homebrew) stay notify-only.
 - The state file is written atomically (temp file + rename) to prevent corruption from concurrent processes.

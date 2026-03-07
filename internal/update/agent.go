@@ -3,6 +3,7 @@ package update
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	selfupdate "github.com/creativeprojects/go-selfupdate"
@@ -28,9 +29,10 @@ func RunAgent(cfg AgentConfig) error {
 		}
 
 		execPath, execErr := selfupdate.ExecutablePath()
+		execPathAvailable := execErr == nil && strings.TrimSpace(execPath) != ""
 		source := InstallSourceUnknown
 
-		if execErr == nil {
+		if execPathAvailable {
 			source = DetectInstallSource(execPath)
 		}
 
@@ -43,8 +45,14 @@ func RunAgent(cfg AgentConfig) error {
 		}
 
 		if cfg.AutoApply && allowedBySource && state.HasStagedUpdate(cfg.CurrentVersion) {
-			if applyErr := applyStaged(state, execPath); applyErr == nil {
-				return nil
+			if execPathAvailable {
+				if applyErr := applyStaged(state, execPath); applyErr == nil {
+					return nil
+				}
+			} else {
+				state.LastApplyAttemptAt = time.Now()
+				state.LastApplyError = "background apply skipped: executable path unavailable"
+				state.AutoApplyBlockedReason = "exec_path_unavailable"
 			}
 		}
 
@@ -107,7 +115,10 @@ func applyStaged(state *State, execPath string) error {
 
 	updater, err := NewUpdater()
 	if err != nil {
-		return err
+		state.LastApplyAttemptAt = time.Now()
+		state.LastApplyError = err.Error()
+
+		return SaveState(state)
 	}
 
 	_, err = updater.ApplyVersion(applyCtx, state.StagedVersion)

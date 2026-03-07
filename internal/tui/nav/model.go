@@ -563,7 +563,7 @@ type updateCheckMsg struct {
 }
 
 // cmdCheckUpdate checks for available updates asynchronously.
-func cmdCheckUpdate(ctx context.Context) tea.Cmd {
+func cmdCheckUpdate(ctx context.Context, interval time.Duration) tea.Cmd {
 	return func() tea.Msg {
 		if update.IsDisabled() || buildinfo.Version == "dev" {
 			return updateCheckMsg{}
@@ -575,17 +575,15 @@ func cmdCheckUpdate(ctx context.Context) tea.Cmd {
 		}
 
 		// If cache is stale, refresh it in the background.
-		if state.ShouldCheck(24 * time.Hour) {
+		if state.ShouldCheck(interval) {
 			updater, err := update.NewUpdater()
 			if err == nil {
 				info, err := updater.CheckLatest(ctx, buildinfo.Version)
 				if err == nil {
-					state = &update.State{
-						LastCheckedAt:  time.Now(),
-						LatestVersion:  info.LatestVersion,
-						CurrentVersion: buildinfo.Version,
-						ReleaseURL:     info.ReleaseURL,
-					}
+					state.LastCheckedAt = time.Now()
+					state.LatestVersion = info.LatestVersion
+					state.CurrentVersion = buildinfo.Version
+					state.ReleaseURL = info.ReleaseURL
 					_ = update.SaveState(state)
 				}
 			}
@@ -601,7 +599,12 @@ func cmdCheckUpdate(ctx context.Context) tea.Cmd {
 
 // Init satisfies tea.Model. Fires async context loading and harness status detection.
 func (m *model) Init() tea.Cmd {
-	return tea.Batch(cmdLoadContext(m.ctx, m.deps), cmdLoadHarnessStatuses(m.ctx), cmdCheckUpdate(m.ctx))
+	updateInterval := 24 * time.Hour
+	if m.deps != nil && m.deps.Config != nil {
+		updateInterval = m.deps.Config.UpdateCheckInterval()
+	}
+
+	return tea.Batch(cmdLoadContext(m.ctx, m.deps), cmdLoadHarnessStatuses(m.ctx), cmdCheckUpdate(m.ctx, updateInterval))
 }
 
 // Update handles messages and returns the updated model.
