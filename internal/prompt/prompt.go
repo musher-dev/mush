@@ -56,20 +56,54 @@ func (p *Prompter) Confirm(message string, defaultValue bool) (bool, error) {
 	return input == "y" || input == "yes", nil
 }
 
-// Password prompts for a password (hidden input).
+// Password prompts for a password, showing * for each character typed.
 func (p *Prompter) Password(prompt string) (string, error) {
 	p.out.Print("%s: ", prompt)
 
-	// Read password without echo
-	password, err := term.ReadPassword(int(os.Stdin.Fd()))
+	stdinFd := int(os.Stdin.Fd())
 
-	p.out.Println() // Print newline after password input
-
+	oldState, err := term.MakeRaw(stdinFd)
 	if err != nil {
-		return "", fmt.Errorf("failed to read password: %w", err)
+		return "", fmt.Errorf("failed to set raw mode: %w", err)
 	}
 
-	return string(password), nil
+	defer func() { _ = term.Restore(stdinFd, oldState) }()
+
+	var (
+		buf []byte
+		b   [1]byte
+	)
+
+	for {
+		_, err := os.Stdin.Read(b[:])
+		if err != nil {
+			p.out.Println()
+			return "", fmt.Errorf("failed to read input: %w", err)
+		}
+
+		switch {
+		case b[0] == '\r' || b[0] == '\n':
+			_ = term.Restore(stdinFd, oldState)
+
+			p.out.Println()
+
+			return string(buf), nil
+		case b[0] == 0x03: // Ctrl+C
+			_ = term.Restore(stdinFd, oldState)
+
+			p.out.Println()
+
+			return "", fmt.Errorf("interrupted")
+		case b[0] == 127 || b[0] == 0x08: // Backspace / Delete
+			if len(buf) > 0 {
+				buf = buf[:len(buf)-1]
+				_, _ = os.Stdout.WriteString("\b \b")
+			}
+		case b[0] >= 32: // Printable character
+			buf = append(buf, b[0])
+			_, _ = os.Stdout.WriteString("*")
+		}
+	}
 }
 
 // Select prompts the user to select from a list of options.
