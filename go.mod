@@ -22,10 +22,10 @@ require (
 	github.com/spf13/pflag v1.0.10
 	github.com/spf13/viper v1.21.0
 	github.com/zalando/go-keyring v0.2.6
-	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.65.0
+	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.67.0
 	go.opentelemetry.io/otel v1.42.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.40.0
-	go.opentelemetry.io/otel/sdk v1.40.0
+	go.opentelemetry.io/otel/sdk v1.42.0
 	go.opentelemetry.io/otel/trace v1.42.0
 	golang.org/x/sys v0.42.0
 	golang.org/x/term v0.40.0
