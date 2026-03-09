@@ -93,15 +93,21 @@ func (p *Prompter) Password(prompt string) (string, error) {
 
 			p.out.Println()
 
+			// Re-raise SIGINT so the process exits with interrupt semantics.
+			p, _ := os.FindProcess(os.Getpid())
+			_ = p.Signal(os.Interrupt)
+
 			return "", fmt.Errorf("interrupted")
 		case b[0] == 127 || b[0] == 0x08: // Backspace / Delete
 			if len(buf) > 0 {
 				buf = buf[:len(buf)-1]
-				_, _ = os.Stdout.WriteString("\b \b")
+
+				p.out.Print("\b \b")
 			}
 		case b[0] >= 32: // Printable character
 			buf = append(buf, b[0])
-			_, _ = os.Stdout.WriteString("*")
+
+			p.out.Print("*")
 		}
 	}
 }
