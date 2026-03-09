@@ -13,7 +13,7 @@ require (
 	github.com/creativeprojects/go-selfupdate v1.5.2
 	github.com/fatih/color v1.18.0
 	github.com/gdamore/tcell/v2 v2.13.8
-	github.com/google/go-containerregistry v0.21.1
+	github.com/google/go-containerregistry v0.21.2
 	github.com/google/uuid v1.6.0
 	github.com/hinshun/vt10x v0.0.0-20220301184237-5011da428d02
 	github.com/mattn/go-runewidth v0.0.20
