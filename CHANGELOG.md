@@ -1,5 +1,17 @@
 # Changelog
 
+## [3.12.0](https://github.com/musher-dev/mush/compare/v3.11.0...v3.12.0) (2026-03-09)
+
+
+### Features
+
+* **prompt:** show masked asterisks during password input ([#106](https://github.com/musher-dev/mush/issues/106)) ([17d2726](https://github.com/musher-dev/mush/commit/17d2726ebafeecb196de9dcbdc9c9a616497b7d0))
+
+
+### Bug Fixes
+
+* **hub:** guard against bundles with no published versions ([#96](https://github.com/musher-dev/mush/issues/96)) ([da5aa6c](https://github.com/musher-dev/mush/commit/da5aa6c51c091642d3f19e83e32a204369769f20))
+
 ## [3.11.0](https://github.com/musher-dev/mush/compare/v3.10.0...v3.11.0) (2026-03-07)
 
 
