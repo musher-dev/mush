@@ -66,9 +66,14 @@ built-in sample bundle with --sample for testing.`,
   mush bundle load --dir ./my-bundle --no-tui --harness claude
   mush bundle load --sample --no-tui --harness claude`,
 		Args: func(cmd *cobra.Command, args []string) error {
-			hasDir := cmd.Flags().Changed("dir")
-			hasSample := cmd.Flags().Changed("sample")
+			hasDir := cmd.Flags().Changed("dir") && dirPath != ""
+			hasSample := cmd.Flags().Changed("sample") && useSample
 			hasLocal := hasDir || hasSample
+
+			// Reject explicitly empty --dir value.
+			if cmd.Flags().Changed("dir") && dirPath == "" {
+				return clierrors.New(clierrors.ExitUsage, "--dir requires a non-empty directory path")
+			}
 
 			if hasLocal && len(args) > 0 {
 				return clierrors.New(clierrors.ExitUsage, "Cannot specify both a bundle reference and --"+localFlagName(hasDir, hasSample))
@@ -378,7 +383,12 @@ Alternatively, install from a local directory with --dir.`,
   mush bundle install acme/my-kit:0.1.0 --harness claude --force
   mush bundle install --dir ./my-bundle --harness claude`,
 		Args: func(cmd *cobra.Command, args []string) error {
-			hasDir := cmd.Flags().Changed("dir")
+			hasDir := cmd.Flags().Changed("dir") && dirPath != ""
+
+			// Reject explicitly empty --dir value.
+			if cmd.Flags().Changed("dir") && dirPath == "" {
+				return clierrors.New(clierrors.ExitUsage, "--dir requires a non-empty directory path")
+			}
 
 			if hasDir && len(args) > 0 {
 				return clierrors.New(clierrors.ExitUsage, "Cannot specify both a bundle reference and --dir")

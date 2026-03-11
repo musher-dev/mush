@@ -104,7 +104,6 @@ type AuthStatus struct {
 	Source       string `json:"source"`
 	Credential   string `json:"credential"`
 	Organization string `json:"organization"`
-	Workspace    string `json:"workspace,omitempty"`
 	RequestID    string `json:"request_id,omitempty"`
 	TraceID      string `json:"trace_id,omitempty"`
 }
@@ -150,7 +149,6 @@ func newAuthStatusCmd() *cobra.Command {
 					Source:       string(source),
 					Credential:   identity.CredentialName,
 					Organization: identity.OrganizationName,
-					Workspace:    identity.OrganizationName,
 					RequestID:    requestID,
 					TraceID:      traceID,
 				}); err != nil {
