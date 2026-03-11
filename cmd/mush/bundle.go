@@ -272,13 +272,18 @@ func executeBundleLoad(
 		return clierrors.Wrap(clierrors.ExitGeneral, "Failed to get working directory", err)
 	}
 
-	spec, _ := harness.GetProvider(normalized)
+	spec, ok := harness.GetProvider(normalized)
+	if !ok {
+		return clierrors.New(clierrors.ExitGeneral,
+			fmt.Sprintf("No provider spec for harness: %s", normalized))
+	}
 
 	session, err := bundle.PrepareLoadSession(
 		cmd.Context(), projectDir, cachePath, &resolved.Manifest, spec, mapper,
 	)
 	if err != nil {
-		return clierrors.Wrap(clierrors.ExitGeneral, "Failed to prepare bundle load session", err)
+		return clierrors.Wrap(clierrors.ExitGeneral, "Failed to prepare bundle load session", err).
+			WithHint("Re-run the bundle flow or check the log file for details")
 	}
 
 	defer session.Cleanup()

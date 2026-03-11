@@ -230,17 +230,32 @@ func materializeFromMetadata(
 }
 
 // verifySHA256 verifies that file content matches the expected SHA256 hex digest.
-func verifySHA256(data []byte, expectedHex string) error {
+// It returns the (possibly corrected) data. If the hash doesn't match but
+// appending a trailing newline fixes it, the newline-appended data is returned.
+// This works around a server-side bug where the API contentText field strips
+// trailing newlines from uploaded asset content.
+func verifySHA256(data []byte, expectedHex string) ([]byte, error) {
 	if expectedHex == "" {
-		return nil
+		return data, nil
 	}
 
 	hash := sha256.Sum256(data)
 	got := hex.EncodeToString(hash[:])
 
-	if got != expectedHex {
-		return fmt.Errorf("SHA256 mismatch: got %s, want %s", got, expectedHex)
+	if got == expectedHex {
+		return data, nil
 	}
 
-	return nil
+	// Server-side bug workaround: API contentText strips trailing newline.
+	// Try appending \n to recover the original content.
+	withNewline := make([]byte, len(data)+1)
+	copy(withNewline, data)
+	withNewline[len(data)] = '\n'
+
+	hash = sha256.Sum256(withNewline)
+	if hex.EncodeToString(hash[:]) == expectedHex {
+		return withNewline, nil
+	}
+
+	return nil, fmt.Errorf("SHA256 mismatch: got %s, want %s", got, expectedHex)
 }

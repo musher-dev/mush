@@ -73,6 +73,65 @@ func TestProviderMapper_PrepareLoad_Claude(t *testing.T) {
 	}
 }
 
+func TestProviderMapper_PrepareLoad_Claude_WithOtherAsset(t *testing.T) {
+	spec, ok := harness.GetProvider("claude")
+	if !ok {
+		t.Fatal("claude provider not found")
+	}
+
+	mapper := NewProviderMapper(spec)
+	cacheDir := t.TempDir()
+
+	assetsDir := filepath.Join(cacheDir, "assets")
+
+	write := func(rel, data string) {
+		path := filepath.Join(assetsDir, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("MkdirAll(%s) error = %v", rel, err)
+		}
+
+		if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+			t.Fatalf("WriteFile(%s) error = %v", rel, err)
+		}
+	}
+
+	write("skills/writing/SKILL.md", "skill content")
+	write("skills/writing/references/format.md", "reference content")
+
+	manifest := &client.BundleManifest{
+		Layers: []client.BundleLayer{
+			{LogicalPath: "skills/writing/SKILL.md", AssetType: "skill"},
+			{LogicalPath: "skills/writing/references/format.md", AssetType: "other"},
+		},
+	}
+
+	tmpDir, cleanup, err := mapper.PrepareLoad(t.Context(), cacheDir, manifest)
+	if err != nil {
+		t.Fatalf("PrepareLoad error = %v", err)
+	}
+
+	defer cleanup()
+
+	skillPath := filepath.Join(tmpDir, ".claude", "skills", "writing", "SKILL.md")
+	if _, statErr := os.Stat(skillPath); statErr != nil {
+		t.Fatalf("skill should be materialized: %v", statErr)
+	}
+
+	otherPath := filepath.Join(tmpDir, "skills", "writing", "references", "format.md")
+	if _, statErr := os.Stat(otherPath); statErr != nil {
+		t.Fatalf("other asset should be materialized at logical path: %v", statErr)
+	}
+
+	data, err := os.ReadFile(otherPath)
+	if err != nil {
+		t.Fatalf("ReadFile(other) error = %v", err)
+	}
+
+	if string(data) != "reference content" {
+		t.Fatalf("other asset content = %q, want %q", string(data), "reference content")
+	}
+}
+
 func TestStripMatchingPrefix(t *testing.T) {
 	tests := []struct {
 		dir, logicalPath, want string
