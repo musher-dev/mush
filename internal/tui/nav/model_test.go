@@ -458,9 +458,9 @@ func TestContextInfoMsg(t *testing.T) {
 	mdl := testModel()
 
 	msg := contextInfoMsg{
-		authStatus:    "authenticated",
-		workspaceName: "test-ws",
-		workspaceID:   "ws-123",
+		authStatus:       "authenticated",
+		organizationName: "test-org",
+		organizationID:   "org-123",
 	}
 
 	mdl = updateModel(mdl, msg)
@@ -473,8 +473,8 @@ func TestContextInfoMsg(t *testing.T) {
 		t.Errorf("authStatus = %q, want 'authenticated'", mdl.ctxInfo.authStatus)
 	}
 
-	if mdl.ctxInfo.workspaceName != "test-ws" {
-		t.Errorf("workspaceName = %q, want 'test-ws'", mdl.ctxInfo.workspaceName)
+	if mdl.ctxInfo.organizationName != "test-org" {
+		t.Errorf("organizationName = %q, want 'test-org'", mdl.ctxInfo.organizationName)
 	}
 }
 

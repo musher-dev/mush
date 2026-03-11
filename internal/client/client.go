@@ -1,7 +1,7 @@
 // Package client provides the API client for communicating with the Musher platform.
 //
 // The client handles authentication and provides methods for:
-//   - Validating API keys (service accounts)
+//   - Validating runner API keys
 //   - Claiming jobs from queues
 //   - Reporting job completion/failure
 //   - Sending job heartbeats
@@ -88,14 +88,42 @@ func (e *RequestError) Unwrap() error { return e.Cause }
 // RequestIDValue returns the request correlation ID when available.
 func (e *RequestError) RequestIDValue() string { return e.RequestID }
 
-// Identity represents the authenticated service account identity.
+// Identity represents the authenticated runner identity.
 type Identity struct {
-	CredentialType string `json:"credentialType"`
-	CredentialID   string `json:"credentialId"`
-	CredentialName string `json:"credentialName"`
-	RunnerID       string `json:"runnerId"`
-	WorkspaceID    string `json:"workspaceId"`
-	WorkspaceName  string `json:"workspaceName"`
+	CredentialType   string `json:"credentialType"`
+	CredentialID     string `json:"credentialId"`
+	CredentialName   string `json:"credentialName"`
+	RunnerID         string `json:"runnerId"`
+	OrganizationID   string `json:"organizationId"`
+	OrganizationName string `json:"organizationName"`
+}
+
+// UnmarshalJSON accepts both organization-scoped and legacy workspace-scoped payloads.
+func (i *Identity) UnmarshalJSON(data []byte) error {
+	type identityAlias struct {
+		CredentialType   string `json:"credentialType"`
+		CredentialID     string `json:"credentialId"`
+		CredentialName   string `json:"credentialName"`
+		RunnerID         string `json:"runnerId"`
+		OrganizationID   string `json:"organizationId"`
+		OrganizationName string `json:"organizationName"`
+		WorkspaceID      string `json:"workspaceId"`
+		WorkspaceName    string `json:"workspaceName"`
+	}
+
+	var aux identityAlias
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return fmt.Errorf("unmarshal identity: %w", err)
+	}
+
+	i.CredentialType = aux.CredentialType
+	i.CredentialID = aux.CredentialID
+	i.CredentialName = aux.CredentialName
+	i.RunnerID = aux.RunnerID
+	i.OrganizationID = firstNonEmpty(aux.OrganizationID, aux.WorkspaceID)
+	i.OrganizationName = firstNonEmpty(aux.OrganizationName, aux.WorkspaceName)
+
+	return nil
 }
 
 // ResponseMeta contains correlation metadata from an API response.
@@ -107,11 +135,38 @@ type ResponseMeta struct {
 // RunnerConfigResponse is the generic runner configuration payload.
 type RunnerConfigResponse struct {
 	ConfigVersion       string                          `json:"configVersion"`
-	WorkspaceID         string                          `json:"workspaceId"`
+	OrganizationID      string                          `json:"organizationId"`
 	GeneratedAt         time.Time                       `json:"generatedAt"`
 	RefreshAfterSeconds int                             `json:"refreshAfterSeconds"`
 	Providers           map[string]RunnerProviderConfig `json:"providers"`
 	Errors              []RunnerConfigError             `json:"errors,omitempty"`
+}
+
+// UnmarshalJSON accepts both organization-scoped and legacy workspace-scoped payloads.
+func (r *RunnerConfigResponse) UnmarshalJSON(data []byte) error {
+	type runnerConfigAlias struct {
+		ConfigVersion       string                          `json:"configVersion"`
+		OrganizationID      string                          `json:"organizationId"`
+		WorkspaceID         string                          `json:"workspaceId"`
+		GeneratedAt         time.Time                       `json:"generatedAt"`
+		RefreshAfterSeconds int                             `json:"refreshAfterSeconds"`
+		Providers           map[string]RunnerProviderConfig `json:"providers"`
+		Errors              []RunnerConfigError             `json:"errors,omitempty"`
+	}
+
+	var aux runnerConfigAlias
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return fmt.Errorf("unmarshal runner config: %w", err)
+	}
+
+	r.ConfigVersion = aux.ConfigVersion
+	r.OrganizationID = firstNonEmpty(aux.OrganizationID, aux.WorkspaceID)
+	r.GeneratedAt = aux.GeneratedAt
+	r.RefreshAfterSeconds = aux.RefreshAfterSeconds
+	r.Providers = aux.Providers
+	r.Errors = aux.Errors
+
+	return nil
 }
 
 // RunnerProviderConfig contains provider-specific runner configuration.
@@ -317,7 +372,7 @@ type InstructionAvailability struct {
 // Job represents a job claimed from the queue.
 type Job struct {
 	ID                  string         `json:"id"`
-	WorkspaceID         string         `json:"workspaceId"`
+	OrganizationID      string         `json:"organizationId"`
 	JobType             string         `json:"jobType"`
 	CeType              string         `json:"ceType"`
 	CeSource            string         `json:"ceSource"`
@@ -350,6 +405,79 @@ type Job struct {
 	Execution      *ExecutionConfig   `json:"-"`
 	WebhookConfig  map[string]any     `json:"-"`
 	ExecutionError string             `json:"-"`
+}
+
+// UnmarshalJSON accepts both organization-scoped and legacy workspace-scoped job payloads.
+func (j *Job) UnmarshalJSON(data []byte) error {
+	type jobAlias struct {
+		ID                  string         `json:"id"`
+		OrganizationID      string         `json:"organizationId"`
+		WorkspaceID         string         `json:"workspaceId"`
+		JobType             string         `json:"jobType"`
+		CeType              string         `json:"ceType"`
+		CeSource            string         `json:"ceSource"`
+		CeSubject           string         `json:"ceSubject,omitempty"`
+		Data                map[string]any `json:"data,omitempty"`
+		RouteID             string         `json:"routeId,omitempty"`
+		QueueID             string         `json:"queueId,omitempty"`
+		HabitatID           string         `json:"habitatId,omitempty"`
+		Priority            string         `json:"priority"`
+		Status              string         `json:"status"`
+		StatusReason        string         `json:"statusReason,omitempty"`
+		WorkerID            string         `json:"workerId,omitempty"`
+		ClaimedAt           *time.Time     `json:"claimedAt,omitempty"`
+		HeartbeatDeadlineAt *time.Time     `json:"heartbeatDeadlineAt,omitempty"`
+		AttemptNumber       int            `json:"attemptNumber"`
+		MaxAttempts         int            `json:"maxAttempts"`
+		NextRetryAt         *time.Time     `json:"nextRetryAt,omitempty"`
+		InputData           map[string]any `json:"inputData,omitempty"`
+		OutputData          map[string]any `json:"outputData,omitempty"`
+		ErrorCode           string         `json:"errorCode,omitempty"`
+		ErrorMessage        string         `json:"errorMessage,omitempty"`
+		ErrorDetails        map[string]any `json:"errorDetails,omitempty"`
+		StartedAt           *time.Time     `json:"startedAt,omitempty"`
+		CompletedAt         *time.Time     `json:"completedAt,omitempty"`
+		DurationMs          *int           `json:"durationMs,omitempty"`
+		CreatedAt           time.Time      `json:"createdAt"`
+		UpdatedAt           *time.Time     `json:"updatedAt,omitempty"`
+	}
+
+	var aux jobAlias
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return fmt.Errorf("unmarshal job: %w", err)
+	}
+
+	j.ID = aux.ID
+	j.OrganizationID = firstNonEmpty(aux.OrganizationID, aux.WorkspaceID)
+	j.JobType = aux.JobType
+	j.CeType = aux.CeType
+	j.CeSource = aux.CeSource
+	j.CeSubject = aux.CeSubject
+	j.Data = aux.Data
+	j.RouteID = aux.RouteID
+	j.QueueID = aux.QueueID
+	j.HabitatID = aux.HabitatID
+	j.Priority = aux.Priority
+	j.Status = aux.Status
+	j.StatusReason = aux.StatusReason
+	j.WorkerID = aux.WorkerID
+	j.ClaimedAt = aux.ClaimedAt
+	j.HeartbeatDeadlineAt = aux.HeartbeatDeadlineAt
+	j.AttemptNumber = aux.AttemptNumber
+	j.MaxAttempts = aux.MaxAttempts
+	j.NextRetryAt = aux.NextRetryAt
+	j.InputData = aux.InputData
+	j.OutputData = aux.OutputData
+	j.ErrorCode = aux.ErrorCode
+	j.ErrorMessage = aux.ErrorMessage
+	j.ErrorDetails = aux.ErrorDetails
+	j.StartedAt = aux.StartedAt
+	j.CompletedAt = aux.CompletedAt
+	j.DurationMs = aux.DurationMs
+	j.CreatedAt = aux.CreatedAt
+	j.UpdatedAt = aux.UpdatedAt
+
+	return nil
 }
 
 // JobClaimResponse wraps the claim response payload.
@@ -424,7 +552,7 @@ func (c *Client) BaseURL() string {
 	return c.baseURL
 }
 
-// ValidateKey validates the API key and returns the service account identity.
+// ValidateKey validates the API key and returns the runner identity.
 func (c *Client) ValidateKey(ctx context.Context) (*Identity, error) {
 	identity, _, err := c.ValidateKeyWithMeta(ctx)
 	return identity, err
@@ -611,6 +739,16 @@ func decodeJSON(body io.Reader, dst any, msg string) error {
 	}
 
 	return nil
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+
+	return ""
 }
 
 func emptyJSONBody() io.Reader {

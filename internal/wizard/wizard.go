@@ -145,7 +145,7 @@ func (w *Wizard) Run(ctx context.Context) error {
 
 	spin.StopWithSuccess("Authenticated")
 	w.out.Print("Credential: %s\n", identity.CredentialName)
-	w.out.Print("Workspace:  %s\n", identity.WorkspaceName)
+	w.out.Print("Organization: %s\n", identity.OrganizationName)
 
 	// Store credentials before habitat selection (so they persist even if user cancels)
 	w.out.Println()
@@ -188,7 +188,7 @@ func (w *Wizard) Run(ctx context.Context) error {
 
 	if len(habitats) == 0 {
 		w.out.Println()
-		w.out.Warning("No habitats found in your workspace")
+		w.out.Warning("No habitats found in your organization")
 		w.out.Info("Create a habitat in the console first, then run 'mush habitat list'")
 		w.showNextSteps()
 

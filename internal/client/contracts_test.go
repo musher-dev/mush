@@ -30,8 +30,8 @@ func TestContractRunnerMe(t *testing.T) {
 		t.Fatal("contract violation: credentialName is required")
 	}
 
-	if identity.WorkspaceID == "" {
-		t.Fatal("contract violation: workspaceId is required")
+	if identity.OrganizationID == "" {
+		t.Fatal("contract violation: organizationId is required")
 	}
 }
 
@@ -45,8 +45,8 @@ func TestContractRunnerConfig(t *testing.T) {
 		t.Fatal("contract violation: configVersion is required")
 	}
 
-	if cfg.WorkspaceID == "" {
-		t.Fatal("contract violation: workspaceId is required")
+	if cfg.OrganizationID == "" {
+		t.Fatal("contract violation: organizationId is required")
 	}
 
 	if cfg.RefreshAfterSeconds <= 0 {
@@ -64,8 +64,8 @@ func TestContractJobsClaim(t *testing.T) {
 		t.Fatal("contract violation: job.id is required")
 	}
 
-	if claim.Job.WorkspaceID == "" {
-		t.Fatal("contract violation: job.workspaceId is required")
+	if claim.Job.OrganizationID == "" {
+		t.Fatal("contract violation: job.organizationId is required")
 	}
 
 	if claim.Job.CeType == "" {

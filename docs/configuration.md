@@ -30,7 +30,7 @@ Mush stores data across three root locations following the XDG Base Directory Sp
 `~/.cache/mush/` (Linux default; `$XDG_CACHE_HOME/mush` when set)
 
 - `bundles/`
-  - `{workspace-id}/{slug}/{version}/`
+  - `{namespace}/{slug}/{version}/`
     - `manifest.json` — resolved bundle manifest
     - `assets/` — downloaded bundle files
 
@@ -216,7 +216,7 @@ In sensitive environments (shared machines, compliance-scoped workloads), consid
 
 ## Bundle Cache
 
-Downloaded bundles are cached at `<cache root>/bundles/{workspace-id}/{slug}/{version}/`.
+Downloaded bundles are cached at `<cache root>/bundles/{namespace}/{slug}/{version}/`.
 
 ### Structure
 

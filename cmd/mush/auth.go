@@ -90,7 +90,7 @@ You can also set the MUSH_API_KEY environment variable.`,
 				return clierrors.ConfigFailed("store credentials", err)
 			}
 
-			out.Success("Authenticated as %s (Workspace: %s)", identity.CredentialName, identity.WorkspaceName)
+			out.Success("Authenticated as %s (Organization: %s)", identity.CredentialName, identity.OrganizationName)
 
 			return nil
 		},
@@ -101,11 +101,11 @@ You can also set the MUSH_API_KEY environment variable.`,
 
 // AuthStatus represents authentication status for JSON output.
 type AuthStatus struct {
-	Source     string `json:"source"`
-	Credential string `json:"credential"`
-	Workspace  string `json:"workspace"`
-	RequestID  string `json:"request_id,omitempty"`
-	TraceID    string `json:"trace_id,omitempty"`
+	Source       string `json:"source"`
+	Credential   string `json:"credential"`
+	Organization string `json:"organization"`
+	RequestID    string `json:"request_id,omitempty"`
+	TraceID      string `json:"trace_id,omitempty"`
 }
 
 func newAuthStatusCmd() *cobra.Command {
@@ -146,11 +146,11 @@ func newAuthStatusCmd() *cobra.Command {
 
 			if out.JSON {
 				if err := out.PrintJSON(AuthStatus{
-					Source:     string(source),
-					Credential: identity.CredentialName,
-					Workspace:  identity.WorkspaceName,
-					RequestID:  requestID,
-					TraceID:    traceID,
+					Source:       string(source),
+					Credential:   identity.CredentialName,
+					Organization: identity.OrganizationName,
+					RequestID:    requestID,
+					TraceID:      traceID,
 				}); err != nil {
 					return clierrors.Wrap(clierrors.ExitGeneral, "Failed to write JSON output", err)
 				}
@@ -160,7 +160,7 @@ func newAuthStatusCmd() *cobra.Command {
 
 			out.Print("Source:     %s\n", source)
 			out.Print("Credential: %s\n", identity.CredentialName)
-			out.Print("Workspace:  %s\n", identity.WorkspaceName)
+			out.Print("Organization: %s\n", identity.OrganizationName)
 
 			if requestID != "" {
 				out.Print("Request ID: %s\n", requestID)

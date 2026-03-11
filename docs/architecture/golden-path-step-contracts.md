@@ -23,7 +23,7 @@ This contract defines the hardened CLI golden path in this repository.
 - Entry:
   - API key available via `MUSH_API_KEY`, `mush auth login`, or `mush init`
 - Exit:
-  - `mush auth status` returns credential/workspace identity
+  - `mush auth status` returns credential/organization identity
 - Invariants:
   - API key is never printed back in logs/output
   - Auth failures return actionable hint

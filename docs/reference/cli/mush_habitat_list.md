@@ -9,7 +9,7 @@ List available habitats
 
 ### Synopsis
 
-List all habitats available in your workspace.
+List all habitats available in your organization.
 
 ```
 mush habitat list [flags]

@@ -35,10 +35,10 @@ mush auth login
 mush auth status --json
 ```
 
-You should see `credential`, `workspace`, and (when provided by the API)
+You should see `credential`, `organization`, and (when provided by the API)
 `request_id`/`trace_id`.
 
-5. Initialize workspace defaults:
+5. Initialize organization defaults:
 
 ```bash
 mush init

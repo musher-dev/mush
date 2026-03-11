@@ -252,6 +252,11 @@ func (e *Executor) startInteractive(ctx context.Context, opts *harnesstype.Setup
 
 	cmd.Env = append(os.Environ(), "TERM=xterm-256color", "FORCE_COLOR=1")
 
+	cmd.Env = append(cmd.Env, opts.Env...)
+	if opts.WorkingDir != "" {
+		cmd.Dir = opts.WorkingDir
+	}
+
 	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{
 		Rows: uint16(opts.TermHeight),
 		Cols: uint16(opts.TermWidth),

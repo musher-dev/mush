@@ -7,7 +7,7 @@ import (
 	neturl "net/url"
 )
 
-// ListHabitats lists habitats available to the authenticated service account.
+// ListHabitats lists habitats available to the authenticated runner API key.
 func (c *Client) ListHabitats(ctx context.Context) ([]HabitatSummary, error) {
 	url := c.baseURL + "/api/v1/runner/habitats"
 

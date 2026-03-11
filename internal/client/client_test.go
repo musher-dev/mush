@@ -51,7 +51,7 @@ func TestNew(t *testing.T) {
 }
 
 func TestClientValidateKey(t *testing.T) {
-	identityJSON := `{"credentialType":"service_account","credentialName":"my-ci-runner","workspaceId":"ws-456","workspaceName":"Acme Corp"}`
+	identityJSON := `{"credentialType":"api_key","credentialName":"my-ci-runner","organizationId":"org-456","organizationName":"Acme Corp"}`
 
 	tests := []struct {
 		name       string
@@ -91,10 +91,29 @@ func TestClientValidateKey(t *testing.T) {
 				t.Fatalf("ValidateKey() error = %v", err)
 			}
 
-			if identity.WorkspaceName != "Acme Corp" {
-				t.Fatalf("WorkspaceName = %q, want %q", identity.WorkspaceName, "Acme Corp")
+			if identity.OrganizationName != "Acme Corp" {
+				t.Fatalf("OrganizationName = %q, want %q", identity.OrganizationName, "Acme Corp")
 			}
 		})
+	}
+}
+
+func TestClientValidateKeyLegacyWorkspacePayload(t *testing.T) {
+	c := newMockClient(t, func(r *http.Request) (*http.Response, error) {
+		return jsonResponse(http.StatusOK, `{"credentialType":"service_account","credentialName":"legacy-runner","workspaceId":"ws-456","workspaceName":"Legacy Workspace"}`), nil
+	})
+
+	identity, err := c.ValidateKey(t.Context())
+	if err != nil {
+		t.Fatalf("ValidateKey() error = %v", err)
+	}
+
+	if identity.OrganizationID != "ws-456" {
+		t.Fatalf("OrganizationID = %q, want ws-456", identity.OrganizationID)
+	}
+
+	if identity.OrganizationName != "Legacy Workspace" {
+		t.Fatalf("OrganizationName = %q, want Legacy Workspace", identity.OrganizationName)
 	}
 }
 
@@ -183,7 +202,7 @@ func TestClientGetRunnerConfig(t *testing.T) {
 			t.Fatalf("path = %q, want /api/v1/runner/config", r.URL.Path)
 		}
 
-		return jsonResponse(http.StatusOK, `{"configVersion":"1","workspaceId":"ws-123","generatedAt":"2026-02-13T12:00:00Z","refreshAfterSeconds":300,"providers":{"linear":{"status":"active","credential":{"accessToken":"tok_123"},"flags":{"mcp":true}}}}`), nil
+		return jsonResponse(http.StatusOK, `{"configVersion":"1","organizationId":"org-123","generatedAt":"2026-02-13T12:00:00Z","refreshAfterSeconds":300,"providers":{"linear":{"status":"active","credential":{"accessToken":"tok_123"},"flags":{"mcp":true}}}}`), nil
 	})
 
 	cfg, err := c.GetRunnerConfig(t.Context())
@@ -191,7 +210,7 @@ func TestClientGetRunnerConfig(t *testing.T) {
 		t.Fatalf("GetRunnerConfig() error = %v", err)
 	}
 
-	if cfg.WorkspaceID != "ws-123" || cfg.RefreshAfterSeconds != 300 {
+	if cfg.OrganizationID != "org-123" || cfg.RefreshAfterSeconds != 300 {
 		t.Fatalf("unexpected config: %#v", cfg)
 	}
 

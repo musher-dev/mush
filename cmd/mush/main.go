@@ -669,7 +669,12 @@ func showUpdateNotice(out *output.Writer, currentVersion string) {
 		}
 
 		if state.StagedVersion != "" && state.AutoApplyBlockedReason == "" {
-			out.Muted("  Update staged in background and will apply on a future run")
+			if state.LastApplyError != "" {
+				out.Muted("  Run 'mush update' to update")
+			} else {
+				out.Muted("  Update staged in background and will apply on a future run")
+			}
+
 			return
 		}
 

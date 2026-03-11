@@ -37,6 +37,8 @@ type Config struct {
 	BundleName     string // for status bar display
 	BundleVer      string // for status bar display
 	BundleDir      string // temp dir with harness-native asset structure
+	BundleWorkDir  string // working directory for interactive bundle sessions
+	BundleEnv      []string
 	BundleSummary  BundleSummary
 }
 
@@ -77,6 +79,16 @@ func SummarizeBundleManifest(manifest *client.BundleManifest) BundleSummary {
 		name := filepath.Base(logicalPath)
 		if name == "." || name == "/" || name == "" {
 			name = logicalPath
+		}
+
+		// For conventional filenames (SKILL.md, AGENT.md), use the parent
+		// directory name which is more descriptive (e.g. "hello" instead of
+		// "SKILL.md" for "skills/hello/SKILL.md").
+		if name == "SKILL.md" || name == "AGENT.md" {
+			parent := filepath.Base(filepath.Dir(logicalPath))
+			if parent != "." && parent != "/" && parent != "" {
+				name = parent
+			}
 		}
 
 		return append(dst, name)

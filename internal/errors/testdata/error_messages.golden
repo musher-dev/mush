@@ -24,7 +24,7 @@ Hint: Run 'mush habitat list' to see available habitats
 Code: 4
 
 --- NoHabitats ---
-Message: No habitats found in workspace
+Message: No habitats found in organization
 Hint: Create a habitat in the console first
 Code: 4
 
@@ -125,7 +125,7 @@ Code: 4
 
 --- BundleNotFound ---
 Message: Bundle not found: my-bundle
-Hint: Check the bundle reference or verify it exists in your workspace
+Hint: Check the bundle reference or verify it exists in a namespace you can access
 Code: 1
 
 --- BundleVersionNotFound ---

@@ -16,6 +16,9 @@ type AgentConfig struct {
 	AutoApply      bool
 }
 
+// errApplyBlocked indicates a staged apply did not succeed (state was saved).
+var errApplyBlocked = fmt.Errorf("staged apply did not succeed")
+
 // RunAgent performs a single background update tick.
 func RunAgent(cfg AgentConfig) error {
 	if IsDisabled() || cfg.CurrentVersion == "" || cfg.CurrentVersion == "dev" {
@@ -37,11 +40,13 @@ func RunAgent(cfg AgentConfig) error {
 		}
 
 		state.InstallSource = string(source)
-		state.AutoApplyBlockedReason = ""
 
 		allowedBySource := AutoApplyAllowed(source)
 		if !allowedBySource {
 			state.AutoApplyBlockedReason = "managed_install"
+		} else if state.AutoApplyBlockedReason == "managed_install" {
+			// Source changed from managed to standalone — clear stale reason.
+			state.AutoApplyBlockedReason = ""
 		}
 
 		if cfg.AutoApply && allowedBySource && state.HasStagedUpdate(cfg.CurrentVersion) {
@@ -106,8 +111,9 @@ func applyStaged(state *State, execPath string) error {
 		state.LastApplyAttemptAt = time.Now()
 		state.LastApplyError = "background apply requires elevated permissions"
 		state.AutoApplyBlockedReason = "elevation_required"
+		_ = SaveState(state)
 
-		return SaveState(state)
+		return errApplyBlocked
 	}
 
 	applyCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -117,8 +123,10 @@ func applyStaged(state *State, execPath string) error {
 	if err != nil {
 		state.LastApplyAttemptAt = time.Now()
 		state.LastApplyError = err.Error()
+		state.AutoApplyBlockedReason = "apply_error"
+		_ = SaveState(state)
 
-		return SaveState(state)
+		return errApplyBlocked
 	}
 
 	_, err = updater.ApplyVersion(applyCtx, state.StagedVersion)
@@ -126,8 +134,10 @@ func applyStaged(state *State, execPath string) error {
 
 	if err != nil {
 		state.LastApplyError = err.Error()
+		state.AutoApplyBlockedReason = "apply_error"
+		_ = SaveState(state)
 
-		return SaveState(state)
+		return errApplyBlocked
 	}
 
 	state.LastApplyError = ""

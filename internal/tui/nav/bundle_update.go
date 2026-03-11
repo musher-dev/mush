@@ -36,11 +36,20 @@ func (m *model) handleBundleInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case key.Matches(msg, m.keys.Tab):
-		// Cycle: input → list → input.
+		// Cycle: input → list → myBundles (if two-panel + has content) → input.
+		hasMyBundles := m.styles.layout == layoutTwoPanel && len(m.myBundles.bundles) > 0
+
 		switch m.bundleInput.focusArea {
 		case bundleFocusInput:
 			m.bundleInput.focusArea = bundleFocusList
 			m.bundleInput.textInput.Blur()
+		case bundleFocusList:
+			if hasMyBundles {
+				m.bundleInput.focusArea = bundleFocusMyBundles
+			} else {
+				m.bundleInput.focusArea = bundleFocusInput
+				m.bundleInput.textInput.Focus()
+			}
 		default:
 			m.bundleInput.focusArea = bundleFocusInput
 			m.bundleInput.textInput.Focus()
@@ -65,10 +74,26 @@ func (m *model) handleBundleInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+		if m.bundleInput.focusArea == bundleFocusMyBundles && len(m.myBundles.bundles) > 0 {
+			if m.myBundles.cursor < len(m.myBundles.bundles)-1 {
+				m.myBundles.cursor++
+			}
+
+			return m, nil
+		}
+
 	case key.Matches(msg, m.keys.Up):
 		if m.bundleInput.focusArea == bundleFocusList {
 			if m.bundleInput.listCursor > 0 {
 				m.bundleInput.listCursor--
+			}
+
+			return m, nil
+		}
+
+		if m.bundleInput.focusArea == bundleFocusMyBundles {
+			if m.myBundles.cursor > 0 {
+				m.myBundles.cursor--
 			}
 
 			return m, nil
@@ -92,6 +117,22 @@ func (m *model) handleBundleInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m *model) submitBundleSelection() (tea.Model, tea.Cmd) {
 	// If text input is focused, submit the typed slug.
 	if m.bundleInput.focusArea == bundleFocusInput {
+		return m.submitBundleInput()
+	}
+
+	// My Bundles panel selected — populate input with the selected bundle and submit.
+	if m.bundleInput.focusArea == bundleFocusMyBundles && len(m.myBundles.bundles) > 0 {
+		b := m.myBundles.bundles[m.myBundles.cursor]
+
+		value := b.Publisher.Handle + "/" + b.Slug
+		if b.LatestVersion != "" {
+			value += ":" + b.LatestVersion
+		}
+
+		m.bundleInput.textInput.SetValue(value)
+		m.bundleInput.focusArea = bundleFocusInput
+		m.bundleInput.textInput.Focus()
+
 		return m.submitBundleInput()
 	}
 

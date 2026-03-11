@@ -173,7 +173,7 @@ Press Ctrl+S to toggle copy mode (Esc to return to live input).`,
 			}
 
 			spin.StopWithSuccess("Connected to " + apiURL)
-			out.Print("Authenticated as: %s (Workspace: %s)\n", identity.CredentialName, identity.WorkspaceName)
+			out.Print("Authenticated as: %s (Organization: %s)\n", identity.CredentialName, identity.OrganizationName)
 
 			var runnerConfig *client.RunnerConfigResponse
 
@@ -335,7 +335,7 @@ func handleWorkerNavResult(cmd *cobra.Command, out *output.Writer, result *nav.R
 		return clierrors.AuthFailed(err)
 	}
 
-	out.Print("Authenticated as: %s (Workspace: %s)\n", identity.CredentialName, identity.WorkspaceName)
+	out.Print("Authenticated as: %s (Organization: %s)\n", identity.CredentialName, identity.OrganizationName)
 
 	var runnerConfig *client.RunnerConfigResponse
 

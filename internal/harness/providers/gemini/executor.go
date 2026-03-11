@@ -253,11 +253,14 @@ func (e *Executor) startInteractive(ctx context.Context, opts *harnesstype.Setup
 	}
 
 	cmd := exec.CommandContext(ctx, "gemini", args...)
-	if opts.BundleDir != "" {
+	if opts.WorkingDir != "" {
+		cmd.Dir = opts.WorkingDir
+	} else if opts.BundleDir != "" {
 		cmd.Dir = opts.BundleDir
 	}
 
 	cmd.Env = append(os.Environ(), "TERM=xterm-256color", "FORCE_COLOR=1")
+	cmd.Env = append(cmd.Env, opts.Env...)
 
 	cleanup, env, err := buildGeminiConfigEnv(e.mcpConfigContent)
 	if err != nil {

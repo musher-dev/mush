@@ -74,6 +74,8 @@ type embeddedRuntime struct {
 	bundleName     string
 	bundleVer      string
 	bundleDir      string
+	bundleWorkDir  string
+	bundleEnv      []string
 	bundleSummary  BundleSummary
 
 	done      chan struct{}
@@ -115,6 +117,8 @@ func newEmbeddedRuntime(ctx context.Context, cfg *Config) *embeddedRuntime {
 		bundleName:         cfg.BundleName,
 		bundleVer:          cfg.BundleVer,
 		bundleDir:          cfg.BundleDir,
+		bundleWorkDir:      cfg.BundleWorkDir,
+		bundleEnv:          append([]string(nil), cfg.BundleEnv...),
 		bundleSummary:      cfg.BundleSummary,
 		done:               make(chan struct{}),
 		now:                time.Now,
@@ -247,6 +251,8 @@ func (r *embeddedRuntime) setupExecutors() error {
 			SignalDir:      r.jobs.signalDir,
 			RunnerConfig:   r.jobs.runnerConfig,
 			BundleDir:      r.bundleDir,
+			WorkingDir:     r.bundleWorkDir,
+			Env:            append([]string(nil), r.bundleEnv...),
 			BundleLoadMode: r.bundleLoadMode,
 			OnOutput: func(p []byte) {
 				r.appendTranscript("pty", p)
