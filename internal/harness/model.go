@@ -86,6 +86,8 @@ type RootModel struct {
 	bundleName     string
 	bundleVer      string
 	bundleDir      string
+	bundleWorkDir  string
+	bundleEnv      []string
 	bundleSummary  BundleSummary
 
 	// Control channels.
@@ -146,6 +148,8 @@ func NewRootModel(ctx context.Context, cfg *Config) *RootModel {
 		bundleName:          cfg.BundleName,
 		bundleVer:           cfg.BundleVer,
 		bundleDir:           cfg.BundleDir,
+		bundleWorkDir:       cfg.BundleWorkDir,
+		bundleEnv:           append([]string(nil), cfg.BundleEnv...),
 		bundleSummary:       cfg.BundleSummary,
 		now:                 time.Now,
 		ctrlCExitWindow:     defaultCtrlCExitWindow,
@@ -287,6 +291,8 @@ func (m *RootModel) Run() error {
 			SignalDir:      m.jobs.signalDir,
 			RunnerConfig:   m.jobs.runnerConfig,
 			BundleDir:      m.bundleDir,
+			WorkingDir:     m.bundleWorkDir,
+			Env:            append([]string(nil), m.bundleEnv...),
 			BundleLoadMode: m.bundleLoadMode,
 			OnOutput: func(p []byte) {
 				m.appendTranscript("pty", p)

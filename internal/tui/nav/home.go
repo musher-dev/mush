@@ -310,8 +310,8 @@ func renderStatusLine(mdl *model) string {
 
 	var parts []string
 
-	if mdl.ctxInfo.workspaceName != "" {
-		parts = append(parts, mdl.styles.progressText.Render(mdl.ctxInfo.workspaceName))
+	if mdl.ctxInfo.organizationName != "" {
+		parts = append(parts, mdl.styles.progressText.Render(mdl.ctxInfo.organizationName))
 	}
 
 	if mdl.ctxInfo.authStatus == "authenticated" {

@@ -12,8 +12,10 @@ Install bundle assets into the current project
 Pull a bundle and install its assets into the harness's native directory
 structure in the current project directory.
 
+Alternatively, install from a local directory with --dir.
+
 ```
-mush bundle install <namespace/slug>[:<version>] [flags]
+mush bundle install [<namespace/slug>[:<version>]] [flags]
 ```
 
 ### Examples
@@ -21,11 +23,13 @@ mush bundle install <namespace/slug>[:<version>] [flags]
 ```
   mush bundle install acme/my-kit --harness claude
   mush bundle install acme/my-kit:0.1.0 --harness claude --force
+  mush bundle install --dir ./my-bundle --harness claude
 ```
 
 ### Options
 
 ```
+      --dir string       Install bundle from a local directory
   -f, --force            Overwrite existing files
       --harness string   Harness type to install for (required)
   -h, --help             help for install

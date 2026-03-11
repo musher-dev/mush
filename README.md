@@ -65,6 +65,8 @@ mush bundle list                           # See cached/installed
 
 Browse public bundles on [Musher Hub](https://hub.musher.dev). Run `mush doctor` to verify your setup.
 
+Bundle references use `namespace/slug`. The namespace may be an organization handle or a personal username.
+
 ## Commands
 
 Mush uses noun-verb command structure. Run `mush <command> --help` for details.

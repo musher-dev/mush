@@ -382,6 +382,11 @@ func (e *Executor) startPTY(ctx context.Context) error {
 		"MUSH_SIGNAL_DIR="+e.signalDir,
 	)
 
+	cmd.Env = append(cmd.Env, e.opts.Env...)
+	if e.opts.WorkingDir != "" {
+		cmd.Dir = e.opts.WorkingDir
+	}
+
 	// NOTE: cmd.Stdin/Stdout/Stderr must remain nil here.
 	// creack/pty.StartWithSize assigns the PTY tty to all three;
 	// pre-setting Stdin to a non-tty would break Setctty (fd 0 must be the tty).

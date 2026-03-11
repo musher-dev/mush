@@ -55,49 +55,28 @@ func handleBundleLoadNavResult(cmd *cobra.Command, out *output.Writer, result *n
 		}
 	}
 
-	tmpDir, cleanup, err := mapper.PrepareLoad(cmd.Context(), result.CachePath, &resolved.Manifest)
-	if err != nil {
-		return clierrors.Wrap(clierrors.ExitGeneral, "Failed to prepare load directory", err)
-	}
-
-	defer cleanup()
-
 	projectDir, err := os.Getwd()
 	if err != nil {
 		return clierrors.Wrap(clierrors.ExitGeneral, "Failed to get working directory", err)
 	}
 
-	injected, assetWarnings, assetCleanup, err := bundle.InjectAssetsForLoad(
-		projectDir, result.CachePath, &resolved.Manifest, mapper,
+	spec, _ := harness.GetProvider(normalized)
+
+	session, err := bundle.PrepareLoadSession(
+		cmd.Context(), projectDir, result.CachePath, &resolved.Manifest, spec, mapper,
 	)
 	if err != nil {
-		return clierrors.Wrap(clierrors.ExitGeneral, "Failed to inject assets for load", err)
+		return clierrors.Wrap(clierrors.ExitGeneral, "Failed to prepare bundle load session", err)
 	}
 
-	defer assetCleanup()
+	defer session.Cleanup()
 
-	for _, w := range assetWarnings {
+	for _, w := range session.Warnings {
 		out.Warning("%s", w)
 	}
 
-	for _, relPath := range injected {
-		out.Success("Injected: %s", relPath)
-	}
-
-	spec, _ := harness.GetProvider(normalized)
-	if spec != nil && (spec.CLI == nil || spec.CLI.MCPConfig == "") {
-		toolInjected, toolCleanup, toolErr := bundle.InjectToolConfigsForLoad(
-			projectDir, result.CachePath, &resolved.Manifest, mapper,
-		)
-		if toolErr != nil {
-			return clierrors.Wrap(clierrors.ExitGeneral, "Failed to inject tool configs for load", toolErr)
-		}
-
-		defer toolCleanup()
-
-		for _, relPath := range toolInjected {
-			out.Success("Injected: %s", relPath)
-		}
+	for _, relPath := range session.Prepared {
+		out.Success("Prepared: %s", relPath)
 	}
 
 	runnerConfig := loadRunnerConfigIfAvailable(cmd, out)
@@ -107,7 +86,9 @@ func handleBundleLoadNavResult(cmd *cobra.Command, out *output.Writer, result *n
 		BundleLoadMode:     true,
 		BundleName:         resolved.Slug,
 		BundleVer:          resolved.Version,
-		BundleDir:          tmpDir,
+		BundleDir:          session.BundleDir,
+		BundleWorkDir:      session.WorkingDir,
+		BundleEnv:          session.Env,
 		RunnerConfig:       runnerConfig,
 		BundleSummary:      harness.SummarizeBundleManifest(&resolved.Manifest),
 	}

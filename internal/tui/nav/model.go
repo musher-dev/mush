@@ -78,8 +78,9 @@ func loadHarnesses() []harnessOption {
 type bundleInputFocus int
 
 const (
-	bundleFocusInput bundleInputFocus = iota // text input
-	bundleFocusList                          // recent/installed/action list
+	bundleFocusInput     bundleInputFocus = iota // text input
+	bundleFocusList                              // recent/installed/action list
+	bundleFocusMyBundles                         // my bundles panel (two-panel only)
 )
 
 // bundleInputState holds state for the bundle input screen.
@@ -109,6 +110,15 @@ type installedBundleEntry struct {
 	ref       string
 	version   string
 	harness   string
+}
+
+// myBundlesState holds state for the "My Bundles" panel on the bundle input screen.
+type myBundlesState struct {
+	loading  bool
+	spinner  spinner.Model
+	bundles  []client.HubBundleSummary
+	cursor   int
+	errorMsg string // empty = success, non-empty = display message
 }
 
 // bundleResolveState holds state for the resolving screen.
@@ -331,11 +341,11 @@ type harnessExpandState struct {
 
 // contextInfo holds async-loaded context data for the sidebar panel.
 type contextInfo struct {
-	loading        bool
-	authStatus     string // "authenticated", "not authenticated"
-	workspaceName  string
-	workspaceID    string
-	recentSessions []transcript.Session
+	loading          bool
+	authStatus       string // "authenticated", "not authenticated"
+	organizationName string
+	organizationID   string
+	recentSessions   []transcript.Session
 }
 
 // model is the top-level Bubbletea model for the interactive TUI.
@@ -369,6 +379,7 @@ type model struct {
 	ctxInfo contextInfo
 
 	// Bundle sub-states
+	myBundles            myBundlesState
 	bundleInput          bundleInputState
 	bundleResolve        bundleResolveState
 	bundleConfirm        bundleConfirmState
@@ -440,6 +451,9 @@ func newModel(ctx context.Context, deps *Dependencies) *model {
 	historyDetailSpinner := spinner.New()
 	historyDetailSpinner.Spinner = spinner.Dot
 
+	myBundlesSpinner := spinner.New()
+	myBundlesSpinner.Spinner = spinner.Dot
+
 	hubSearchInput := textinput.New()
 	hubSearchInput.Placeholder = "Search bundles..."
 	hubSearchInput.CharLimit = 128
@@ -483,6 +497,9 @@ func newModel(ctx context.Context, deps *Dependencies) *model {
 		},
 		status: statusState{
 			spinner: statusSpinner,
+		},
+		myBundles: myBundlesState{
+			spinner: myBundlesSpinner,
 		},
 		bundleInput: bundleInputState{
 			textInput: slugInput,
@@ -628,12 +645,19 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case contextInfoMsg:
 		m.ctxInfo = contextInfo{
-			loading:        false,
-			authStatus:     msg.authStatus,
-			workspaceName:  msg.workspaceName,
-			workspaceID:    msg.workspaceID,
-			recentSessions: msg.recentSessions,
+			loading:          false,
+			authStatus:       msg.authStatus,
+			organizationName: msg.organizationName,
+			organizationID:   msg.organizationID,
+			recentSessions:   msg.recentSessions,
 		}
+
+		return m, nil
+
+	case myBundlesLoadedMsg:
+		m.myBundles.loading = false
+		m.myBundles.bundles = msg.bundles
+		m.myBundles.errorMsg = msg.errorMsg
 
 		return m, nil
 
@@ -781,6 +805,14 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			var cmd tea.Cmd
 
 			m.historyDetail.spinner, cmd = m.historyDetail.spinner.Update(msg)
+
+			return m, cmd
+		}
+
+		if m.activeScreen == screenBundleInput && m.myBundles.loading {
+			var cmd tea.Cmd
+
+			m.myBundles.spinner, cmd = m.myBundles.spinner.Update(msg)
 
 			return m, cmd
 		}
@@ -963,7 +995,16 @@ func (m *model) activateMenuItem(idx int) (tea.Model, tea.Cmd) {
 			workDir = m.deps.WorkDir
 		}
 
-		return m, tea.Batch(textinput.Blink, cmdLoadBundleLists(workDir))
+		cmds := []tea.Cmd{textinput.Blink, cmdLoadBundleLists(workDir)}
+
+		if m.deps != nil && m.deps.Client != nil && m.deps.Client.IsAuthenticated() {
+			m.myBundles = myBundlesState{loading: true, spinner: m.myBundles.spinner}
+			cmds = append(cmds, m.myBundles.spinner.Tick, cmdLoadMyBundles(m.ctx, m.deps.Client))
+		} else {
+			m.myBundles = myBundlesState{spinner: m.myBundles.spinner, errorMsg: "Sign in to see your bundles"}
+		}
+
+		return m, tea.Batch(cmds...)
 
 	case 'w':
 		if m.deps == nil || m.deps.Client == nil || !m.deps.Client.IsAuthenticated() {

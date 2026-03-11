@@ -34,7 +34,7 @@ func workerMockClient(t *testing.T, runnerConfig string) *client.Client {
 	hc := &http.Client{Transport: workerRoundTripFunc(func(r *http.Request) (*http.Response, error) {
 		switch {
 		case r.URL.Path == "/api/v1/runner/me" && r.Method == http.MethodGet:
-			return workerJSONResponse(http.StatusOK, `{"credentialType":"service_account","credentialId":"cred-1","credentialName":"test-sa","runnerId":"sa_xxx","workspaceId":"ws-1","workspaceName":"Test Workspace"}`), nil
+			return workerJSONResponse(http.StatusOK, `{"credentialType":"api_key","credentialId":"cred-1","credentialName":"test-key","runnerId":"mut_xxx","organizationId":"org-1","organizationName":"Test Organization"}`), nil
 		case r.URL.Path == "/api/v1/runner/config" && r.Method == http.MethodGet:
 			return workerJSONResponse(http.StatusOK, runnerConfig), nil
 		case r.URL.Path == "/api/v1/runner/habitats" && r.Method == http.MethodGet:
@@ -70,7 +70,7 @@ func TestWorkerStartDryRunSucceedsWithoutTTY(t *testing.T) {
 	out := output.NewWriter(io.Discard, io.Discard, term)
 	out.NoInput = true
 
-	withMockAPIClient(t, workerMockClient(t, `{"configVersion":"1","workspaceId":"ws-1","generatedAt":"2026-02-13T12:00:00Z","refreshAfterSeconds":300,"providers":{}}`))
+	withMockAPIClient(t, workerMockClient(t, `{"configVersion":"1","organizationId":"org-1","generatedAt":"2026-02-13T12:00:00Z","refreshAfterSeconds":300,"providers":{}}`))
 
 	cmd := newWorkerCmd()
 	cmd.SetArgs([]string{"start", "--dry-run", "--habitat", "local", "--queue", "q-1"})
@@ -88,7 +88,7 @@ func TestWorkerStartNoDryRunRequiresTTY(t *testing.T) {
 	out := output.NewWriter(io.Discard, io.Discard, term)
 	out.NoInput = true
 
-	withMockAPIClient(t, workerMockClient(t, `{"configVersion":"1","workspaceId":"ws-1","generatedAt":"2026-02-13T12:00:00Z","refreshAfterSeconds":300,"providers":{}}`))
+	withMockAPIClient(t, workerMockClient(t, `{"configVersion":"1","organizationId":"org-1","generatedAt":"2026-02-13T12:00:00Z","refreshAfterSeconds":300,"providers":{}}`))
 
 	cmd := newWorkerCmd()
 	cmd.SetArgs([]string{"start", "--habitat", "local", "--queue", "q-1"})
@@ -122,7 +122,7 @@ func TestWorkerStartDryRunPrintsMCPServers(t *testing.T) {
 	out := output.NewWriter(&outBuf, io.Discard, term)
 	out.NoInput = true
 
-	withMockAPIClient(t, workerMockClient(t, `{"configVersion":"1","workspaceId":"ws-1","generatedAt":"2026-02-13T12:00:00Z","refreshAfterSeconds":300,"providers":{"linear":{"status":"active","credential":{"accessToken":"tok","tokenType":"bearer","expiresAt":"2099-12-31T23:59:59Z"},"flags":{"mcp":true},"mcp":{"url":"https://mcp.linear.app/mcp","transport":"streamable-http"}}}}`))
+	withMockAPIClient(t, workerMockClient(t, `{"configVersion":"1","organizationId":"org-1","generatedAt":"2026-02-13T12:00:00Z","refreshAfterSeconds":300,"providers":{"linear":{"status":"active","credential":{"accessToken":"tok","tokenType":"bearer","expiresAt":"2099-12-31T23:59:59Z"},"flags":{"mcp":true},"mcp":{"url":"https://mcp.linear.app/mcp","transport":"streamable-http"}}}}`))
 
 	cmd := newWorkerCmd()
 	cmd.SetArgs([]string{"start", "--dry-run", "--habitat", "local", "--queue", "q-1", "--harness", "claude"})
@@ -163,7 +163,7 @@ func TestWorkerStartBundleFlagInvalidRef(t *testing.T) {
 	out := output.NewWriter(io.Discard, io.Discard, term)
 	out.NoInput = true
 
-	withMockAPIClient(t, workerMockClient(t, `{"configVersion":"1","workspaceId":"ws-1","generatedAt":"2026-02-13T12:00:00Z","refreshAfterSeconds":300,"providers":{}}`))
+	withMockAPIClient(t, workerMockClient(t, `{"configVersion":"1","organizationId":"org-1","generatedAt":"2026-02-13T12:00:00Z","refreshAfterSeconds":300,"providers":{}}`))
 
 	cmd := newWorkerCmd()
 	cmd.SetArgs([]string{"start", "--dry-run", "--habitat", "local", "--queue", "q-1", "--bundle", ":"})
@@ -187,7 +187,7 @@ func TestWorkerStartBundleFlagInvalidRef(t *testing.T) {
 }
 
 func TestResolveQueueAndHabitatNoInputSelection(t *testing.T) {
-	c := workerMockClient(t, `{"configVersion":"1","workspaceId":"ws-1","generatedAt":"2026-02-13T12:00:00Z","refreshAfterSeconds":300,"providers":{}}`)
+	c := workerMockClient(t, `{"configVersion":"1","organizationId":"org-1","generatedAt":"2026-02-13T12:00:00Z","refreshAfterSeconds":300,"providers":{}}`)
 	out := output.NewWriter(io.Discard, io.Discard, &terminal.Info{})
 	out.NoInput = true
 

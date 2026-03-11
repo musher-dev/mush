@@ -199,6 +199,11 @@ func (e *Executor) startInteractive(ctx context.Context, opts *harnesstype.Setup
 
 	cmd.Env = append(os.Environ(), "TERM=xterm-256color", "FORCE_COLOR=1")
 
+	cmd.Env = append(cmd.Env, opts.Env...)
+	if opts.WorkingDir != "" {
+		cmd.Dir = opts.WorkingDir
+	}
+
 	// NOTE: cmd.Stdin/Stdout/Stderr must remain nil here.
 	// creack/pty.StartWithSize assigns the PTY tty to all three;
 	// pre-setting Stdin to a non-tty would break Setctty (fd 0 must be the tty).

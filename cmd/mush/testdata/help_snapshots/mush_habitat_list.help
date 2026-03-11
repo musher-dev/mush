@@ -1,4 +1,4 @@
-List all habitats available in your workspace.
+List all habitats available in your organization.
 
 Usage:
   mush habitat list [flags]

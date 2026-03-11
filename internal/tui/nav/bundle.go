@@ -14,8 +14,20 @@ import (
 func renderBundleInput(mdl *model) string {
 	crumbs := renderBreadcrumb(&mdl.styles, []string{"Home", "Load Bundle"})
 
+	leftActive := mdl.bundleInput.focusArea != bundleFocusMyBundles
 	body := renderBundleInputBody(mdl)
-	panel := renderPanel(&mdl.styles, "Load bundle", body, mdl.styles.menuWidth, true)
+	leftPanel := renderPanel(&mdl.styles, "Load bundle", body, mdl.styles.menuWidth, leftActive)
+
+	var panels string
+
+	if mdl.styles.layout == layoutTwoPanel {
+		rightActive := mdl.bundleInput.focusArea == bundleFocusMyBundles
+		rightBody := renderMyBundlesBody(mdl)
+		rightPanel := renderPanel(&mdl.styles, "My Bundles", rightBody, mdl.styles.menuWidth, rightActive)
+		panels = lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, "  ", rightPanel)
+	} else {
+		panels = leftPanel
+	}
 
 	footer := renderKeyHints(&mdl.styles, []hint{
 		{key: "tab", desc: "switch focus"},
@@ -24,7 +36,7 @@ func renderBundleInput(mdl *model) string {
 		{key: "esc", desc: "back"},
 	})
 
-	content := lipgloss.JoinVertical(lipgloss.Center, crumbs, "", panel, "", footer)
+	content := lipgloss.JoinVertical(lipgloss.Center, crumbs, "", panels, "", footer)
 
 	return lipgloss.Place(
 		mdl.width, mdl.height,
@@ -518,4 +530,37 @@ func renderBundleContents(styles *theme, layers []client.BundleLayer, layout lay
 	}
 
 	return strings.Join(lines, "\n")
+}
+
+// renderMyBundlesBody renders the body content for the "My Bundles" panel.
+func renderMyBundlesBody(mdl *model) string {
+	if mdl.myBundles.loading {
+		return mdl.myBundles.spinner.View() + " " + mdl.styles.spinnerText.Render("Loading...")
+	}
+
+	if mdl.myBundles.errorMsg != "" {
+		return mdl.styles.placeholder.Render(mdl.myBundles.errorMsg)
+	}
+
+	if len(mdl.myBundles.bundles) == 0 {
+		return mdl.styles.placeholder.Render("No bundles published yet")
+	}
+
+	var rows []string
+
+	for i := range mdl.myBundles.bundles {
+		b := &mdl.myBundles.bundles[i]
+		active := mdl.bundleInput.focusArea == bundleFocusMyBundles && mdl.myBundles.cursor == i
+
+		label := b.Publisher.Handle + "/" + b.Slug
+		if b.LatestVersion != "" {
+			label += " v" + b.LatestVersion
+		}
+
+		detail := formatTimeAgo(b.UpdatedAt)
+		row := renderBundleListRow(mdl, label, detail, active)
+		rows = append(rows, row)
+	}
+
+	return strings.Join(rows, "\n")
 }

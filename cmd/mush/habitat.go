@@ -13,7 +13,7 @@ func newHabitatCmd() *cobra.Command {
 		Short: "Manage habitats",
 		Long: `Commands for listing and selecting habitats.
 
-Habitats are execution contexts within your workspace where harnesses connect
+Habitats are execution contexts within your organization where harnesses connect
 and jobs are routed. You must select a habitat before starting a worker to receive jobs.`,
 	}
 
@@ -26,7 +26,7 @@ func newHabitatListCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "list",
 		Short: "List available habitats",
-		Long:  `List all habitats available in your workspace.`,
+		Long:  `List all habitats available in your organization.`,
 		Example: `  mush habitat list
   mush habitat list --json`,
 		Args: noArgs,

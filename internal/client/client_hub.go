@@ -165,6 +165,89 @@ func (c *Client) GetHubBundleDetail(ctx context.Context, publisherHandle, bundle
 	return &result, nil
 }
 
+// PublisherHandle is a lightweight representation of a publisher identity.
+type PublisherHandle struct {
+	Handle      string `json:"handle"`
+	DisplayName string `json:"displayName"`
+}
+
+// ErrEndpointNotAvailable indicates the API endpoint is not yet deployed.
+var ErrEndpointNotAvailable = fmt.Errorf("endpoint not available")
+
+// ListPublisherBundles lists bundles for a publisher (public, no auth required).
+func (c *Client) ListPublisherBundles(ctx context.Context, publisherHandle string, limit int, cursor string) (*HubSearchResponse, error) {
+	endpoint, err := neturl.Parse(c.baseURL + "/api/v1/hub/publishers/" + neturl.PathEscape(publisherHandle) + "/bundles")
+	if err != nil {
+		return nil, fmt.Errorf("parse publisher bundles endpoint: %w", err)
+	}
+
+	params := endpoint.Query()
+
+	if limit > 0 {
+		params.Set("limit", fmt.Sprintf("%d", limit))
+	}
+
+	if cursor != "" {
+		params.Set("cursor", cursor)
+	}
+
+	endpoint.RawQuery = params.Encode()
+
+	req, err := c.newPublicRequest(ctx, "GET", endpoint.String(), http.NoBody)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.do(req, "/api/v1/hub/publishers/{handle}/bundles")
+	if err != nil {
+		return nil, fmt.Errorf("list publisher bundles: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, unexpectedStatus("list publisher bundles", resp)
+	}
+
+	var result HubSearchResponse
+	if err := decodeJSON(resp.Body, &result, "failed to parse publisher bundles response"); err != nil {
+		return nil, err
+	}
+
+	return &result, nil
+}
+
+// GetRunnerPublishers returns publisher handles associated with the authenticated runner.
+// Returns ErrEndpointNotAvailable if the server has not deployed this endpoint yet.
+func (c *Client) GetRunnerPublishers(ctx context.Context) ([]PublisherHandle, error) {
+	req, err := c.newRequest(ctx, "GET", c.baseURL+"/api/v1/hub/me/publishers", http.NoBody)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.do(req, "/api/v1/hub/me/publishers")
+	if err != nil {
+		return nil, fmt.Errorf("get runner publishers: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, ErrEndpointNotAvailable
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, unexpectedStatus("get runner publishers", resp)
+	}
+
+	var result struct {
+		Data []PublisherHandle `json:"data"`
+	}
+	if err := decodeJSON(resp.Body, &result, "failed to parse runner publishers"); err != nil {
+		return nil, err
+	}
+
+	return result.Data, nil
+}
+
 // ListHubCategories lists available hub categories (public, no auth required).
 func (c *Client) ListHubCategories(ctx context.Context) ([]HubCategory, error) {
 	req, err := c.newPublicRequest(ctx, "GET", c.baseURL+"/api/v1/hub/categories", http.NoBody)

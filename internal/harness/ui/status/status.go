@@ -163,7 +163,7 @@ func SidebarLines(s *state.Snapshot, rows int) []string {
 		}
 	}
 
-	lines = append(lines, "", "Session")
+	lines = append(lines, "", "Interaction")
 
 	if s.QueueID != "" {
 		lines = append(lines, "  queue: "+s.QueueID)

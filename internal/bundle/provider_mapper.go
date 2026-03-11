@@ -43,28 +43,28 @@ func (m *providerMapper) MapAsset(workDir string, layer client.BundleLayer) (str
 	}
 }
 
-// stripMatchingPrefix removes the first path segment from logicalPath if it
-// matches the last segment of dir, preventing path doubling (e.g.,
-// dir=".claude/skills" + path="skills/web/SKILL.md" → "web/SKILL.md").
+// stripMatchingPrefix removes the leading directory from logicalPath when it
+// overlaps with dir, preventing path doubling. It handles two cases:
+//
+//  1. Full dir prefix: dir=".claude/skills" + path=".claude/skills/foo.md" → "foo.md"
+//  2. Base-only prefix: dir=".claude/skills" + path="skills/web/SKILL.md" → "web/SKILL.md"
 func stripMatchingPrefix(dir, logicalPath string) string {
-	dirBase := filepath.Base(dir)
+	// Case 1: logicalPath starts with the full dir (e.g. hub-published assets).
+	fullPrefix := dir + "/"
+	if strings.HasPrefix(logicalPath, fullPrefix) {
+		return logicalPath[len(fullPrefix):]
+	}
 
-	prefix := dirBase + "/"
-	if strings.HasPrefix(logicalPath, prefix) {
-		return logicalPath[len(prefix):]
+	// Case 2: logicalPath starts with only the base segment of dir.
+	basePrefix := filepath.Base(dir) + "/"
+	if strings.HasPrefix(logicalPath, basePrefix) {
+		return logicalPath[len(basePrefix):]
 	}
 
 	return logicalPath
 }
 
 // PrepareLoad creates a temp directory with assets in the provider's native structure.
-// For add_dir mode harnesses, discoverable assets (skills, agents) are excluded
-// from the temp dir because they are injected into the project directory instead.
 func (m *providerMapper) PrepareLoad(_ context.Context, cachePath string, manifest *client.BundleManifest) (tmpDir string, cleanup func(), err error) {
-	var skip map[string]bool
-	if m.spec.BundleDir != nil && m.spec.BundleDir.Mode == "add_dir" {
-		skip = discoveredAssetTypes
-	}
-
-	return prepareLoadCommon(m, cachePath, manifest, skip)
+	return prepareLoadCommon(m, cachePath, manifest, nil)
 }

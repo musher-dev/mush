@@ -72,6 +72,12 @@ type SetupOptions struct {
 	// BundleDir is the temp directory with harness-native bundle assets.
 	BundleDir string
 
+	// WorkingDir is the directory the interactive harness process should run in.
+	WorkingDir string
+
+	// Env is appended to the process environment for interactive bundle sessions.
+	Env []string
+
 	// BundleLoadMode indicates this is an interactive bundle session.
 	// When true, --dangerously-skip-permissions is omitted from Claude.
 	BundleLoadMode bool

@@ -1,8 +1,8 @@
 {
-  "credentialType": "service_account",
+  "credentialType": "api_key",
   "credentialId": "cred_123",
-  "credentialName": "ci-runner",
+  "credentialName": "org-runner-key",
   "runnerId": "runner_123",
-  "workspaceId": "ws_123",
-  "workspaceName": "Acme Workspace"
+  "organizationId": "org_123",
+  "organizationName": "Acme Organization"
 }

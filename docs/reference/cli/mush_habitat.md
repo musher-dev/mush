@@ -11,7 +11,7 @@ Manage habitats
 
 Commands for listing and selecting habitats.
 
-Habitats are execution contexts within your workspace where harnesses connect
+Habitats are execution contexts within your organization where harnesses connect
 and jobs are routed. You must select a habitat before starting a worker to receive jobs.
 
 ### Options

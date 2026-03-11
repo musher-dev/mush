@@ -50,16 +50,14 @@ func TestProviderMapper_PrepareLoad_Claude(t *testing.T) {
 
 	defer cleanup()
 
-	// Claude uses add_dir mode: discoverable assets (skills, agents) should be
-	// excluded from tmpDir to avoid duplication with CWD injection.
 	agentPath := filepath.Join(tmpDir, ".claude", "agents", "researcher.md")
-	if _, statErr := os.Stat(agentPath); statErr == nil {
-		t.Fatal("agent_definition should NOT be in tmpDir for add_dir mode harness")
+	if _, statErr := os.Stat(agentPath); statErr != nil {
+		t.Fatalf("agent_definition should be materialized in tmpDir for add_dir mode harness: %v", statErr)
 	}
 
 	skillPath := filepath.Join(tmpDir, ".claude", "skills", "web", "SKILL.md")
-	if _, statErr := os.Stat(skillPath); statErr == nil {
-		t.Fatal("skill should NOT be in tmpDir for add_dir mode harness")
+	if _, statErr := os.Stat(skillPath); statErr != nil {
+		t.Fatalf("skill should be materialized in tmpDir for add_dir mode harness: %v", statErr)
 	}
 
 	// tool_config should still be present in tmpDir.
@@ -81,7 +79,10 @@ func TestStripMatchingPrefix(t *testing.T) {
 	}{
 		{".claude/skills", "skills/web/SKILL.md", "web/SKILL.md"},
 		{".claude/skills", "generate-skill/SKILL.md", "generate-skill/SKILL.md"},
+		{".claude/skills", ".claude/skills/test-skill.md", "test-skill.md"},
+		{".claude/skills", ".claude/skills/nested/deep.md", "nested/deep.md"},
 		{".claude/agents", "agents/test-agent.md", "test-agent.md"},
+		{".claude/agents", ".claude/agents/researcher.md", "researcher.md"},
 		{".claude/agents", "researcher.md", "researcher.md"},
 		{".codex/agents", "agents/a.md", "a.md"},
 		{".codex/agents", "other/a.md", "other/a.md"},
@@ -136,12 +137,10 @@ func TestProviderMapper_PrepareLoad_Codex(t *testing.T) {
 
 	defer cleanup()
 
-	// Codex now uses add_dir mode: discoverable assets (agents) should be
-	// excluded from tmpDir to avoid duplication with CWD injection.
 	for _, name := range []string{"researcher.md", "reviewer.md"} {
 		agentPath := filepath.Join(tmpDir, ".codex", "agents", name)
-		if _, statErr := os.Stat(agentPath); statErr == nil {
-			t.Fatalf("agent_definition %s should NOT be in tmpDir for add_dir mode harness", name)
+		if _, statErr := os.Stat(agentPath); statErr != nil {
+			t.Fatalf("agent_definition %s should be materialized in tmpDir for add_dir mode harness: %v", name, statErr)
 		}
 	}
 

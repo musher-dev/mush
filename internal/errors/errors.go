@@ -200,10 +200,10 @@ func HabitatNotFound(name string) *CLIError {
 	}
 }
 
-// NoHabitats returns an error when no habitats exist in the workspace.
+// NoHabitats returns an error when no habitats exist in the organization.
 func NoHabitats() *CLIError {
 	return &CLIError{
-		Message: "No habitats found in workspace",
+		Message: "No habitats found in organization",
 		Hint:    "Create a habitat in the console first",
 		Code:    ExitConfig,
 	}
@@ -420,7 +420,7 @@ func CodexNotFound() *CLIError {
 func BundleNotFound(ref string) *CLIError {
 	return &CLIError{
 		Message: fmt.Sprintf("Bundle not found: %s", ref),
-		Hint:    "Check the bundle reference or verify it exists in your workspace",
+		Hint:    "Check the bundle reference or verify it exists in a namespace you can access",
 		Code:    ExitGeneral,
 	}
 }

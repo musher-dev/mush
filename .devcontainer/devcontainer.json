@@ -9,7 +9,7 @@
       "version": "22"
     },
     "ghcr.io/devcontainers/features/go:1": {
-      "version": "1.26.0"
+      "version": "1.26.1"
     },
     "ghcr.io/devcontainers/features/docker-in-docker:2": {},
     "ghcr.io/devcontainers-extra/features/go-task:1": {}
@@ -20,7 +20,8 @@
     "source=musher-mush-codex-config,target=/home/vscode/.codex,type=volume"
   ],
   "remoteEnv": {
-    "PATH": "/home/vscode/.local/bin:${containerEnv:PATH}"
+    "PATH": "/home/vscode/.local/bin:${containerEnv:PATH}",
+    "GOROOT": ""
   },
   "postCreateCommand": "bash -lc 'shopt -s nullglob; for f in .devcontainer/scripts/*.sh; do sed -i \"s/\\r$//\" \"$f\"; chmod +x \"$f\"; done; .devcontainer/scripts/post-create.sh'",
   "customizations": {

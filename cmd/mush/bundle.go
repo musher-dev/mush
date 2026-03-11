@@ -47,36 +47,45 @@ func newBundleLoadCmd() *cobra.Command {
 	var (
 		harnessType  string
 		forceSidebar bool
+		dirPath      string
+		useSample    bool
 	)
 
 	cmd := &cobra.Command{
-		Use:   "load <namespace/slug>[:<version>]",
+		Use:   "load [<namespace/slug>[:<version>]]",
 		Short: "Load a bundle into an ephemeral session",
 		Long: `Pull a bundle and launch the TUI at the Ready screen where you can choose
 to Run or Install. Use --no-tui to skip the TUI and launch the harness
-directly (requires --harness).`,
+directly (requires --harness).
+
+Alternatively, load a bundle from a local directory with --dir or use the
+built-in sample bundle with --sample for testing.`,
 		Example: `  mush bundle load acme/my-kit
   mush bundle load acme/my-kit:0.1.0
-  mush bundle load acme/my-kit --no-tui --harness claude`,
-		Args: cobra.ExactArgs(1),
+  mush bundle load acme/my-kit --no-tui --harness claude
+  mush bundle load --dir ./my-bundle --no-tui --harness claude
+  mush bundle load --sample --no-tui --harness claude`,
+		Args: func(cmd *cobra.Command, args []string) error {
+			hasDir := cmd.Flags().Changed("dir")
+			hasSample := cmd.Flags().Changed("sample")
+			hasLocal := hasDir || hasSample
+
+			if hasLocal && len(args) > 0 {
+				return clierrors.New(clierrors.ExitUsage, "Cannot specify both a bundle reference and --"+localFlagName(hasDir, hasSample))
+			}
+
+			if !hasLocal && len(args) != 1 {
+				return clierrors.New(clierrors.ExitUsage, "Requires a bundle reference argument, --dir, or --sample")
+			}
+
+			return nil
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := output.FromContext(cmd.Context())
 			logger := observability.FromContext(cmd.Context()).With(
 				slog.String("component", "bundle"),
 				slog.String("event.type", "bundle.load.start"),
 			)
-
-			// Parse bundle reference.
-			ref, err := bundle.ParseRef(args[0])
-			if err != nil {
-				return &clierrors.CLIError{
-					Message: err.Error(),
-					Hint:    "Use format: namespace/slug or namespace/slug:version",
-					Code:    clierrors.ExitUsage,
-				}
-			}
-
-			logger = logger.With(slog.String("bundle.slug", ref.Slug), slog.String("bundle.namespace", ref.Namespace))
 
 			// Check for TTY before anything else — it's the most fundamental requirement.
 			if !out.Terminal().IsTTY {
@@ -99,6 +108,57 @@ directly (requires --harness).`,
 					Code:    clierrors.ExitUsage,
 				}
 			}
+
+			// Local source: --dir
+			if dirPath != "" {
+				resolved, cachePath, cleanup, err := bundle.LoadFromDir(dirPath)
+				if err != nil {
+					return clierrors.Wrap(clierrors.ExitGeneral, "Failed to load bundle from directory", err)
+				}
+
+				defer cleanup()
+
+				logger.Info("bundle loaded from local directory",
+					slog.String("event.type", "bundle.load.local"),
+					slog.String("bundle.dir", dirPath),
+					slog.Int("bundle.asset_count", len(resolved.Manifest.Layers)),
+				)
+
+				ref := bundle.Ref{Namespace: resolved.Namespace, Slug: resolved.Slug}
+
+				return executeBundleLoad(cmd, out, logger, resolved, cachePath, ref, harnessType, forceSidebar, useTUI)
+			}
+
+			// Local source: --sample
+			if useSample {
+				resolved, cachePath, cleanup, err := bundle.ExtractSampleBundle()
+				if err != nil {
+					return clierrors.Wrap(clierrors.ExitGeneral, "Failed to extract sample bundle", err)
+				}
+
+				defer cleanup()
+
+				logger.Info("sample bundle extracted",
+					slog.String("event.type", "bundle.load.sample"),
+					slog.Int("bundle.asset_count", len(resolved.Manifest.Layers)),
+				)
+
+				ref := bundle.Ref{Namespace: resolved.Namespace, Slug: resolved.Slug}
+
+				return executeBundleLoad(cmd, out, logger, resolved, cachePath, ref, harnessType, forceSidebar, useTUI)
+			}
+
+			// Remote source: parse bundle reference and pull from API.
+			ref, err := bundle.ParseRef(args[0])
+			if err != nil {
+				return &clierrors.CLIError{
+					Message: err.Error(),
+					Hint:    "Use format: namespace/slug or namespace/slug:version",
+					Code:    clierrors.ExitUsage,
+				}
+			}
+
+			logger = logger.With(slog.String("bundle.slug", ref.Slug), slog.String("bundle.namespace", ref.Namespace))
 
 			// Authenticate (anonymous fallback for public bundles).
 			source, c, _, err := tryAPIClient()
@@ -130,196 +190,212 @@ directly (requires --harness).`,
 					WithHint("Check your network connection and bundle reference")
 			}
 
-			// TUI path: launch nav at the bundle action screen.
-			if useTUI {
-				deps := buildTUIDeps()
-				deps.InitialBundle = &nav.BundleSeed{
-					Namespace: ref.Namespace,
-					Slug:      ref.Slug,
-					Version:   resolved.Version,
-					CachePath: cachePath,
-				}
-
-				result, navErr := nav.Run(cmd.Context(), deps)
-				if navErr != nil {
-					return clierrors.Wrap(clierrors.ExitGeneral, "Interactive TUI failed", navErr)
-				}
-
-				switch result.Action {
-				case nav.ActionBundleLoad:
-					return handleBundleLoadNavResult(cmd, out, result)
-				case nav.ActionBundleInstall:
-					return handleBundleInstallNavResult(cmd, out, result)
-				default:
-					return nil
-				}
-			}
-
-			// Direct (--no-tui) path: validate harness and launch directly.
-			normalized, err := normalizeHarnessType(harnessType)
-			if err != nil {
-				return err
-			}
-
-			info, ok := harness.Lookup(normalized)
-			if !ok || !info.Available() {
-				return clierrors.HarnessNotAvailable(normalized)
-			}
-
-			// Get the mapper for this harness type.
-			mapper := mapperForHarness(normalized)
-			if mapper == nil {
-				return &clierrors.CLIError{
-					Message: fmt.Sprintf("No asset mapper for harness type: %s", normalized),
-					Hint:    "This harness type does not support bundle assets",
-					Code:    clierrors.ExitUsage,
-				}
-			}
-
-			// Prepare load directory.
-			tmpDir, cleanup, err := mapper.PrepareLoad(cmd.Context(), cachePath, &resolved.Manifest)
-			if err != nil {
-				return clierrors.Wrap(clierrors.ExitGeneral, "Failed to prepare load directory", err)
-			}
-
-			defer cleanup()
-
-			// Inject discoverable assets (agents, skills) into the project directory.
-			projectDir, err := os.Getwd()
-			if err != nil {
-				return clierrors.Wrap(clierrors.ExitGeneral, "Failed to get working directory", err)
-			}
-
-			injected, assetWarnings, assetCleanup, err := bundle.InjectAssetsForLoad(
-				projectDir, cachePath, &resolved.Manifest, mapper,
-			)
-			if err != nil {
-				return clierrors.Wrap(clierrors.ExitGeneral, "Failed to inject assets for load", err)
-			}
-
-			defer assetCleanup()
-
-			for _, w := range assetWarnings {
-				out.Warning("%s", w)
-			}
-
-			if len(injected) > 0 {
-				for _, relPath := range injected {
-					out.Success("Injected: %s", relPath)
-				}
-
-				logger.Info(
-					"assets injected into project dir",
-					slog.String("event.type", "bundle.load.assets_injected"),
-					slog.Int("asset_count", len(injected)),
-				)
-			}
-
-			// Inject tool configs into project dir for harnesses that read
-			// tool config from CWD only (no --mcp-config flag).
-			spec, _ := harness.GetProvider(normalized)
-			if spec != nil && (spec.CLI == nil || spec.CLI.MCPConfig == "") {
-				toolInjected, toolCleanup, toolErr := bundle.InjectToolConfigsForLoad(
-					projectDir, cachePath, &resolved.Manifest, mapper,
-				)
-				if toolErr != nil {
-					return clierrors.Wrap(clierrors.ExitGeneral, "Failed to inject tool configs for load", toolErr)
-				}
-
-				defer toolCleanup()
-
-				for _, relPath := range toolInjected {
-					out.Success("Injected: %s", relPath)
-				}
-			}
-
-			out.Success("Bundle assets prepared in load directory")
-			out.Print("Assets: %d loaded\n", len(resolved.Manifest.Layers))
-			out.Println()
-			logger.Info(
-				"bundle load ready",
-				slog.String("event.type", "bundle.load.ready"),
-				slog.String("bundle.version", resolved.Version),
-				slog.Int("bundle.asset_count", len(resolved.Manifest.Layers)),
-			)
-
-			var runnerConfig *client.RunnerConfigResponse
-
-			runnerConfig, err = c.GetRunnerConfig(cmd.Context())
-			if err != nil {
-				out.Warning("Runner config unavailable, continuing without MCP provisioning: %v", err)
-			}
-
-			// Setup graceful shutdown.
-			ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
-			defer stop()
-
-			// Run TUI in load mode.
-			cfg := &harness.Config{
-				SupportedHarnesses: []string{normalized},
-				ForceSidebar:       forceSidebar,
-				BundleLoadMode:     true,
-				BundleName:         ref.Slug,
-				BundleVer:          resolved.Version,
-				BundleDir:          tmpDir,
-				RunnerConfig:       runnerConfig,
-				BundleSummary:      harness.SummarizeBundleManifest(&resolved.Manifest),
-			}
-
-			if err := harness.Run(ctx, cfg); err != nil {
-				logger.Error("bundle load runtime failed", slog.String("event.type", "bundle.load.error"), slog.String("error", err.Error()))
-				return clierrors.Wrap(clierrors.ExitExecution, "Bundle load failed", err)
-			}
-
-			logger.Info("bundle load exited", slog.String("event.type", "bundle.load.exit"))
-
-			if cmd.Context().Err() == nil && ctx.Err() != nil {
-				out.Println()
-				out.Info("Received shutdown signal...")
-			}
-
-			return nil
+			return executeBundleLoad(cmd, out, logger, resolved, cachePath, ref, harnessType, forceSidebar, useTUI)
 		},
 	}
 
 	cmd.Flags().StringVar(&harnessType, "harness", "", "Harness type to use (required with --no-tui)")
 	cmd.Flags().BoolVar(&forceSidebar, "force-sidebar", false, "Skip terminal probe and force sidebar rendering")
+	cmd.Flags().StringVar(&dirPath, "dir", "", "Load bundle from a local directory")
+	cmd.Flags().BoolVar(&useSample, "sample", false, "Load the built-in sample bundle")
+	cmd.MarkFlagsMutuallyExclusive("dir", "sample")
 
 	return cmd
+}
+
+// executeBundleLoad handles the shared post-resolution logic for bundle load,
+// used by all three source modes (API, --dir, --sample).
+func executeBundleLoad(
+	cmd *cobra.Command,
+	out *output.Writer,
+	logger *slog.Logger,
+	resolved *client.BundleResolveResponse,
+	cachePath string,
+	ref bundle.Ref,
+	harnessType string,
+	forceSidebar bool,
+	useTUI bool,
+) error {
+	// TUI path: launch nav at the bundle action screen.
+	if useTUI {
+		deps := buildTUIDeps()
+		deps.InitialBundle = &nav.BundleSeed{
+			Namespace: ref.Namespace,
+			Slug:      ref.Slug,
+			Version:   resolved.Version,
+			CachePath: cachePath,
+		}
+
+		result, navErr := nav.Run(cmd.Context(), deps)
+		if navErr != nil {
+			return clierrors.Wrap(clierrors.ExitGeneral, "Interactive TUI failed", navErr)
+		}
+
+		switch result.Action {
+		case nav.ActionBundleLoad:
+			return handleBundleLoadNavResult(cmd, out, result)
+		case nav.ActionBundleInstall:
+			return handleBundleInstallNavResult(cmd, out, result)
+		default:
+			return nil
+		}
+	}
+
+	// Direct (--no-tui) path: validate harness and launch directly.
+	normalized, err := normalizeHarnessType(harnessType)
+	if err != nil {
+		return err
+	}
+
+	info, ok := harness.Lookup(normalized)
+	if !ok || !info.Available() {
+		return clierrors.HarnessNotAvailable(normalized)
+	}
+
+	// Get the mapper for this harness type.
+	mapper := mapperForHarness(normalized)
+	if mapper == nil {
+		return &clierrors.CLIError{
+			Message: fmt.Sprintf("No asset mapper for harness type: %s", normalized),
+			Hint:    "This harness type does not support bundle assets",
+			Code:    clierrors.ExitUsage,
+		}
+	}
+
+	projectDir, err := os.Getwd()
+	if err != nil {
+		return clierrors.Wrap(clierrors.ExitGeneral, "Failed to get working directory", err)
+	}
+
+	spec, _ := harness.GetProvider(normalized)
+
+	session, err := bundle.PrepareLoadSession(
+		cmd.Context(), projectDir, cachePath, &resolved.Manifest, spec, mapper,
+	)
+	if err != nil {
+		return clierrors.Wrap(clierrors.ExitGeneral, "Failed to prepare bundle load session", err)
+	}
+
+	defer session.Cleanup()
+
+	for _, w := range session.Warnings {
+		out.Warning("%s", w)
+	}
+
+	if len(session.Prepared) > 0 {
+		for _, relPath := range session.Prepared {
+			out.Success("Prepared: %s", relPath)
+		}
+
+		logger.Info(
+			"bundle load assets prepared",
+			slog.String("event.type", "bundle.load.assets_prepared"),
+			slog.Int("asset_count", len(session.Prepared)),
+		)
+	}
+
+	out.Success("Bundle assets prepared in load directory")
+	out.Print("Assets: %d loaded\n", len(resolved.Manifest.Layers))
+	out.Println()
+	logger.Info(
+		"bundle load ready",
+		slog.String("event.type", "bundle.load.ready"),
+		slog.String("bundle.version", resolved.Version),
+		slog.Int("bundle.asset_count", len(resolved.Manifest.Layers)),
+	)
+
+	var runnerConfig *client.RunnerConfigResponse
+
+	_, c, _, apiErr := tryAPIClient()
+	if apiErr == nil && c != nil {
+		runnerConfig, err = c.GetRunnerConfig(cmd.Context())
+		if err != nil {
+			out.Warning("Runner config unavailable, continuing without MCP provisioning: %v", err)
+		}
+	}
+
+	// Setup graceful shutdown.
+	ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+	defer stop()
+
+	// Run TUI in load mode.
+	cfg := &harness.Config{
+		SupportedHarnesses: []string{normalized},
+		ForceSidebar:       forceSidebar,
+		BundleLoadMode:     true,
+		BundleName:         ref.Slug,
+		BundleVer:          resolved.Version,
+		BundleDir:          session.BundleDir,
+		BundleWorkDir:      session.WorkingDir,
+		BundleEnv:          session.Env,
+		RunnerConfig:       runnerConfig,
+		BundleSummary:      harness.SummarizeBundleManifest(&resolved.Manifest),
+	}
+
+	if err := harness.Run(ctx, cfg); err != nil {
+		logger.Error("bundle load runtime failed", slog.String("event.type", "bundle.load.error"), slog.String("error", err.Error()))
+		return clierrors.Wrap(clierrors.ExitExecution, "Bundle load failed", err)
+	}
+
+	logger.Info("bundle load exited", slog.String("event.type", "bundle.load.exit"))
+
+	if cmd.Context().Err() == nil && ctx.Err() != nil {
+		out.Println()
+		out.Info("Received shutdown signal...")
+	}
+
+	return nil
+}
+
+// localFlagName returns the flag name for error messages.
+func localFlagName(hasDir, hasSample bool) string {
+	if hasDir {
+		return "dir"
+	}
+
+	if hasSample {
+		return "sample"
+	}
+
+	return "local"
 }
 
 func newBundleInstallCmd() *cobra.Command {
 	var (
 		harnessType string
 		force       bool
+		dirPath     string
 	)
 
 	cmd := &cobra.Command{
-		Use:   "install <namespace/slug>[:<version>]",
+		Use:   "install [<namespace/slug>[:<version>]]",
 		Short: "Install bundle assets into the current project",
 		Long: `Pull a bundle and install its assets into the harness's native directory
-structure in the current project directory.`,
+structure in the current project directory.
+
+Alternatively, install from a local directory with --dir.`,
 		Example: `  mush bundle install acme/my-kit --harness claude
-  mush bundle install acme/my-kit:0.1.0 --harness claude --force`,
-		Args: cobra.ExactArgs(1),
+  mush bundle install acme/my-kit:0.1.0 --harness claude --force
+  mush bundle install --dir ./my-bundle --harness claude`,
+		Args: func(cmd *cobra.Command, args []string) error {
+			hasDir := cmd.Flags().Changed("dir")
+
+			if hasDir && len(args) > 0 {
+				return clierrors.New(clierrors.ExitUsage, "Cannot specify both a bundle reference and --dir")
+			}
+
+			if !hasDir && len(args) != 1 {
+				return clierrors.New(clierrors.ExitUsage, "Requires a bundle reference argument or --dir")
+			}
+
+			return nil
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := output.FromContext(cmd.Context())
 			logger := observability.FromContext(cmd.Context()).With(
 				slog.String("component", "bundle"),
 				slog.String("event.type", "bundle.install.start"),
 			)
-
-			// Parse bundle reference.
-			ref, err := bundle.ParseRef(args[0])
-			if err != nil {
-				return &clierrors.CLIError{
-					Message: err.Error(),
-					Hint:    "Use format: namespace/slug or namespace/slug:version",
-					Code:    clierrors.ExitUsage,
-				}
-			}
-
-			logger = logger.With(slog.String("bundle.slug", ref.Slug), slog.String("bundle.namespace", ref.Namespace))
 
 			// Validate harness type.
 			if harnessType == "" {
@@ -335,34 +411,70 @@ structure in the current project directory.`,
 				return err
 			}
 
-			// Authenticate (anonymous fallback for public bundles).
-			source, c, _, err := tryAPIClient()
-			if err != nil {
-				return err
-			}
+			var (
+				resolved  *client.BundleResolveResponse
+				cachePath string
+				ref       bundle.Ref
+				cleanup   func()
+			)
 
-			if source != "" {
-				out.Print("Using credentials from: %s\n", source)
+			if dirPath != "" {
+				// Local source: --dir
+				resolved, cachePath, cleanup, err = bundle.LoadFromDir(dirPath)
+				if err != nil {
+					return clierrors.Wrap(clierrors.ExitGeneral, "Failed to load bundle from directory", err)
+				}
+
+				defer cleanup()
+
+				ref = bundle.Ref{Namespace: resolved.Namespace, Slug: resolved.Slug}
+
+				logger.Info("bundle loaded from local directory",
+					slog.String("event.type", "bundle.install.local"),
+					slog.String("bundle.dir", dirPath),
+				)
 			} else {
-				out.Info("No credentials found; attempting public bundle access")
-			}
-
-			// Pull the bundle.
-			resolved, cachePath, err := bundle.Pull(cmd.Context(), c, ref.Namespace, ref.Slug, ref.Version, out)
-			if err != nil {
-				logger.Error("bundle install pull failed", slog.String("event.type", "bundle.install.error"), slog.String("error", err.Error()))
-
-				if !c.IsAuthenticated() && isForbiddenError(err) {
+				// Remote source: parse bundle reference and pull from API.
+				ref, err = bundle.ParseRef(args[0])
+				if err != nil {
 					return &clierrors.CLIError{
-						Message: fmt.Sprintf("Failed to pull bundle: %s", ref.Slug),
-						Hint:    "This bundle may be private. Run 'mush auth login' to authenticate",
-						Cause:   err,
-						Code:    clierrors.ExitAuth,
+						Message: err.Error(),
+						Hint:    "Use format: namespace/slug or namespace/slug:version",
+						Code:    clierrors.ExitUsage,
 					}
 				}
 
-				return clierrors.Wrap(clierrors.ExitNetwork, "Failed to pull bundle", err).
-					WithHint("Check your network connection and bundle reference")
+				logger = logger.With(slog.String("bundle.slug", ref.Slug), slog.String("bundle.namespace", ref.Namespace))
+
+				// Authenticate (anonymous fallback for public bundles).
+				source, c, _, apiErr := tryAPIClient()
+				if apiErr != nil {
+					return apiErr
+				}
+
+				if source != "" {
+					out.Print("Using credentials from: %s\n", source)
+				} else {
+					out.Info("No credentials found; attempting public bundle access")
+				}
+
+				// Pull the bundle.
+				resolved, cachePath, err = bundle.Pull(cmd.Context(), c, ref.Namespace, ref.Slug, ref.Version, out)
+				if err != nil {
+					logger.Error("bundle install pull failed", slog.String("event.type", "bundle.install.error"), slog.String("error", err.Error()))
+
+					if !c.IsAuthenticated() && isForbiddenError(err) {
+						return &clierrors.CLIError{
+							Message: fmt.Sprintf("Failed to pull bundle: %s", ref.Slug),
+							Hint:    "This bundle may be private. Run 'mush auth login' to authenticate",
+							Cause:   err,
+							Code:    clierrors.ExitAuth,
+						}
+					}
+
+					return clierrors.Wrap(clierrors.ExitNetwork, "Failed to pull bundle", err).
+						WithHint("Check your network connection and bundle reference")
+				}
 			}
 
 			// Get the mapper for this harness type.
@@ -427,6 +539,7 @@ structure in the current project directory.`,
 
 	cmd.Flags().StringVar(&harnessType, "harness", "", "Harness type to install for (required)")
 	cmd.Flags().BoolVarP(&force, "force", "f", false, "Overwrite existing files")
+	cmd.Flags().StringVar(&dirPath, "dir", "", "Install bundle from a local directory")
 	_ = cmd.MarkFlagRequired("harness")
 
 	return cmd
