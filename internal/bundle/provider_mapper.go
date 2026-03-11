@@ -38,6 +38,8 @@ func (m *providerMapper) MapAsset(workDir string, layer client.BundleLayer) (str
 		return filepath.Join(workDir, assets.AgentDir, stripMatchingPrefix(assets.AgentDir, layer.LogicalPath)), nil
 	case "tool_config":
 		return filepath.Join(workDir, assets.ToolConfigFile), nil
+	case "other":
+		return filepath.Join(workDir, layer.LogicalPath), nil
 	default:
 		return "", fmt.Errorf("unsupported asset type for %s: %s", m.spec.Name, layer.AssetType)
 	}

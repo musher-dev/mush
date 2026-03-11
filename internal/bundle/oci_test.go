@@ -47,6 +47,63 @@ func TestMaterializeFromMetadata(t *testing.T) {
 	}
 }
 
+func TestVerifySHA256(t *testing.T) {
+	t.Run("matching hash", func(t *testing.T) {
+		data := []byte("hello world")
+		hash := sha256.Sum256(data)
+		expected := hex.EncodeToString(hash[:])
+
+		got, err := verifySHA256(data, expected)
+		if err != nil {
+			t.Fatalf("verifySHA256() error = %v", err)
+		}
+
+		if !bytes.Equal(got, data) {
+			t.Fatalf("verifySHA256() returned %q, want %q", got, data)
+		}
+	})
+
+	t.Run("empty expected hash", func(t *testing.T) {
+		data := []byte("anything")
+
+		got, err := verifySHA256(data, "")
+		if err != nil {
+			t.Fatalf("verifySHA256() error = %v", err)
+		}
+
+		if !bytes.Equal(got, data) {
+			t.Fatalf("verifySHA256() returned %q, want %q", got, data)
+		}
+	})
+
+	t.Run("trailing newline recovery", func(t *testing.T) {
+		// Simulate server stripping trailing newline: original has \n, API returns without.
+		original := []byte("hello world\n")
+		stripped := []byte("hello world")
+
+		hash := sha256.Sum256(original)
+		expected := hex.EncodeToString(hash[:])
+
+		got, err := verifySHA256(stripped, expected)
+		if err != nil {
+			t.Fatalf("verifySHA256() error = %v, want recovery via trailing newline", err)
+		}
+
+		if !bytes.Equal(got, original) {
+			t.Fatalf("verifySHA256() returned %d bytes, want %d (with trailing newline)", len(got), len(original))
+		}
+	})
+
+	t.Run("genuine mismatch", func(t *testing.T) {
+		data := []byte("hello world")
+
+		_, err := verifySHA256(data, "0000000000000000000000000000000000000000000000000000000000000000")
+		if err == nil {
+			t.Fatal("verifySHA256() expected error for genuine mismatch, got nil")
+		}
+	})
+}
+
 func TestMaterializeFromMetadataRejectsTraversal(t *testing.T) {
 	workDir := t.TempDir()
 

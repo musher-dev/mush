@@ -200,13 +200,21 @@ func Pull(ctx context.Context, c *client.Client, namespace, slug, version string
 				return nil, "", fmt.Errorf("fetch asset %s: %w", layer.AssetID, fetchErr)
 			}
 
-			// Verify SHA256.
-			if err := verifySHA256(data, layer.ContentSHA256); err != nil {
+			// Verify SHA256 (may recover trailing newline stripped by server).
+			verified, verifyErr := verifySHA256(data, layer.ContentSHA256)
+			if verifyErr != nil {
 				spin.StopWithFailure("Integrity check failed")
-				logger.Error("bundle asset integrity check failed", slog.String("event.type", "bundle.download.asset.error"), slog.String("bundle.asset.logical_path", layer.LogicalPath), slog.String("error", err.Error()))
+				logger.Error("bundle asset integrity check failed",
+					slog.String("event.type", "bundle.download.asset.error"),
+					slog.String("bundle.asset.logical_path", layer.LogicalPath),
+					slog.String("error", verifyErr.Error()),
+					slog.Int("bundle.asset.size_got", len(data)),
+				)
 
-				return nil, "", fmt.Errorf("asset %s: %w", layer.LogicalPath, err)
+				return nil, "", fmt.Errorf("asset %s: %w", layer.LogicalPath, verifyErr)
 			}
+
+			data = verified
 
 			// Write to staging cache.
 			destPath := filepath.Join(assetsDir, layer.LogicalPath)
