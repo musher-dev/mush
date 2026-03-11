@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.13.0](https://github.com/musher-dev/mush/compare/v3.12.0...v3.13.0) (2026-03-11)
+
+
+### Features
+
+* **bundle:** add local directory loading, sample bundles, and My Bundles screen ([#107](https://github.com/musher-dev/mush/issues/107)) ([e33f3e4](https://github.com/musher-dev/mush/commit/e33f3e49aeebf97ffb607c56f3a04921eb662405))
+
 ## [3.12.0](https://github.com/musher-dev/mush/compare/v3.11.0...v3.12.0) (2026-03-09)
 
 
