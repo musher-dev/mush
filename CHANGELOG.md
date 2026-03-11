@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.13.1](https://github.com/musher-dev/mush/compare/v3.13.0...v3.13.1) (2026-03-11)
+
+
+### Bug Fixes
+
+* **bundle:** handle "other" asset type in bundle load session ([#109](https://github.com/musher-dev/mush/issues/109)) ([12087af](https://github.com/musher-dev/mush/commit/12087afd23b67dbd667973833bb6a2f88879d2bc))
+
 ## [3.13.0](https://github.com/musher-dev/mush/compare/v3.12.0...v3.13.0) (2026-03-11)
 
 
