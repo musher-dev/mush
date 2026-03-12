@@ -40,6 +40,15 @@ func TestPrepareLoadSession_AddDirHarnessDoesNotTouchProjectDir(t *testing.T) {
 		t.Fatalf("PrepareLoadSession() error = %v", err)
 	}
 
+	// Register cleanup early so temp dirs are removed even if assertions fail.
+	cleanupCalled := false
+
+	t.Cleanup(func() {
+		if !cleanupCalled {
+			session.Cleanup()
+		}
+	})
+
 	if session.BundleDir == projectDir {
 		t.Fatal("add_dir harness should use an external bundle directory")
 	}
@@ -78,6 +87,8 @@ func TestPrepareLoadSession_AddDirHarnessDoesNotTouchProjectDir(t *testing.T) {
 	}
 
 	// Cleanup should remove the agent from project dir.
+	cleanupCalled = true
+
 	session.Cleanup()
 
 	if _, err := os.Stat(agentPath); !os.IsNotExist(err) {

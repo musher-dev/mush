@@ -12,46 +12,55 @@ func TestSummarizeBundleManifest_SkillNames(t *testing.T) {
 	tests := []struct {
 		name        string
 		logicalPath string
+		assetType   string
 		wantName    string
 	}{
 		{
 			name:        "nested skill with descriptive parent",
 			logicalPath: "skills/web-search/SKILL.md",
+			assetType:   "skill",
 			wantName:    "web-search",
 		},
 		{
 			name:        "deeply nested with .claude prefix",
 			logicalPath: ".claude/skills/context-brief/SKILL.md",
+			assetType:   "skill",
 			wantName:    "context-brief",
 		},
 		{
 			name:        "bare SKILL.md with no parent",
 			logicalPath: "SKILL.md",
+			assetType:   "skill",
 			wantName:    "SKILL.md",
 		},
 		{
 			name:        "skill directly under generic skills dir",
 			logicalPath: "skills/SKILL.md",
+			assetType:   "skill",
 			wantName:    "SKILL.md",
 		},
 		{
 			name:        "non-conventional skill filename",
 			logicalPath: "review-code.md",
+			assetType:   "skill",
 			wantName:    "review-code.md",
 		},
 		{
 			name:        "agent with descriptive parent",
 			logicalPath: "agents/researcher/AGENT.md",
+			assetType:   "agent_definition",
 			wantName:    "researcher",
 		},
 		{
 			name:        "agent directly under generic agents dir",
 			logicalPath: "agents/AGENT.md",
+			assetType:   "agent_definition",
 			wantName:    "AGENT.md",
 		},
 		{
 			name:        ".claude/agents prefix",
 			logicalPath: ".claude/agents/shaping-architect/AGENT.md",
+			assetType:   "agent_definition",
 			wantName:    "shaping-architect",
 		},
 	}
@@ -60,18 +69,29 @@ func TestSummarizeBundleManifest_SkillNames(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			manifest := &client.BundleManifest{
 				Layers: []client.BundleLayer{
-					{LogicalPath: tt.logicalPath, AssetType: "skill"},
+					{LogicalPath: tt.logicalPath, AssetType: tt.assetType},
 				},
 			}
 
 			summary := SummarizeBundleManifest(manifest)
 
-			if len(summary.Skills) != 1 {
-				t.Fatalf("expected 1 skill, got %d", len(summary.Skills))
+			var got []string
+
+			switch tt.assetType {
+			case "skill":
+				got = summary.Skills
+			case "agent_definition":
+				got = summary.Agents
+			default:
+				got = summary.Other
 			}
 
-			if summary.Skills[0] != tt.wantName {
-				t.Errorf("skill name = %q, want %q", summary.Skills[0], tt.wantName)
+			if len(got) != 1 {
+				t.Fatalf("expected 1 entry, got %d", len(got))
+			}
+
+			if got[0] != tt.wantName {
+				t.Errorf("name = %q, want %q", got[0], tt.wantName)
 			}
 		})
 	}

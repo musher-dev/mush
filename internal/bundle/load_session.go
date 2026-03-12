@@ -67,7 +67,12 @@ func PrepareLoadSession(
 				projectDir, cachePath, agentManifest, mapper,
 			)
 			if injectErr != nil {
+				if injectCleanup != nil {
+					injectCleanup()
+				}
+
 				tmpCleanup()
+
 				return nil, fmt.Errorf("inject agents into project dir: %w", injectErr)
 			}
 
