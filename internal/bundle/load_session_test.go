@@ -40,8 +40,6 @@ func TestPrepareLoadSession_AddDirHarnessDoesNotTouchProjectDir(t *testing.T) {
 		t.Fatalf("PrepareLoadSession() error = %v", err)
 	}
 
-	defer session.Cleanup()
-
 	if session.BundleDir == projectDir {
 		t.Fatal("add_dir harness should use an external bundle directory")
 	}
@@ -50,12 +48,40 @@ func TestPrepareLoadSession_AddDirHarnessDoesNotTouchProjectDir(t *testing.T) {
 		t.Fatalf("WorkingDir = %q, want %q", session.WorkingDir, projectDir)
 	}
 
-	if _, err := os.Stat(filepath.Join(projectDir, ".claude")); !os.IsNotExist(err) {
-		t.Fatalf("project dir should not be mutated for add_dir harness; stat err = %v", err)
+	// Agent should be injected into project dir (Claude Code only discovers agents from CWD).
+	agentPath := filepath.Join(projectDir, ".claude", "agents", "researcher.md")
+	if _, err := os.Stat(agentPath); err != nil {
+		t.Fatalf("expected agent injected into project dir: %v", err)
+	}
+
+	// Skill should NOT be in project dir (stays in temp dir, discovered via --add-dir).
+	if _, err := os.Stat(filepath.Join(projectDir, ".claude", "skills", "web", "SKILL.md")); !os.IsNotExist(err) {
+		t.Fatal("skill should not be injected into project dir for add_dir harness")
 	}
 
 	if _, err := os.Stat(filepath.Join(session.BundleDir, ".claude", "skills", "web", "SKILL.md")); err != nil {
 		t.Fatalf("expected skill in external bundle dir: %v", err)
+	}
+
+	// session.Prepared should contain the agent path.
+	found := false
+
+	for _, p := range session.Prepared {
+		if filepath.Base(p) == "researcher.md" {
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		t.Fatalf("session.Prepared should contain agent path, got %v", session.Prepared)
+	}
+
+	// Cleanup should remove the agent from project dir.
+	session.Cleanup()
+
+	if _, err := os.Stat(agentPath); !os.IsNotExist(err) {
+		t.Fatalf("cleanup should remove injected agent from project dir; stat err = %v", err)
 	}
 }
 

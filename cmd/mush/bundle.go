@@ -317,7 +317,7 @@ func executeBundleLoad(
 	var runnerConfig *client.RunnerConfigResponse
 
 	_, c, _, apiErr := tryAPIClient()
-	if apiErr == nil && c != nil {
+	if apiErr == nil && c != nil && c.IsAuthenticated() {
 		runnerConfig, err = c.GetRunnerConfig(cmd.Context())
 		if err != nil {
 			out.Warning("Runner config unavailable, continuing without MCP provisioning: %v", err)

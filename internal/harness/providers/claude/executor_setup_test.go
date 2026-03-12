@@ -18,6 +18,7 @@ func TestClaudeSetupBundleLoadDoesNotBlockOnReady(t *testing.T) {
 
 	exec.startPTYFunc = func(context.Context) error { return nil }
 	exec.startOutputFunc = func() {}
+	exec.watchExitFunc = func() {}
 	exec.waitForReadyFunc = func(context.Context) bool {
 		close(waitStarted)
 		<-releaseReady
@@ -74,6 +75,7 @@ func TestClaudeSetupWorkerModeBlocksUntilReady(t *testing.T) {
 
 	exec.startPTYFunc = func(context.Context) error { return nil }
 	exec.startOutputFunc = func() {}
+	exec.watchExitFunc = func() {}
 	exec.waitForReadyFunc = func(context.Context) bool {
 		close(waitStarted)
 		<-releaseReady
@@ -130,6 +132,7 @@ func TestClaudeSetupOnReadySkippedOnCancel(t *testing.T) {
 
 	exec.startPTYFunc = func(context.Context) error { return nil }
 	exec.startOutputFunc = func() {}
+	exec.watchExitFunc = func() {}
 	exec.waitForReadyFunc = func(ctx context.Context) bool {
 		<-ctx.Done()
 		return false

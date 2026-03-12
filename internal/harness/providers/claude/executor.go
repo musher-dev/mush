@@ -73,6 +73,7 @@ type Executor struct {
 	startPTYFunc     func(context.Context) error
 	startOutputFunc  func()
 	waitForReadyFunc func(context.Context) bool
+	watchExitFunc    func()
 
 	// ptyReady delivers active PTY handles to the output reader loop.
 	ptyReady chan *os.File
@@ -155,6 +156,22 @@ func (e *Executor) Setup(ctx context.Context, opts *harnesstype.SetupOptions) er
 	}
 
 	startOutput()
+
+	// Watch for process exit and notify harness.
+	watchExit := e.watchExitFunc
+	if watchExit == nil {
+		watchExit = func() {
+			go func() {
+				_ = e.cmd.Wait()
+
+				if opts.OnExit != nil {
+					opts.OnExit()
+				}
+			}()
+		}
+	}
+
+	watchExit()
 
 	waitForReady := e.waitForReadyFunc
 	if waitForReady == nil {
