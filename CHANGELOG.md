@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.14.0](https://github.com/musher-dev/mush/compare/v3.13.1...v3.14.0) (2026-03-12)
+
+
+### Features
+
+* **harness:** inject agents into project dir, add signal handling and exit watching ([#111](https://github.com/musher-dev/mush/issues/111)) ([d655660](https://github.com/musher-dev/mush/commit/d655660b96c0c6c83d6d28ba734c667864abb538))
+
 ## [3.13.1](https://github.com/musher-dev/mush/compare/v3.13.0...v3.13.1) (2026-03-11)
 
 
