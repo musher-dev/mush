@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
 
 	"github.com/spf13/cobra"
 
@@ -98,7 +100,10 @@ func handleBundleLoadNavResult(cmd *cobra.Command, out *output.Writer, result *n
 		BundleSummary:      harness.SummarizeBundleManifest(&resolved.Manifest),
 	}
 
-	if err := harness.Run(cmd.Context(), cfg); err != nil {
+	ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+	defer stop()
+
+	if err := harness.Run(ctx, cfg); err != nil {
 		return clierrors.Wrap(clierrors.ExitExecution, "Bundle launch failed", err)
 	}
 
@@ -125,7 +130,10 @@ func handleBareRunNavResult(cmd *cobra.Command, out *output.Writer, result *nav.
 		RunnerConfig:       loadRunnerConfigIfAvailable(cmd, out),
 	}
 
-	if err := harness.Run(cmd.Context(), cfg); err != nil {
+	ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+	defer stop()
+
+	if err := harness.Run(ctx, cfg); err != nil {
 		return clierrors.Wrap(clierrors.ExitExecution, "Interaction launch failed", err)
 	}
 
@@ -234,7 +242,7 @@ func handleBundleInstallNavResult(_ *cobra.Command, out *output.Writer, result *
 
 func loadRunnerConfigIfAvailable(cmd *cobra.Command, out *output.Writer) *client.RunnerConfigResponse {
 	_, c, _, err := tryAPIClient()
-	if err != nil || c == nil {
+	if err != nil || c == nil || !c.IsAuthenticated() {
 		return nil
 	}
 

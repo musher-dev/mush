@@ -68,6 +68,42 @@ func LoadedMCPServers(cfg *client.RunnerConfigResponse, now time.Time) []string 
 	return harnesstype.LoadedMCPProviderNames(cfg, now)
 }
 
+// genericDirNames are directory names that are too generic to use as display
+// names for bundle assets. When a SKILL.md or AGENT.md file is nested inside
+// one of these directories, we walk further up the path to find a descriptive
+// ancestor directory name instead.
+var genericDirNames = map[string]bool{
+	"skills":  true,
+	"agents":  true,
+	"tools":   true,
+	".claude": true,
+	".gemini": true,
+	".codex":  true,
+}
+
+// descriptiveAncestor walks up the directory components of logicalPath looking
+// for a directory name that is not in genericDirNames. Returns fallback if no
+// descriptive ancestor is found (e.g. the path is just "SKILL.md").
+func descriptiveAncestor(logicalPath, fallback string) string {
+	dir := filepath.Dir(logicalPath)
+
+	for dir != "." && dir != "/" && dir != "" {
+		name := filepath.Base(dir)
+		if !genericDirNames[name] {
+			return name
+		}
+
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+
+		dir = parent
+	}
+
+	return fallback
+}
+
 // SummarizeBundleManifest builds a bundle summary for TUI chrome/sidebar use.
 func SummarizeBundleManifest(manifest *client.BundleManifest) BundleSummary {
 	summary := BundleSummary{}
@@ -81,14 +117,11 @@ func SummarizeBundleManifest(manifest *client.BundleManifest) BundleSummary {
 			name = logicalPath
 		}
 
-		// For conventional filenames (SKILL.md, AGENT.md), use the parent
-		// directory name which is more descriptive (e.g. "hello" instead of
-		// "SKILL.md" for "skills/hello/SKILL.md").
+		// For conventional filenames (SKILL.md, AGENT.md), walk up the path
+		// to find a descriptive directory name (e.g. "hello" instead of
+		// "SKILL.md" for "skills/hello/SKILL.md" or ".claude/skills/hello/SKILL.md").
 		if name == "SKILL.md" || name == "AGENT.md" {
-			parent := filepath.Base(filepath.Dir(logicalPath))
-			if parent != "." && parent != "/" && parent != "" {
-				name = parent
-			}
+			name = descriptiveAncestor(logicalPath, name)
 		}
 
 		return append(dst, name)

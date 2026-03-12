@@ -49,13 +49,37 @@ func PrepareLoadSession(
 
 	switch mode {
 	case "add_dir", "cd_flag":
-		tmpDir, cleanup, err := mapper.PrepareLoad(ctx, cachePath, manifest)
+		tmpDir, tmpCleanup, err := mapper.PrepareLoad(ctx, cachePath, manifest)
 		if err != nil {
 			return nil, fmt.Errorf("prepare load: %w", err)
 		}
 
 		session.BundleDir = tmpDir
-		session.cleanup = cleanup
+		session.cleanup = tmpCleanup
+
+		// Claude Code discovers skills from --add-dir but not agents.
+		// Inject agent_definition assets into CWD so the harness finds them.
+		agentLayers := filterLayers(manifest, "agent_definition")
+		if len(agentLayers) > 0 {
+			agentManifest := &client.BundleManifest{Layers: agentLayers}
+
+			injected, injectWarnings, injectCleanup, injectErr := InjectAssetsForLoad(
+				projectDir, cachePath, agentManifest, mapper,
+			)
+			if injectErr != nil {
+				if injectCleanup != nil {
+					injectCleanup()
+				}
+
+				tmpCleanup()
+
+				return nil, fmt.Errorf("inject agents into project dir: %w", injectErr)
+			}
+
+			session.Prepared = append(session.Prepared, injected...)
+			session.Warnings = append(session.Warnings, injectWarnings...)
+			session.cleanup = chainCleanup(injectCleanup, tmpCleanup)
+		}
 
 		if hasToolConfig(manifest) && (spec.CLI == nil || spec.CLI.MCPConfig == "") {
 			session.Warnings = append(session.Warnings,
@@ -97,6 +121,18 @@ func chainCleanup(cleanups ...func()) func() {
 			}
 		}
 	}
+}
+
+func filterLayers(manifest *client.BundleManifest, assetType string) []client.BundleLayer {
+	var out []client.BundleLayer
+
+	for _, l := range manifest.Layers {
+		if l.AssetType == assetType {
+			out = append(out, l)
+		}
+	}
+
+	return out
 }
 
 func hasToolConfig(manifest *client.BundleManifest) bool {
