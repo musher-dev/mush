@@ -300,7 +300,7 @@ func (m *model) hubViewDetail() (tea.Model, tea.Cmd) {
 	)
 }
 
-// hubRunSelected starts the install flow for the selected bundle in the list.
+// hubRunSelected starts the load flow for the selected bundle in the list.
 func (m *model) hubRunSelected() (tea.Model, tea.Cmd) {
 	if len(m.hubExplore.results) == 0 {
 		return m, nil
@@ -325,7 +325,7 @@ func (m *model) hubRunSelected() (tea.Model, tea.Cmd) {
 	return m.hubRun(selected.Publisher.Handle, selected.Slug, selected.LatestVersion)
 }
 
-// hubRunFromDetail starts the install flow from the detail screen.
+// hubRunFromDetail starts the load flow from the detail screen.
 func (m *model) hubRunFromDetail() (tea.Model, tea.Cmd) {
 	if m.hubDetail.detail == nil {
 		return m, nil

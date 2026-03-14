@@ -41,7 +41,7 @@ func renderHubExplore(mdl *model) string {
 		{key: "/", desc: "search"},
 		{key: "j/k", desc: "navigate"},
 		{key: "enter", desc: "view"},
-		{key: "r", desc: "run"},
+		{key: "r", desc: "load"},
 		{key: "esc", desc: "back"},
 	})
 
@@ -172,7 +172,7 @@ func renderHubDetail(mdl *model) string {
 	panel := renderPanel(&mdl.styles, "Bundle Detail", body, mdl.styles.hubWidth, true)
 
 	footer := renderKeyHints(&mdl.styles, []hint{
-		{key: "r", desc: "run"},
+		{key: "r", desc: "load"},
 		{key: "j/k", desc: "scroll"},
 		{key: "esc", desc: "back"},
 	})

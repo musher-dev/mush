@@ -783,7 +783,7 @@ func (r *embeddedRuntime) captureScrolledLines(p []byte) {
 	// "before" that appears as a prefix of "after".
 	scrolledOff := 0
 
-	for shift := 1; shift <= rows; shift++ {
+	for shift := 1; shift < rows; shift++ {
 		if glyphRowsEqual(before[shift:], after[:rows-shift], cols) {
 			scrolledOff = shift
 		}

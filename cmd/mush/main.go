@@ -541,7 +541,7 @@ func experimentalOn() bool {
 // Used at command-tree construction time before Cobra has parsed flags.
 func hasExperimentalFlag() bool {
 	for _, arg := range os.Args[1:] {
-		if arg == "--experimental" {
+		if arg == "--experimental" || strings.HasPrefix(arg, "--experimental=") {
 			return true
 		}
 

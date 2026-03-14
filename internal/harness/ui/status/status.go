@@ -236,6 +236,17 @@ func SidebarLines(s *state.Snapshot, rows int) ([]string, []SidebarClickTarget) 
 
 	if len(lines) > rows {
 		lines = lines[:rows]
+
+		// Filter out click targets that point beyond the truncated lines.
+		filtered := targets[:0]
+
+		for _, t := range targets {
+			if t.Row < rows {
+				filtered = append(filtered, t)
+			}
+		}
+
+		targets = filtered
 	}
 
 	return lines, targets
