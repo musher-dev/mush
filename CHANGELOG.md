@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.15.0](https://github.com/musher-dev/mush/compare/v3.14.0...v3.15.0) (2026-03-14)
+
+
+### Features
+
+* **harness:** add experimental features framework, scrollback buffer, and collapsible sidebar ([#113](https://github.com/musher-dev/mush/issues/113)) ([fce9f6b](https://github.com/musher-dev/mush/commit/fce9f6bd1e8fdbbaa3424bb4ee5ab8321ceb1657))
+
 ## [3.14.0](https://github.com/musher-dev/mush/compare/v3.13.1...v3.14.0) (2026-03-12)
 
 
