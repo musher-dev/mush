@@ -43,6 +43,7 @@ const (
 	screenHistory                     // transcript session list
 	screenHistoryDetail               // transcript session detail viewer
 	screenPlaceholder                 // coming-soon for unimplemented items
+	screenExperimental                // experimental features list
 )
 
 // menuItem represents a single entry in the home menu.
@@ -57,6 +58,23 @@ type menuItem struct {
 type harnessOption struct {
 	name string
 	desc string
+}
+
+// buildMenuItems returns the home screen menu items.
+func buildMenuItems(_ *Dependencies) []menuItem {
+	return []menuItem{
+		{label: "DEVELOP", isSection: true},
+		{label: "Load bundle", hotkey: 'r', description: "Load a bundle to run or install"},
+		{label: "Find a bundle", hotkey: 'f', description: "Browse and install bundles from the Hub"},
+	}
+}
+
+// buildExperimentalItems returns the experimental panel menu items.
+func buildExperimentalItems() []menuItem {
+	return []menuItem{
+		{label: "Start runner", hotkey: 'w', description: "Connect to a queue and process jobs"},
+		{label: "View history", hotkey: 'h', description: "Browse recent transcript sessions"},
+	}
 }
 
 func loadHarnesses() []harnessOption {
@@ -316,6 +334,12 @@ type historyDetailState struct {
 	errorMsg     string
 }
 
+// experimentalPanelState holds state for the experimental panel mini-menu on the home screen.
+type experimentalPanelState struct {
+	items  []menuItem // selectable items (e.g. Start runner, View history)
+	cursor int        // selected index within items
+}
+
 // homeHarnessState holds state for the harness sidebar panel on the home screen.
 type homeHarnessState struct {
 	cursor   int                  // selected harness index
@@ -372,8 +396,11 @@ type model struct {
 
 	// Home harness panel
 	homeHarness   homeHarnessState
-	homeFocusArea int // 0=menu, 1=harness panel
+	homeFocusArea int // homeFocusMenu, homeFocusHarness, or homeFocusExperimental
 	harnessExpand harnessExpandState
+
+	// Experimental panel
+	experimentalPanel experimentalPanelState
 
 	// Context panel
 	ctxInfo contextInfo
@@ -408,6 +435,13 @@ type model struct {
 	workerConfirm  workerConfirmState
 	workerError    workerErrorState
 }
+
+// Home screen focus areas.
+const (
+	homeFocusMenu         = 0
+	homeFocusHarness      = 1
+	homeFocusExperimental = 2
+)
 
 // defaultWidth is the assumed terminal width before the first WindowSizeMsg.
 const defaultWidth = 80
@@ -472,15 +506,8 @@ func newModel(ctx context.Context, deps *Dependencies) *model {
 		harnessExpand: harnessExpandState{
 			spinner: harnessExpandSpinner,
 		},
-		cursor: 1, // skip first section header
-		items: []menuItem{
-			{label: "DEVELOP", isSection: true},
-			{label: "Load bundle", hotkey: 'r', description: "Load a bundle to run or install"},
-			{label: "Find a bundle", hotkey: 'f', description: "Browse and install bundles from the Hub"},
-			{label: "OPERATE", isSection: true},
-			{label: "Start runner", hotkey: 'w', description: "Connect to a queue and process jobs"},
-			{label: "View history", hotkey: 'h', description: "Browse recent transcript sessions"},
-		},
+		cursor:       1, // skip first section header
+		items:        buildMenuItems(deps),
 		activeScreen: screenHome,
 		screenStack:  nil,
 		keys:         defaultKeyMap(),
@@ -528,6 +555,13 @@ func newModel(ctx context.Context, deps *Dependencies) *model {
 		},
 	}
 
+	// Populate experimental panel items when experimental mode is enabled.
+	if deps != nil && deps.Experimental {
+		mdl.experimentalPanel = experimentalPanelState{
+			items: buildExperimentalItems(),
+		}
+	}
+
 	// If a bundle seed is provided, start directly at the action screen.
 	if deps != nil && deps.InitialBundle != nil {
 		var layers []client.BundleLayer
@@ -564,9 +598,9 @@ func (m *model) popScreen() {
 		m.screenStack = m.screenStack[:len(m.screenStack)-1]
 	}
 
-	// Reset harness panel focus/expansion when returning to home.
+	// Reset focus/expansion when returning to home.
 	if m.activeScreen == screenHome {
-		m.homeFocusArea = 0
+		m.homeFocusArea = homeFocusMenu
 		m.homeHarness.expanded = -1
 		m.harnessExpand.loading = false
 		m.harnessExpand.report = nil
@@ -919,25 +953,54 @@ func (m *model) handleHomeKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m.activateMenuItem(idx)
 			}
 		}
+
+		// Experimental panel hotkeys also work regardless of focus.
+		for _, item := range m.experimentalPanel.items {
+			if item.hotkey == r {
+				return m.activateByHotkey(item.hotkey)
+			}
+		}
 	}
 
-	// Tab toggles focus between menu and harness panel (only in two-panel mode with harnesses).
-	if key.Matches(msg, m.keys.Tab) && m.styles.layout == layoutTwoPanel && len(m.homeHarness.statuses) > 0 {
-		m.homeFocusArea = (m.homeFocusArea + 1) % 2 //nolint:mnd // toggle between 2 areas
+	// Tab cycles focus between available areas.
+	if key.Matches(msg, m.keys.Tab) {
+		areas := []int{homeFocusMenu}
+		if m.styles.layout == layoutTwoPanel && len(m.homeHarness.statuses) > 0 {
+			areas = append(areas, homeFocusHarness)
+		}
 
-		// Collapse any expansion when switching away from harness panel.
-		if m.homeFocusArea == 0 {
-			m.homeHarness.expanded = -1
-			m.harnessExpand.loading = false
-			m.harnessExpand.report = nil
+		if len(m.experimentalPanel.items) > 0 {
+			areas = append(areas, homeFocusExperimental)
+		}
+
+		if len(areas) > 1 {
+			for i, a := range areas {
+				if a == m.homeFocusArea {
+					m.homeFocusArea = areas[(i+1)%len(areas)]
+
+					break
+				}
+			}
+
+			// Collapse harness expansion when leaving harness panel.
+			if m.homeFocusArea != homeFocusHarness {
+				m.homeHarness.expanded = -1
+				m.harnessExpand.loading = false
+				m.harnessExpand.report = nil
+			}
 		}
 
 		return m, nil
 	}
 
 	// Delegate to harness panel handler when focused.
-	if m.homeFocusArea == 1 {
+	if m.homeFocusArea == homeFocusHarness {
 		return m.handleHarnessPanelKey(msg)
+	}
+
+	// Delegate to experimental panel handler when focused.
+	if m.homeFocusArea == homeFocusExperimental {
+		return m.handleExperimentalPanelKey(msg)
 	}
 
 	switch {
@@ -974,7 +1037,20 @@ func (m *model) activateMenuItem(idx int) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	switch m.items[idx].hotkey {
+	item := m.items[idx]
+	if item.hotkey != 0 {
+		return m.activateByHotkey(item.hotkey)
+	}
+
+	m.placeholderText = item.label
+	m.pushScreen(screenPlaceholder)
+
+	return m, nil
+}
+
+// activateByHotkey dispatches an action by hotkey rune.
+func (m *model) activateByHotkey(hotkey rune) (tea.Model, tea.Cmd) {
+	switch hotkey {
 	case 'r':
 		// Reset bundle input state ("Run harness").
 		slugField := textinput.New()
@@ -1064,10 +1140,6 @@ func (m *model) activateMenuItem(idx int) (tea.Model, tea.Cmd) {
 		m.pushScreen(screenHistory)
 
 		return m, tea.Batch(m.history.spinner.Tick, cmdLoadHistorySessions())
-
-	default:
-		m.placeholderText = m.items[idx].label
-		m.pushScreen(screenPlaceholder)
 	}
 
 	return m, nil

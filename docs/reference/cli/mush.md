@@ -44,6 +44,7 @@ These flags are omitted from `--help` but remain fully functional.
 They can also be set via environment variables (`MUSH_LOG_LEVEL`, etc.).
 
 ```
+      --experimental        Enable experimental features
       --log-file string     Optional structured log file path
       --log-format string   Log format: json, text
       --log-level string    Log level: error, warn, info, debug

@@ -12,27 +12,27 @@ Examples:
   mush bundle load acme/my-kit
 
 Bundle Commands:
-  bundle      Manage agent bundles
+  bundle       Manage agent bundles
 
 Account & Configuration:
-  auth        Manage authentication
-  config      Manage configuration
-  history     Inspect transcript history from PTY sessions
+  auth         Manage authentication
+  config       Manage configuration
+  history      Inspect transcript history from PTY sessions
 
 Setup & Diagnostics:
-  completion  Generate shell completion scripts
-  doctor      Diagnose common issues
-  init        Setup Mush for first use
-  paths       Show where Mush stores files
-  update      Update mush to the latest version
-  version     Show version information
+  completion   Generate shell completion scripts
+  doctor       Diagnose common issues
+  init         Setup Mush for first use
+  paths        Show where Mush stores files
+  update       Update mush to the latest version
+  version      Show version information
 
 Advanced:
-  habitat     Manage habitats
-  worker      Manage the local worker runtime
+  habitat      Manage habitats
+  worker       Manage the local worker runtime
 
 Additional Commands:
-  help        Help about any command
+  help         Help about any command
 
 Flags:
       --api-key string   API key override (prefer MUSH_API_KEY env var)

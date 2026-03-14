@@ -21,6 +21,7 @@ func TestEmbeddedSidebarLinesIncludeBundleAssetSections(t *testing.T) {
 		bundleLoadMode:     true,
 		bundleName:         "readme-maker",
 		bundleVer:          "0.1.0",
+		sidebarExpanded:    make(map[string]bool),
 		bundleSummary: BundleSummary{
 			TotalLayers: 5,
 			Agents:      []string{"layout-constructor.md"},

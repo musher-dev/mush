@@ -14,7 +14,7 @@ import (
 func TestHistoryHotkeyActivatesScreen(t *testing.T) {
 	t.Parallel()
 
-	mdl := testModel()
+	mdl := testModelExperimental()
 	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'h'}})
 
 	if mdl.activeScreen != screenHistory {
@@ -25,8 +25,9 @@ func TestHistoryHotkeyActivatesScreen(t *testing.T) {
 		t.Error("history.loading should be true after hotkey activation")
 	}
 
-	if mdl.cursor != 5 {
-		t.Errorf("cursor = %d, want 5 (View history)", mdl.cursor)
+	// Hotkey activates via experimental panel, main menu cursor stays at initial position.
+	if mdl.cursor != 1 {
+		t.Errorf("cursor = %d, want 1 (main menu cursor unchanged)", mdl.cursor)
 	}
 }
 

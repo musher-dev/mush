@@ -41,7 +41,7 @@ func renderHubExplore(mdl *model) string {
 		{key: "/", desc: "search"},
 		{key: "j/k", desc: "navigate"},
 		{key: "enter", desc: "view"},
-		{key: "i", desc: "install"},
+		{key: "r", desc: "run"},
 		{key: "esc", desc: "back"},
 	})
 
@@ -172,7 +172,7 @@ func renderHubDetail(mdl *model) string {
 	panel := renderPanel(&mdl.styles, "Bundle Detail", body, mdl.styles.hubWidth, true)
 
 	footer := renderKeyHints(&mdl.styles, []hint{
-		{key: "i", desc: "install"},
+		{key: "r", desc: "run"},
 		{key: "j/k", desc: "scroll"},
 		{key: "esc", desc: "back"},
 	})
@@ -239,7 +239,7 @@ func renderHubDetailContent(mdl *model) string {
 		lines = append(lines, "", mdl.styles.progressText.Render(desc))
 	}
 
-	lines = append(lines, "", renderButton(&mdl.styles, "Install Bundle", true))
+	lines = append(lines, "", renderButton(&mdl.styles, "Load Bundle", true))
 
 	// Apply scroll offset.
 	if mdl.hubDetail.scrollOffset > 0 {

@@ -12,6 +12,10 @@ func testModel() *model {
 	return newModel(context.Background(), nil)
 }
 
+func testModelExperimental() *model {
+	return newModel(context.Background(), &Dependencies{Experimental: true})
+}
+
 func updateModel(mdl *model, msg tea.Msg) *model {
 	result, _ := mdl.Update(msg)
 
@@ -27,8 +31,8 @@ func TestNewModel(t *testing.T) {
 		t.Errorf("cursor = %d, want 1 (skip first section header)", mdl.cursor)
 	}
 
-	if len(mdl.items) != 6 {
-		t.Errorf("items = %d, want 6 (4 selectable + 2 section headers)", len(mdl.items))
+	if len(mdl.items) != 3 {
+		t.Errorf("items = %d, want 3 (2 selectable + 1 section header)", len(mdl.items))
 	}
 
 	if mdl.activeScreen != screenHome {
@@ -49,31 +53,88 @@ func TestNavigateDown(t *testing.T) {
 
 	mdl := testModel()
 
-	// Cursor starts at 1 (first selectable item, "Run harness").
-	// Down should go to 2 ("Find a bundle"), then skip section header at 3, land on 4 ("Start runner"), then 5 ("View history").
+	// Cursor starts at 1 (first selectable item, "Load bundle").
+	// Down should go to 2 ("Find a bundle").
 	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyDown})
 
 	if mdl.cursor != 2 {
 		t.Errorf("cursor = %d, want 2 (Find a bundle)", mdl.cursor)
 	}
 
-	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyDown})
-
-	if mdl.cursor != 4 {
-		t.Errorf("cursor = %d, want 4 (Start runner, skipped section header)", mdl.cursor)
-	}
-
-	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyDown})
-
-	if mdl.cursor != 5 {
-		t.Errorf("cursor = %d, want 5 (View history)", mdl.cursor)
-	}
-
 	// Pressing down again should not go past the last item.
 	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyDown})
 
-	if mdl.cursor != 5 {
-		t.Errorf("cursor should clamp at 5, got %d", mdl.cursor)
+	if mdl.cursor != 2 {
+		t.Errorf("cursor should clamp at 2, got %d", mdl.cursor)
+	}
+}
+
+func TestExperimentalPanelNavigation(t *testing.T) {
+	t.Parallel()
+
+	mdl := testModelExperimental()
+
+	// Tab to focus experimental panel.
+	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyTab})
+
+	if mdl.homeFocusArea != homeFocusExperimental {
+		t.Fatalf("focus = %d, want homeFocusExperimental", mdl.homeFocusArea)
+	}
+
+	// Cursor starts at 0 ("Start runner"). Down to 1 ("View history").
+	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyDown})
+
+	if mdl.experimentalPanel.cursor != 1 {
+		t.Errorf("experimentalPanel.cursor = %d, want 1", mdl.experimentalPanel.cursor)
+	}
+
+	// Down again should clamp.
+	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyDown})
+
+	if mdl.experimentalPanel.cursor != 1 {
+		t.Errorf("experimentalPanel.cursor should clamp at 1, got %d", mdl.experimentalPanel.cursor)
+	}
+
+	// Up back to 0.
+	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyUp})
+
+	if mdl.experimentalPanel.cursor != 0 {
+		t.Errorf("experimentalPanel.cursor = %d, want 0", mdl.experimentalPanel.cursor)
+	}
+}
+
+func TestExperimentalPanelEnterActivates(t *testing.T) {
+	t.Parallel()
+
+	mdl := testModelExperimental()
+
+	// Tab to experimental panel, then enter on "Start runner" (cursor 0).
+	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyTab})
+	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyEnter})
+
+	// Without auth, 'w' goes to worker error.
+	if mdl.activeScreen != screenWorkerError {
+		t.Errorf("activeScreen = %d, want screenWorkerError", mdl.activeScreen)
+	}
+}
+
+func TestExperimentalPanelEscReturnsFocus(t *testing.T) {
+	t.Parallel()
+
+	mdl := testModelExperimental()
+
+	// Tab to experimental panel.
+	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyTab})
+
+	if mdl.homeFocusArea != homeFocusExperimental {
+		t.Fatalf("focus = %d, want homeFocusExperimental", mdl.homeFocusArea)
+	}
+
+	// Esc returns focus to menu.
+	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyEscape})
+
+	if mdl.homeFocusArea != homeFocusMenu {
+		t.Errorf("focus = %d, want homeFocusMenu after esc", mdl.homeFocusArea)
 	}
 }
 
@@ -103,14 +164,11 @@ func TestNavigateUpSkipsSection(t *testing.T) {
 
 	mdl := testModel()
 
-	// Move to "Start runner" (index 4, past the OPERATE section header at 3).
-	mdl.cursor = 4
-
-	// Up should skip section header at 3, land on 2 ("Find a bundle").
+	// Cursor at 1 ("Load bundle"). Up should skip section header at 0, stay at 1.
 	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyUp})
 
-	if mdl.cursor != 2 {
-		t.Errorf("cursor = %d, want 2 (skipped OPERATE section header)", mdl.cursor)
+	if mdl.cursor != 1 {
+		t.Errorf("cursor = %d, want 1 (no selectable item above section header)", mdl.cursor)
 	}
 }
 
@@ -180,19 +238,14 @@ func TestHotkeyCommaOpensSettings(t *testing.T) {
 func TestEscReturnsHome(t *testing.T) {
 	t.Parallel()
 
-	mdl := testModel()
+	mdl := testModelExperimental()
 
-	// Navigate to "View history" (index 5) via hotkey, then esc.
+	// Navigate to "View history" via hotkey, then esc.
 	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'h'}})
 	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyEscape})
 
 	if mdl.activeScreen != screenHome {
 		t.Errorf("activeScreen = %d, want screenHome", mdl.activeScreen)
-	}
-
-	// Cursor position should be preserved at history item.
-	if mdl.cursor != 5 {
-		t.Errorf("cursor = %d, want 5 (preserved at View history)", mdl.cursor)
 	}
 }
 
@@ -422,10 +475,32 @@ func TestMenuItemHotkeys(t *testing.T) {
 	mdl := testModel()
 
 	// Section headers have zero-value hotkey (0), selectable items have their hotkey.
-	expected := []rune{0, 'r', 'f', 0, 'w', 'h'}
+	expected := []rune{0, 'r', 'f'}
 	for idx, item := range mdl.items {
 		if item.hotkey != expected[idx] {
 			t.Errorf("item %d hotkey = %c, want %c", idx, item.hotkey, expected[idx])
+		}
+	}
+}
+
+func TestMenuItemHotkeysExperimental(t *testing.T) {
+	t.Parallel()
+
+	mdl := testModelExperimental()
+
+	// Main menu hotkeys are same as non-experimental.
+	expectedMenu := []rune{0, 'r', 'f'}
+	for idx, item := range mdl.items {
+		if item.hotkey != expectedMenu[idx] {
+			t.Errorf("menu item %d hotkey = %c, want %c", idx, item.hotkey, expectedMenu[idx])
+		}
+	}
+
+	// Experimental panel hotkeys.
+	expectedExp := []rune{'w', 'h'}
+	for idx, item := range mdl.experimentalPanel.items {
+		if item.hotkey != expectedExp[idx] {
+			t.Errorf("experimental item %d hotkey = %c, want %c", idx, item.hotkey, expectedExp[idx])
 		}
 	}
 }
@@ -440,15 +515,62 @@ func TestSectionHeadersAreMarked(t *testing.T) {
 	}
 
 	if mdl.items[1].isSection {
-		t.Error("item 1 should not be a section header (Run harness)")
+		t.Error("item 1 should not be a section header (Load bundle)")
+	}
+}
+
+func TestSectionHeadersExperimental(t *testing.T) {
+	t.Parallel()
+
+	mdl := testModelExperimental()
+
+	// Main menu still only has DEVELOP section (OPERATE items are in experimental panel).
+	if !mdl.items[0].isSection {
+		t.Error("item 0 should be a section header (DEVELOP)")
 	}
 
-	if !mdl.items[3].isSection {
-		t.Error("item 3 should be a section header (OPERATE)")
+	// Experimental panel should have 2 selectable items.
+	if len(mdl.experimentalPanel.items) != 2 {
+		t.Errorf("experimentalPanel.items = %d, want 2", len(mdl.experimentalPanel.items))
+	}
+}
+
+func TestMenuItemsExperimental(t *testing.T) {
+	t.Parallel()
+
+	mdl := testModelExperimental()
+
+	// Main menu has same 3 items regardless of experimental.
+	if len(mdl.items) != 3 {
+		t.Errorf("items = %d, want 3", len(mdl.items))
 	}
 
-	if mdl.items[4].isSection {
-		t.Error("item 4 should not be a section header (Start runner)")
+	// Experimental panel has 2 items.
+	if len(mdl.experimentalPanel.items) != 2 {
+		t.Errorf("experimentalPanel.items = %d, want 2", len(mdl.experimentalPanel.items))
+	}
+}
+
+func TestHotkeyWorkerExperimental(t *testing.T) {
+	t.Parallel()
+
+	mdl := testModelExperimental()
+	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'w'}})
+
+	// Without auth, 'w' should go to worker error screen.
+	if mdl.activeScreen != screenWorkerError {
+		t.Errorf("activeScreen = %d, want screenWorkerError", mdl.activeScreen)
+	}
+}
+
+func TestHotkeyHistoryExperimental(t *testing.T) {
+	t.Parallel()
+
+	mdl := testModelExperimental()
+	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'h'}})
+
+	if mdl.activeScreen != screenHistory {
+		t.Errorf("activeScreen = %d, want screenHistory", mdl.activeScreen)
 	}
 }
 

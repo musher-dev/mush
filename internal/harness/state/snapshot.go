@@ -47,5 +47,7 @@ type Snapshot struct {
 
 	MCPServers []MCPServerStatus
 
+	ExpandedSections map[string]bool
+
 	Now time.Time
 }

@@ -92,8 +92,8 @@ func (m *model) handleHubListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	default:
 		if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 {
 			switch msg.Runes[0] {
-			case 'i':
-				return m.hubInstallSelected()
+			case 'r':
+				return m.hubRunSelected()
 			case '/':
 				m.hubExplore.focusArea = 0
 				m.hubExplore.searchInput.Focus()
@@ -119,7 +119,7 @@ func (m *model) handleHubDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case key.Matches(msg, m.keys.Select):
-		return m.hubInstallFromDetail()
+		return m.hubRunFromDetail()
 
 	case key.Matches(msg, m.keys.Down):
 		// Clamp to avoid scrolling past content.
@@ -134,8 +134,8 @@ func (m *model) handleHubDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	default:
-		if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 && msg.Runes[0] == 'i' {
-			return m.hubInstallFromDetail()
+		if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 && msg.Runes[0] == 'r' {
+			return m.hubRunFromDetail()
 		}
 	}
 
@@ -300,8 +300,8 @@ func (m *model) hubViewDetail() (tea.Model, tea.Cmd) {
 	)
 }
 
-// hubInstallSelected starts the install flow for the selected bundle in the list.
-func (m *model) hubInstallSelected() (tea.Model, tea.Cmd) {
+// hubRunSelected starts the install flow for the selected bundle in the list.
+func (m *model) hubRunSelected() (tea.Model, tea.Cmd) {
 	if len(m.hubExplore.results) == 0 {
 		return m, nil
 	}
@@ -322,11 +322,11 @@ func (m *model) hubInstallSelected() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	return m.hubInstall(selected.Publisher.Handle, selected.Slug, selected.LatestVersion)
+	return m.hubRun(selected.Publisher.Handle, selected.Slug, selected.LatestVersion)
 }
 
-// hubInstallFromDetail starts the install flow from the detail screen.
-func (m *model) hubInstallFromDetail() (tea.Model, tea.Cmd) {
+// hubRunFromDetail starts the install flow from the detail screen.
+func (m *model) hubRunFromDetail() (tea.Model, tea.Cmd) {
 	if m.hubDetail.detail == nil {
 		return m, nil
 	}
@@ -347,11 +347,11 @@ func (m *model) hubInstallFromDetail() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	return m.hubInstall(detail.Publisher.Handle, detail.Slug, detail.LatestVersion)
+	return m.hubRun(detail.Publisher.Handle, detail.Slug, detail.LatestVersion)
 }
 
-// hubInstall bridges hub selection to the existing bundle resolve flow.
-func (m *model) hubInstall(namespace, slug, version string) (tea.Model, tea.Cmd) {
+// hubRun bridges hub selection to the existing bundle resolve flow.
+func (m *model) hubRun(namespace, slug, version string) (tea.Model, tea.Cmd) {
 	if m.deps == nil || m.deps.Client == nil {
 		// Should not happen — anonymous client is created at startup.
 		m.bundleError = bundleErrorState{

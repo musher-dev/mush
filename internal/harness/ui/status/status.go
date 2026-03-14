@@ -24,7 +24,7 @@ func Render(s *state.Snapshot) string {
 
 	if s.SidebarVisible {
 		rows := s.Height - 1
-		lines := SidebarLines(s, rows)
+		lines, _ := SidebarLines(s, rows)
 
 		for i := 0; i < rows; i++ {
 			b.WriteString(ansi.Move(2+i, 1))
@@ -83,9 +83,19 @@ func topBarLine(s *state.Snapshot) string {
 	return line + " " + resetAll
 }
 
+// SidebarClickTarget identifies a clickable row in the sidebar.
+type SidebarClickTarget struct {
+	Row     int    // 0-based index into returned lines
+	Section string // "Agents", "Skills", or "Tools"
+}
+
 // SidebarLines builds plain-text sidebar rows for a snapshot.
-func SidebarLines(s *state.Snapshot, rows int) []string {
+// It dynamically sizes lists based on the available rows and returns
+// click targets for expandable/collapsible list sections.
+func SidebarLines(s *state.Snapshot, rows int) ([]string, []SidebarClickTarget) {
 	lines := make([]string, 0, rows)
+
+	var targets []SidebarClickTarget
 
 	lines = append(lines, "Bundle")
 	if s.BundleName == "" {
@@ -109,23 +119,6 @@ func SidebarLines(s *state.Snapshot, rows int) []string {
 		}
 	}
 
-	appendList := func(title string, names []string) {
-		if len(names) == 0 {
-			return
-		}
-
-		lines = append(lines, "", title)
-
-		maxItems := 4
-		for i := 0; i < len(names) && i < maxItems; i++ {
-			lines = append(lines, "  - "+names[i])
-		}
-
-		if len(names) > maxItems {
-			lines = append(lines, fmt.Sprintf("  +%d more", len(names)-maxItems))
-		}
-	}
-
 	agents := append([]string(nil), s.BundleAgents...)
 	skills := append([]string(nil), s.BundleSkills...)
 	tools := append([]string(nil), s.BundleTools...)
@@ -133,9 +126,64 @@ func SidebarLines(s *state.Snapshot, rows int) []string {
 	sort.Strings(agents)
 	sort.Strings(skills)
 	sort.Strings(tools)
-	appendList("Agents", agents)
-	appendList("Skills", skills)
-	appendList("Tools", tools)
+
+	// Count fixed lines for MCP and Interaction sections.
+	mcpLines := 2 // blank + "MCP" header
+	if len(s.MCPServers) == 0 {
+		mcpLines++ // "  none"
+	} else {
+		mcpLines += len(s.MCPServers)
+	}
+
+	interactionLines := 2 // blank + "Interaction" header
+	if s.QueueID != "" {
+		interactionLines++
+	}
+
+	if len(s.SupportedHarnesses) > 0 {
+		interactionLines++
+	}
+
+	if s.LastError != "" && s.Now.Sub(s.LastErrorTime) < 30*time.Second {
+		interactionLines++
+	}
+
+	lists := []listInfo{
+		{"Agents", agents},
+		{"Skills", skills},
+		{"Tools", tools},
+	}
+
+	// Calculate slots for each list.
+	expanded := s.ExpandedSections
+	slots := distributeListSlots(lists, expanded, len(lines), mcpLines+interactionLines, rows)
+
+	for i, list := range lists {
+		if len(list.items) == 0 {
+			continue
+		}
+
+		isExpanded := expanded[list.title]
+
+		maxItems := slots[i]
+		if isExpanded {
+			maxItems = len(list.items)
+		}
+
+		lines = append(lines, "", list.title)
+
+		for j := 0; j < len(list.items) && j < maxItems; j++ {
+			lines = append(lines, "  - "+list.items[j])
+		}
+
+		if isExpanded {
+			targets = append(targets, SidebarClickTarget{Row: len(lines), Section: list.title})
+			lines = append(lines, "  [collapse]")
+		} else if len(list.items) > maxItems {
+			targets = append(targets, SidebarClickTarget{Row: len(lines), Section: list.title})
+			lines = append(lines, fmt.Sprintf("  +%d more (click)", len(list.items)-maxItems))
+		}
+	}
 
 	lines = append(lines, "", "MCP")
 	if len(s.MCPServers) == 0 {
@@ -190,14 +238,127 @@ func SidebarLines(s *state.Snapshot, rows int) []string {
 		lines = lines[:rows]
 	}
 
-	return lines
+	return lines, targets
+}
+
+type listInfo struct {
+	title string
+	items []string
+}
+
+// distributeListSlots allocates display slots to each non-empty list based on
+// available terminal rows. It subtracts fixed overhead (bundle header lines,
+// MCP/interaction lines, per-list headers) from the total rows and distributes
+// remaining slots proportionally by list size.
+func distributeListSlots(lists []listInfo, expanded map[string]bool, bundleLines, fixedBottomLines, rows int) []int {
+	slots := make([]int, len(lists))
+
+	// Count non-empty, non-expanded lists and total items needing slots.
+	var nonEmptyCount int
+
+	var totalItems int
+
+	for i, list := range lists {
+		if len(list.items) == 0 {
+			continue
+		}
+
+		nonEmptyCount++
+
+		if expanded[list.title] {
+			// Expanded lists don't consume from the shared pool.
+			slots[i] = len(list.items)
+		} else {
+			totalItems += len(list.items)
+		}
+	}
+
+	if totalItems == 0 {
+		return slots
+	}
+
+	// Each non-empty list takes 2 overhead lines: blank line + title.
+	listOverhead := 2 * nonEmptyCount
+	fixedLines := bundleLines + fixedBottomLines + listOverhead
+
+	// Subtract space consumed by expanded lists (items + collapse line).
+	for _, list := range lists {
+		if len(list.items) > 0 && expanded[list.title] {
+			fixedLines += len(list.items) + 1 // items + [collapse] line
+		}
+	}
+
+	available := max(0, rows-fixedLines)
+
+	// Proportional distribution among non-expanded lists.
+	type candidate struct {
+		index int
+		count int
+	}
+
+	var candidates []candidate
+
+	for i, list := range lists {
+		if len(list.items) > 0 && !expanded[list.title] {
+			candidates = append(candidates, candidate{i, len(list.items)})
+		}
+	}
+
+	// First pass: floor allocation.
+	distributed := 0
+
+	for _, c := range candidates {
+		share := available * c.count / totalItems
+		// Each truncated list needs 1 slot for the "+N more" line.
+		if share < c.count && share > 0 {
+			share-- // reserve a slot for "+N more"
+		}
+
+		share = min(share, c.count)
+		share = max(share, 0)
+		slots[c.index] = share
+		distributed += share
+	}
+
+	// Distribute remainder to the largest lists first.
+	remainder := available - distributed
+	if remainder > 0 {
+		// Sort candidates by size descending for remainder distribution.
+		sorted := make([]candidate, len(candidates))
+		copy(sorted, candidates)
+		sort.Slice(sorted, func(i, j int) bool {
+			return sorted[i].count > sorted[j].count
+		})
+
+		for _, c := range sorted {
+			if remainder <= 0 {
+				break
+			}
+
+			current := slots[c.index]
+			canAdd := c.count - current
+			// If currently truncated with "+N more" line, adding 1 lets us
+			// reclaim that line (no more "+N more" needed if we reach full).
+			if current < c.count && canAdd > 0 {
+				add := min(1, remainder)
+				slots[c.index] += add
+				remainder -= add
+			}
+		}
+	}
+
+	// Ensure minimum of 1 slot per non-expanded non-empty list when space allows.
+	for _, c := range candidates {
+		if slots[c.index] == 0 && available > 0 {
+			slots[c.index] = 1
+		}
+	}
+
+	return slots
 }
 
 func sidebarRow(content string, sidebarWidth int) string {
-	maxContent := sidebarWidth - 2
-	if maxContent < 0 {
-		maxContent = 0
-	}
+	maxContent := max(0, sidebarWidth-2)
 
 	content = runewidth.Truncate(content, maxContent, "")
 
