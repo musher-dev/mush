@@ -40,6 +40,14 @@ var (
 	tnError   = tcell.NewRGBColor(0xF7, 0x76, 0x8E) // colorError dark
 )
 
+// DefaultExecutionTimeout is the fallback when no execution timeout is set on the job.
+const DefaultExecutionTimeout = 10 * time.Minute
+
+const (
+	defaultCtrlCExitWindow     = 2 * time.Second
+	defaultPTYShutdownDeadline = 3 * time.Second
+)
+
 type embeddedRuntime struct {
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -177,7 +185,13 @@ func (r *embeddedRuntime) Run() error {
 	r.width, r.height = width, height
 	r.frame = layout.ComputeFrame(width, height, true)
 	r.vt = vt10x.New(vt10x.WithSize(r.frame.PaneWidth, layout.PtyRowsForFrame(r.frame)))
-	r.scrollback = newScrollbackBuffer(defaultScrollbackCapacity)
+
+	scrollbackCap := r.cfg.HarnessScrollbackLines()
+	if scrollbackCap <= 0 {
+		scrollbackCap = defaultScrollbackCapacity
+	}
+
+	r.scrollback = newScrollbackBuffer(scrollbackCap)
 
 	screen.EnableMouse(tcell.MouseButtonEvents)
 
@@ -425,6 +439,12 @@ func (r *embeddedRuntime) handleKey(ev *tcell.EventKey) bool {
 		return true
 	case tcell.KeyCtrlS:
 		r.copyMode = !r.copyMode
+		if r.copyMode {
+			r.screen.DisableMouse()
+		} else {
+			r.screen.EnableMouse(tcell.MouseButtonEvents)
+		}
+
 		r.draw()
 
 		return false
@@ -439,40 +459,42 @@ func (r *embeddedRuntime) handleKey(ev *tcell.EventKey) bool {
 	if r.copyMode {
 		if ev.Key() == tcell.KeyEscape {
 			r.copyMode = false
+			r.screen.EnableMouse(tcell.MouseButtonEvents)
 			r.draw()
 		}
 
 		return false
 	}
 
-	// Scroll mode interactions.
-	if r.scrollOffset > 0 {
-		switch ev.Key() {
-		case tcell.KeyPgUp:
-			r.scrollUp(max(layout.PtyRowsForFrame(r.frame)-1, 1))
-			return false
-		case tcell.KeyPgDn:
-			r.scrollDown(max(layout.PtyRowsForFrame(r.frame)-1, 1))
-			return false
-		case tcell.KeyEscape:
-			r.uiMu.Lock()
-			r.resetScroll()
-			r.drawLocked()
-			r.uiMu.Unlock()
+	// Scroll mode interactions — skip when alt-screen is active so that
+	// full-screen apps (vim, less) receive PgUp/PgDn directly via the PTY.
+	if !r.isAltScreenActive() {
+		if r.scrollOffset > 0 {
+			switch ev.Key() {
+			case tcell.KeyPgUp:
+				r.scrollUp(max(layout.PtyRowsForFrame(r.frame)-1, 1))
+				return false
+			case tcell.KeyPgDn:
+				r.scrollDown(max(layout.PtyRowsForFrame(r.frame)-1, 1))
+				return false
+			case tcell.KeyEscape:
+				r.uiMu.Lock()
+				r.resetScroll()
+				r.drawLocked()
+				r.uiMu.Unlock()
 
-			return false
-		default:
-			// Any typing key returns to live view and forwards the key.
-			if ev.Key() == tcell.KeyRune {
+				return false
+			default:
+				// Any forwarded key returns to live view.
 				r.uiMu.Lock()
 				r.resetScroll()
 				r.drawLocked()
 				r.uiMu.Unlock()
 			}
+		} else if ev.Key() == tcell.KeyPgUp {
+			r.scrollUp(max(layout.PtyRowsForFrame(r.frame)-1, 1))
+			return false
 		}
-	} else if ev.Key() == tcell.KeyPgUp {
-		r.scrollUp(max(layout.PtyRowsForFrame(r.frame)-1, 1))
-		return false
 	}
 
 	keyBytes := encodeTCellKey(ev)
@@ -625,8 +647,26 @@ const scrollLinesPerTick = 3
 func (r *embeddedRuntime) handleMouse(ev *tcell.EventMouse) {
 	switch ev.Buttons() {
 	case tcell.WheelUp:
+		if r.isAltScreenActive() {
+			return
+		}
+
+		x, y := ev.Position()
+		if y < layout.TopBarHeight || (r.frame.SidebarVisible && x < r.frame.SidebarWidth) {
+			return
+		}
+
 		r.scrollUp(scrollLinesPerTick)
 	case tcell.WheelDown:
+		if r.isAltScreenActive() {
+			return
+		}
+
+		x, y := ev.Position()
+		if y < layout.TopBarHeight || (r.frame.SidebarVisible && x < r.frame.SidebarWidth) {
+			return
+		}
+
 		r.scrollDown(scrollLinesPerTick)
 	case tcell.Button1:
 		x, y := ev.Position()
@@ -679,6 +719,13 @@ func (r *embeddedRuntime) scrollDown(n int) {
 
 func (r *embeddedRuntime) resetScroll() {
 	r.scrollOffset = 0
+}
+
+// isAltScreenActive reports whether the virtual terminal is in alt-screen mode
+// (e.g. vim, less). When true, scroll interception should be bypassed so that
+// the child application receives navigation keys directly.
+func (r *embeddedRuntime) isAltScreenActive() bool {
+	return r.vt.Mode()&vt10x.ModeAltScreen != 0
 }
 
 func (r *embeddedRuntime) updateStatusLoop() {
@@ -1020,21 +1067,12 @@ func (r *embeddedRuntime) renderViewport() {
 	inBounds := cursor.Y >= 0 && cursor.Y < rows &&
 		cursor.X >= 0 && cursor.X < r.frame.PaneWidth
 
-	if inBounds {
+	if inBounds && r.vt.CursorVisible() {
 		screenX := paneX + cursor.X
 		screenY := paneY + cursor.Y
 
-		// Always render a software cursor (reverse-video) for reliable visibility.
-		// This handles terminals where the hardware cursor is not visible, and
-		// child processes (like Ink/React TUIs) that leave cursor hidden after
-		// render passes even when waiting for input.
 		r.applySoftwareCursor(screenX, screenY)
-
-		if r.vt.CursorVisible() {
-			r.screen.ShowCursor(screenX, screenY)
-		} else {
-			r.screen.HideCursor()
-		}
+		r.screen.ShowCursor(screenX, screenY)
 	} else {
 		r.screen.HideCursor()
 	}
@@ -1255,4 +1293,53 @@ func (r *embeddedRuntime) infof(format string, args ...any) {
 
 func (r *embeddedRuntime) signalDone() {
 	r.closeOnce.Do(func() { close(r.done) })
+}
+
+func clampTerminalSize(width, height int) (clampedWidth, clampedHeight int) {
+	return layout.ClampTerminalSize(width, height)
+}
+
+// needsSignalDir checks if any supported harness type implements harnesstype.SignalDirConsumer.
+func needsSignalDir(supportedHarnesses []string) bool {
+	for _, name := range supportedHarnesses {
+		info, ok := Lookup(name)
+		if !ok {
+			continue
+		}
+
+		executor := info.New()
+		if _, ok := executor.(harnesstype.SignalDirConsumer); ok {
+			return true
+		}
+	}
+
+	return false
+}
+
+// hasTranscriptSource checks if any supported harness type implements harnesstype.TranscriptSource.
+func hasTranscriptSource(supportedHarnesses []string) bool {
+	for _, name := range supportedHarnesses {
+		info, ok := Lookup(name)
+		if !ok {
+			continue
+		}
+
+		executor := info.New()
+		if ts, ok := executor.(harnesstype.TranscriptSource); ok && ts.WantsTranscript() {
+			return true
+		}
+	}
+
+	return false
+}
+
+// hasRefreshableExecutor checks if any executor in the map implements harnesstype.Refreshable.
+func hasRefreshableExecutor(executors map[string]harnesstype.Executor) bool {
+	for _, executor := range executors {
+		if _, ok := executor.(harnesstype.Refreshable); ok {
+			return true
+		}
+	}
+
+	return false
 }

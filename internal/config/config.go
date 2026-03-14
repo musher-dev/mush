@@ -57,6 +57,7 @@ func Load() *Config {
 	v.SetDefault("history.retention", (30 * 24 * time.Hour).String())
 	v.SetDefault("update.auto_apply", true)
 	v.SetDefault("update.check_interval", DefaultUpdateCheckInterval)
+	v.SetDefault("harness.scrollback_lines", 1000)
 	v.SetDefault("experimental", false)
 
 	// Config file location
@@ -203,6 +204,11 @@ func (c *Config) HistoryRetention() time.Duration {
 	}
 
 	return d
+}
+
+// HarnessScrollbackLines returns the configured scrollback buffer capacity for the harness TUI.
+func (c *Config) HarnessScrollbackLines() int {
+	return c.GetInt("harness.scrollback_lines")
 }
 
 // Experimental returns whether experimental features are enabled.
