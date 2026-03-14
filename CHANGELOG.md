@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.16.0](https://github.com/musher-dev/mush/compare/v3.15.0...v3.16.0) (2026-03-14)
+
+
+### Features
+
+* **harness:** add software cursor and scroll offset anchoring ([#115](https://github.com/musher-dev/mush/issues/115)) ([2475e0f](https://github.com/musher-dev/mush/commit/2475e0f736d59c91758852432ff984e9d7788b32))
+
 ## [3.15.0](https://github.com/musher-dev/mush/compare/v3.14.0...v3.15.0) (2026-03-14)
 
 
