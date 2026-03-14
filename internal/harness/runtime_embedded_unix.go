@@ -1047,14 +1047,20 @@ func (r *embeddedRuntime) applySoftwareCursor(screenX, screenY int) {
 
 	ch := ' '
 
+	var combc []rune
+
 	if content != "" {
 		runes := []rune(content)
+
 		ch = runes[0]
+		if len(runes) > 1 {
+			combc = runes[1:]
+		}
 	}
 
 	fg, bg, attrs := style.Decompose()
 	reversed := tcell.StyleDefault.Foreground(bg).Background(fg).Attributes(attrs)
-	r.screen.SetContent(screenX, screenY, ch, nil, reversed)
+	r.screen.SetContent(screenX, screenY, ch, combc, reversed)
 }
 
 // renderScrolledViewport renders the viewport from a mix of scrollback buffer
