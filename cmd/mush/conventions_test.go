@@ -261,10 +261,11 @@ func TestNoShortFlagCollisions(t *testing.T) {
 // Any new hidden flag must be added here, forcing code review visibility.
 func TestHiddenFlagsAreRegistered(t *testing.T) {
 	allowedHidden := map[string]bool{
-		"mush --log-level":  true,
-		"mush --log-format": true,
-		"mush --log-file":   true,
-		"mush --log-stderr": true,
+		"mush --log-level":    true,
+		"mush --log-format":   true,
+		"mush --log-file":     true,
+		"mush --log-stderr":   true,
+		"mush --experimental": true,
 	}
 
 	root := newRootCmd()

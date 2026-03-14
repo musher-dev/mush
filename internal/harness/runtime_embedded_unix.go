@@ -56,6 +56,9 @@ type embeddedRuntime struct {
 	copyMode    bool
 	lastCtrlCAt time.Time
 
+	scrollback   *scrollbackBuffer
+	scrollOffset int // 0 = live view, >0 = lines scrolled back
+
 	jobs      *JobLoop
 	executors map[string]harnesstype.Executor
 
@@ -77,6 +80,9 @@ type embeddedRuntime struct {
 	bundleWorkDir  string
 	bundleEnv      []string
 	bundleSummary  BundleSummary
+
+	sidebarExpanded     map[string]bool
+	sidebarClickTargets []statusui.SidebarClickTarget
 
 	done      chan struct{}
 	closeOnce sync.Once
@@ -120,6 +126,7 @@ func newEmbeddedRuntime(ctx context.Context, cfg *Config) *embeddedRuntime {
 		bundleWorkDir:      cfg.BundleWorkDir,
 		bundleEnv:          append([]string(nil), cfg.BundleEnv...),
 		bundleSummary:      cfg.BundleSummary,
+		sidebarExpanded:    make(map[string]bool),
 		done:               make(chan struct{}),
 		now:                time.Now,
 		ctrlCExitWindow:    defaultCtrlCExitWindow,
@@ -170,6 +177,9 @@ func (r *embeddedRuntime) Run() error {
 	r.width, r.height = width, height
 	r.frame = layout.ComputeFrame(width, height, true)
 	r.vt = vt10x.New(vt10x.WithSize(r.frame.PaneWidth, layout.PtyRowsForFrame(r.frame)))
+	r.scrollback = newScrollbackBuffer(defaultScrollbackCapacity)
+
+	screen.EnableMouse(tcell.MouseButtonEvents)
 
 	historyEnabled := r.transcriptEnabled
 	if !historyEnabled {
@@ -401,6 +411,8 @@ func (r *embeddedRuntime) eventLoop() {
 			if r.handleKey(msg) {
 				return
 			}
+		case *tcell.EventMouse:
+			r.handleMouse(msg)
 		}
 	}
 }
@@ -430,6 +442,36 @@ func (r *embeddedRuntime) handleKey(ev *tcell.EventKey) bool {
 			r.draw()
 		}
 
+		return false
+	}
+
+	// Scroll mode interactions.
+	if r.scrollOffset > 0 {
+		switch ev.Key() {
+		case tcell.KeyPgUp:
+			r.scrollUp(max(layout.PtyRowsForFrame(r.frame)-1, 1))
+			return false
+		case tcell.KeyPgDn:
+			r.scrollDown(max(layout.PtyRowsForFrame(r.frame)-1, 1))
+			return false
+		case tcell.KeyEscape:
+			r.uiMu.Lock()
+			r.resetScroll()
+			r.drawLocked()
+			r.uiMu.Unlock()
+
+			return false
+		default:
+			// Any typing key returns to live view and forwards the key.
+			if ev.Key() == tcell.KeyRune {
+				r.uiMu.Lock()
+				r.resetScroll()
+				r.drawLocked()
+				r.uiMu.Unlock()
+			}
+		}
+	} else if ev.Key() == tcell.KeyPgUp {
+		r.scrollUp(max(layout.PtyRowsForFrame(r.frame)-1, 1))
 		return false
 	}
 
@@ -578,6 +620,67 @@ func (r *embeddedRuntime) handleCtrlC() bool {
 	return false
 }
 
+const scrollLinesPerTick = 3
+
+func (r *embeddedRuntime) handleMouse(ev *tcell.EventMouse) {
+	switch ev.Buttons() {
+	case tcell.WheelUp:
+		r.scrollUp(scrollLinesPerTick)
+	case tcell.WheelDown:
+		r.scrollDown(scrollLinesPerTick)
+	case tcell.Button1:
+		x, y := ev.Position()
+		if r.frame.SidebarVisible && x < r.frame.SidebarWidth {
+			sidebarRow := y - layout.TopBarHeight
+			r.handleSidebarClick(sidebarRow)
+		}
+	}
+}
+
+func (r *embeddedRuntime) handleSidebarClick(row int) {
+	r.uiMu.Lock()
+	defer r.uiMu.Unlock()
+
+	for _, t := range r.sidebarClickTargets {
+		if t.Row == row {
+			r.sidebarExpanded[t.Section] = !r.sidebarExpanded[t.Section]
+			r.drawLocked()
+
+			return
+		}
+	}
+}
+
+func (r *embeddedRuntime) scrollUp(n int) {
+	r.uiMu.Lock()
+	defer r.uiMu.Unlock()
+
+	maxOffset := r.scrollback.Len()
+	r.scrollOffset += n
+
+	if r.scrollOffset > maxOffset {
+		r.scrollOffset = maxOffset
+	}
+
+	r.drawLocked()
+}
+
+func (r *embeddedRuntime) scrollDown(n int) {
+	r.uiMu.Lock()
+	defer r.uiMu.Unlock()
+
+	r.scrollOffset -= n
+	if r.scrollOffset < 0 {
+		r.scrollOffset = 0
+	}
+
+	r.drawLocked()
+}
+
+func (r *embeddedRuntime) resetScroll() {
+	r.scrollOffset = 0
+}
+
 func (r *embeddedRuntime) updateStatusLoop() {
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
@@ -622,10 +725,91 @@ func (r *embeddedRuntime) Write(p []byte) (int, error) {
 	r.uiMu.Lock()
 	defer r.uiMu.Unlock()
 
-	_, _ = r.vt.Write(p)
+	// Capture rows before write to detect scroll-off.
+	r.captureScrolledLines(p)
+
 	r.drawLocked()
 
 	return len(p), nil
+}
+
+// captureScrolledLines snapshots visible rows before vt.Write, writes to vt,
+// then detects which top rows scrolled off and pushes them to scrollback.
+func (r *embeddedRuntime) captureScrolledLines(p []byte) {
+	// Skip capture when alt screen is active (e.g. vim, less).
+	if r.vt.Mode()&vt10x.ModeAltScreen != 0 {
+		_, _ = r.vt.Write(p)
+		return
+	}
+
+	rows := layout.PtyRowsForFrame(r.frame)
+	cols := r.frame.PaneWidth
+
+	// Snapshot all visible rows before write.
+	before := make([][]vt10x.Glyph, rows)
+
+	r.vt.Lock()
+
+	for row := 0; row < rows; row++ {
+		line := make([]vt10x.Glyph, cols)
+		for col := 0; col < cols; col++ {
+			line[col] = r.vt.Cell(col, row)
+		}
+
+		before[row] = line
+	}
+
+	r.vt.Unlock()
+
+	_, _ = r.vt.Write(p)
+
+	// Snapshot rows after write.
+	after := make([][]vt10x.Glyph, rows)
+
+	r.vt.Lock()
+
+	for row := 0; row < rows; row++ {
+		line := make([]vt10x.Glyph, cols)
+		for col := 0; col < cols; col++ {
+			line[col] = r.vt.Cell(col, row)
+		}
+
+		after[row] = line
+	}
+
+	r.vt.Unlock()
+
+	// Find how many rows scrolled off by matching the longest suffix of
+	// "before" that appears as a prefix of "after".
+	scrolledOff := 0
+
+	for shift := 1; shift < rows; shift++ {
+		if glyphRowsEqual(before[shift:], after[:rows-shift], cols) {
+			scrolledOff = shift
+		}
+	}
+
+	// Push scrolled-off rows into the scrollback buffer.
+	for i := 0; i < scrolledOff; i++ {
+		r.scrollback.Push(before[i])
+	}
+}
+
+// glyphRowsEqual compares two slices of glyph rows for character equality.
+func glyphRowsEqual(left, right [][]vt10x.Glyph, cols int) bool {
+	if len(left) != len(right) {
+		return false
+	}
+
+	for row := range left {
+		for col := 0; col < cols && col < len(left[row]) && col < len(right[row]); col++ {
+			if left[row][col].Char != right[row][col].Char {
+				return false
+			}
+		}
+	}
+
+	return true
 }
 
 func (r *embeddedRuntime) draw() {
@@ -667,7 +851,10 @@ func (r *embeddedRuntime) renderTopBar() {
 	mode := "LIVE"
 	modeStyle := barStyle.Foreground(tnSuccess)
 
-	if snap.CopyMode {
+	if r.scrollOffset > 0 {
+		mode = fmt.Sprintf("SCROLL -%d", r.scrollOffset)
+		modeStyle = barStyle.Foreground(tnAccent)
+	} else if snap.CopyMode {
 		mode = "COPY"
 		modeStyle = barStyle.Foreground(tnWarning)
 	}
@@ -779,8 +966,10 @@ func (r *embeddedRuntime) renderSidebar() {
 
 func (r *embeddedRuntime) sidebarLines(rows int) []string {
 	snap := r.statusSnapshot()
+	lines, targets := statusui.SidebarLines(&snap, rows)
+	r.sidebarClickTargets = targets
 
-	return statusui.SidebarLines(&snap, rows)
+	return lines
 }
 
 func (r *embeddedRuntime) renderViewport() {
@@ -793,6 +982,11 @@ func (r *embeddedRuntime) renderViewport() {
 		for col := 0; col < r.frame.PaneWidth; col++ {
 			r.screen.SetContent(paneX+col, paneY+row, ' ', nil, clearStyle)
 		}
+	}
+
+	if r.scrollOffset > 0 {
+		r.renderScrolledViewport(rows, paneX, paneY)
+		return
 	}
 
 	r.vt.Lock()
@@ -824,6 +1018,79 @@ func (r *embeddedRuntime) renderViewport() {
 	}
 
 	r.screen.HideCursor()
+}
+
+// renderScrolledViewport renders the viewport from a mix of scrollback buffer
+// and live vt state when the user has scrolled back.
+func (r *embeddedRuntime) renderScrolledViewport(rows, paneX, paneY int) {
+	r.screen.HideCursor()
+
+	// The viewport shows rows from (scrollOffset-1) down to (scrollOffset-rows)
+	// in the scrollback, with any remaining rows from the live vt top.
+	//
+	// scrollOffset=1 means the top row of viewport is scrollback line 0 (newest)
+	// and the rest are from live vt rows 0..(rows-2).
+	//
+	// More generally:
+	// - scrollback lines shown: min(scrollOffset, rows) from scrollback
+	// - live vt rows shown: rows - scrollbackLinesShown, starting from vt row 0
+
+	scrollbackLinesShown := r.scrollOffset
+	if scrollbackLinesShown > rows {
+		scrollbackLinesShown = rows
+	}
+
+	liveLinesShown := rows - scrollbackLinesShown
+
+	// Render scrollback lines at the top of the viewport.
+	for row := 0; row < scrollbackLinesShown; row++ {
+		// scrollOffset lines from newest: we want offset (scrollOffset-1) at row 0,
+		// (scrollOffset-2) at row 1, etc.
+		sbOffset := r.scrollOffset - 1 - row
+		cells := r.scrollback.Line(sbOffset)
+
+		for col := 0; col < r.frame.PaneWidth; col++ {
+			ch := ' '
+			style := tcell.StyleDefault.Background(tnPTYBg).Foreground(tnText)
+
+			if cells != nil && col < len(cells) {
+				ch = cells[col].Char
+				if ch == 0 {
+					ch = ' '
+				}
+
+				style = tcell.StyleDefault.
+					Foreground(vtColorToTCell(cells[col].FG, true)).
+					Background(vtColorToTCell(cells[col].BG, false))
+			}
+
+			r.screen.SetContent(paneX+col, paneY+row, ch, nil, style)
+		}
+	}
+
+	// Render live vt rows below the scrollback lines.
+	if liveLinesShown > 0 {
+		r.vt.Lock()
+		defer r.vt.Unlock()
+
+		for row := 0; row < liveLinesShown; row++ {
+			screenRow := scrollbackLinesShown + row
+
+			for col := 0; col < r.frame.PaneWidth; col++ {
+				glyph := r.vt.Cell(col, row)
+
+				ch := glyph.Char
+				if ch == 0 {
+					ch = ' '
+				}
+
+				style := tcell.StyleDefault.
+					Foreground(vtColorToTCell(glyph.FG, true)).
+					Background(vtColorToTCell(glyph.BG, false))
+				r.screen.SetContent(paneX+col, paneY+screenRow, ch, nil, style)
+			}
+		}
+	}
 }
 
 func vtColorToTCell(color vt10x.Color, isForeground bool) tcell.Color {
@@ -904,6 +1171,7 @@ func (r *embeddedRuntime) statusSnapshot() harnessstate.Snapshot {
 		LastError:          jsnap.LastError,
 		LastErrorTime:      jsnap.LastErrorTime,
 		MCPServers:         buildMCPServerStatuses(r.jobs, now),
+		ExpandedSections:   r.sidebarExpanded,
 		Now:                now,
 	}
 }

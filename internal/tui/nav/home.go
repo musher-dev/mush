@@ -30,6 +30,12 @@ func renderHomeTwoPanel(mdl *model) string {
 	leftTitle := renderPanelTitle(mdl)
 	leftPanel := renderPanel(&mdl.styles, leftTitle, leftContent, mdl.styles.menuWidth, menuActive)
 
+	// Add experimental panel below menu when enabled.
+	if mdl.deps != nil && mdl.deps.Experimental {
+		expPanel := renderExperimentalPanel(mdl, mdl.styles.menuWidth)
+		leftPanel = lipgloss.JoinVertical(lipgloss.Center, leftPanel, "", expPanel)
+	}
+
 	// Build the top block: menu panel + optional harness panel side by side.
 	// Both panels use the same width for visual alignment.
 	var topPanels string
@@ -89,15 +95,24 @@ func renderHomeSinglePanel(mdl *model) string {
 	desc := renderDescription(mdl)
 	footer := renderHomeFooter(mdl)
 
-	content := lipgloss.JoinVertical(
-		lipgloss.Center,
+	parts := []string{
 		header,
 		"",
 		statusLine,
 		menu,
-		desc,
-		"",
-		footer,
+	}
+
+	// Add experimental panel between menu and description when enabled.
+	if mdl.deps != nil && mdl.deps.Experimental {
+		expPanel := renderExperimentalPanel(mdl, mdl.styles.menuWidth)
+		parts = append(parts, "", expPanel)
+	}
+
+	parts = append(parts, desc, "", footer)
+
+	content := lipgloss.JoinVertical(
+		lipgloss.Center,
+		parts...,
 	)
 
 	return lipgloss.Place(
@@ -331,8 +346,11 @@ func renderHomeFooter(mdl *model) string {
 		{key: "j/k", desc: "navigate"},
 	}
 
-	// Show tab hint when harness panel is available in two-panel mode.
-	if mdl.styles.layout == layoutTwoPanel && len(mdl.homeHarness.statuses) > 0 {
+	// Show tab hint when additional focus areas are available.
+	hasHarness := mdl.styles.layout == layoutTwoPanel && len(mdl.homeHarness.statuses) > 0
+	hasExperimental := len(mdl.experimentalPanel.items) > 0
+
+	if hasHarness || hasExperimental {
 		hints = append(hints, hint{key: "tab", desc: "switch"})
 	}
 

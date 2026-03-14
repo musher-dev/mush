@@ -20,6 +20,7 @@ type Dependencies struct {
 	Config        *config.Config
 	WorkDir       string
 	InitialBundle *BundleSeed // nil = start at home screen
+	Experimental  bool        // true when experimental features are enabled
 }
 
 // Action identifies what the TUI wants the caller to do after exit.

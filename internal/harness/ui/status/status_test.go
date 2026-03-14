@@ -141,3 +141,193 @@ func TestSidebarRowTruncatesCJKByCellWidth(t *testing.T) {
 		t.Fatalf("truncated CJK string width = %d, want <= 8", w)
 	}
 }
+
+func TestDistributeListSlots_StandardTerminal(t *testing.T) {
+	lists := []listInfo{
+		{"Agents", make([]string, 8)},
+		{"Skills", make([]string, 4)},
+		{"Tools", make([]string, 2)},
+	}
+
+	slots := distributeListSlots(lists, nil, 7, 6, 40)
+	total := slots[0] + slots[1] + slots[2]
+
+	if total == 0 {
+		t.Fatal("expected some slots allocated")
+	}
+
+	// Agents has the most items, so should get the most slots.
+	if slots[0] < slots[1] {
+		t.Fatalf("agents (%d items) should get >= slots than skills (%d items): got %d vs %d",
+			8, 4, slots[0], slots[1])
+	}
+}
+
+func TestDistributeListSlots_TallTerminal(t *testing.T) {
+	lists := []listInfo{
+		{"Agents", make([]string, 3)},
+		{"Skills", make([]string, 3)},
+		{"Tools", make([]string, 3)},
+	}
+
+	// With 60 rows, all 9 items should fit without truncation.
+	slots := distributeListSlots(lists, nil, 7, 6, 60)
+
+	for i, li := range lists {
+		if slots[i] < len(li.items) {
+			t.Fatalf("list %q: expected all %d items to fit, got %d slots", li.title, len(li.items), slots[i])
+		}
+	}
+}
+
+func TestDistributeListSlots_ShortTerminal(t *testing.T) {
+	lists := []listInfo{
+		{"Agents", make([]string, 8)},
+		{"Skills", make([]string, 4)},
+		{"Tools", make([]string, 2)},
+	}
+
+	// With only 10 rows total, very few slots are available.
+	slots := distributeListSlots(lists, nil, 7, 6, 10)
+
+	// Should not exceed available items.
+	for i, li := range lists {
+		if slots[i] > len(li.items) {
+			t.Fatalf("list %q: slots %d > items %d", li.title, slots[i], len(li.items))
+		}
+	}
+}
+
+func TestDistributeListSlots_EmptyLists(t *testing.T) {
+	lists := []listInfo{
+		{"Agents", nil},
+		{"Skills", nil},
+		{"Tools", nil},
+	}
+
+	slots := distributeListSlots(lists, nil, 7, 6, 40)
+
+	for i := range slots {
+		if slots[i] != 0 {
+			t.Fatalf("empty list %d should get 0 slots, got %d", i, slots[i])
+		}
+	}
+}
+
+func TestDistributeListSlots_SingleList(t *testing.T) {
+	lists := []listInfo{
+		{"Agents", make([]string, 5)},
+		{"Skills", nil},
+		{"Tools", nil},
+	}
+
+	slots := distributeListSlots(lists, nil, 7, 6, 40)
+
+	if slots[0] != 5 {
+		t.Fatalf("single non-empty list should get all items, got %d", slots[0])
+	}
+}
+
+func TestSidebarLines_ClickTargets(t *testing.T) {
+	s := &state.Snapshot{
+		BundleName:   "test",
+		BundleVer:    "1.0",
+		BundleLayers: 1,
+		BundleAgents: []string{"a1", "a2", "a3", "a4", "a5", "a6", "a7", "a8", "a9", "a10", "a11", "a12"},
+		BundleSkills: []string{"s1", "s2", "s3", "s4", "s5", "s6"},
+		BundleTools:  []string{"t1", "t2", "t3", "t4"},
+		Now:          time.Now(),
+	}
+
+	// Use a short terminal so not all items fit.
+	lines, targets := SidebarLines(s, 24)
+	joined := strings.Join(lines, "\n")
+
+	// Should have a "+N more (click)" line for agents.
+	if !strings.Contains(joined, "more (click)") {
+		t.Fatalf("expected '+N more (click)' in sidebar, got:\n%s", joined)
+	}
+
+	// Should have at least one click target for agents.
+	found := false
+
+	for _, tgt := range targets {
+		if tgt.Section == "Agents" {
+			found = true
+
+			break
+		}
+	}
+
+	if !found {
+		t.Fatal("expected click target for Agents section")
+	}
+}
+
+func TestSidebarLines_ExpandedSection(t *testing.T) {
+	agents := []string{"a1", "a2", "a3", "a4", "a5", "a6", "a7", "a8"}
+
+	s := &state.Snapshot{
+		BundleName:       "test",
+		BundleVer:        "1.0",
+		BundleLayers:     1,
+		BundleAgents:     agents,
+		BundleSkills:     []string{"s1"},
+		ExpandedSections: map[string]bool{"Agents": true},
+		Now:              time.Now(),
+	}
+
+	lines, targets := SidebarLines(s, 40)
+	joined := strings.Join(lines, "\n")
+
+	// All agents should be visible when expanded.
+	for _, a := range agents {
+		if !strings.Contains(joined, a) {
+			t.Fatalf("expanded section missing agent %q in:\n%s", a, joined)
+		}
+	}
+
+	// Should have [collapse] text.
+	if !strings.Contains(joined, "[collapse]") {
+		t.Fatalf("expected [collapse] in expanded section, got:\n%s", joined)
+	}
+
+	// Should have a collapse click target.
+	found := false
+
+	for _, tgt := range targets {
+		if tgt.Section == "Agents" {
+			found = true
+
+			break
+		}
+	}
+
+	if !found {
+		t.Fatal("expected click target for collapsing Agents section")
+	}
+}
+
+func TestSidebarLines_ClickTargetRowIndex(t *testing.T) {
+	s := &state.Snapshot{
+		BundleName:   "test",
+		BundleVer:    "1.0",
+		BundleLayers: 1,
+		BundleAgents: []string{"a1", "a2", "a3", "a4", "a5", "a6", "a7", "a8", "a9", "a10"},
+		BundleSkills: []string{"s1", "s2", "s3", "s4", "s5"},
+		Now:          time.Now(),
+	}
+
+	lines, targets := SidebarLines(s, 20)
+
+	for _, tgt := range targets {
+		if tgt.Row < 0 || tgt.Row >= len(lines) {
+			t.Fatalf("click target row %d out of bounds (lines len=%d)", tgt.Row, len(lines))
+		}
+
+		line := lines[tgt.Row]
+		if !strings.Contains(line, "more (click)") && !strings.Contains(line, "[collapse]") {
+			t.Fatalf("click target row %d doesn't contain expected text: %q", tgt.Row, line)
+		}
+	}
+}

@@ -393,8 +393,8 @@ func TestHubInstallWithoutClientShowsError(t *testing.T) {
 		{Slug: "test-bundle", LatestVersion: "1.0.0"},
 	}
 
-	// Press 'i' to install.
-	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'i'}})
+	// Press 'r' to run.
+	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
 
 	if mdl.activeScreen != screenBundleError {
 		t.Errorf("activeScreen = %d, want screenBundleError (no client)", mdl.activeScreen)
@@ -495,8 +495,8 @@ func TestHubDetailView(t *testing.T) {
 		t.Error("hub detail view should contain panel title")
 	}
 
-	if !strings.Contains(view, "Install Bundle") {
-		t.Error("hub detail view should contain install button")
+	if !strings.Contains(view, "Load Bundle") {
+		t.Error("hub detail view should contain load button")
 	}
 
 	if !strings.Contains(view, "A great agent bundle") {
@@ -606,8 +606,8 @@ func TestHubInstallSelectedEmptyVersionShowsError(t *testing.T) {
 		{Slug: "no-version-bundle", LatestVersion: "", Publisher: client.HubPublisher{Handle: "acme"}},
 	}
 
-	// Press 'i' to install.
-	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'i'}})
+	// Press 'r' to run.
+	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
 
 	if mdl.activeScreen != screenBundleError {
 		t.Errorf("activeScreen = %d, want screenBundleError", mdl.activeScreen)

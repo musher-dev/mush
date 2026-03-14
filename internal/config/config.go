@@ -57,6 +57,7 @@ func Load() *Config {
 	v.SetDefault("history.retention", (30 * 24 * time.Hour).String())
 	v.SetDefault("update.auto_apply", true)
 	v.SetDefault("update.check_interval", DefaultUpdateCheckInterval)
+	v.SetDefault("experimental", false)
 
 	// Config file location
 	configDir, err := paths.ConfigRoot()
@@ -202,6 +203,11 @@ func (c *Config) HistoryRetention() time.Duration {
 	}
 
 	return d
+}
+
+// Experimental returns whether experimental features are enabled.
+func (c *Config) Experimental() bool {
+	return c.v.GetBool("experimental")
 }
 
 // UpdateAutoApply returns whether background auto-apply is enabled.

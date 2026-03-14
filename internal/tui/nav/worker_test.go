@@ -13,7 +13,7 @@ import (
 func TestWorkerHotkeyNoClientShowsError(t *testing.T) {
 	t.Parallel()
 
-	mdl := testModel() // nil deps → no client
+	mdl := testModelExperimental() // experimental deps (nil client) → no auth
 
 	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'w'}})
 
@@ -29,7 +29,7 @@ func TestWorkerHotkeyNoClientShowsError(t *testing.T) {
 func TestWorkerHotkeyWithClientShowsHabitats(t *testing.T) {
 	t.Parallel()
 
-	mdl := newModel(t.Context(), &Dependencies{Client: client.New("http://localhost", "test-key")})
+	mdl := newModel(t.Context(), &Dependencies{Client: client.New("http://localhost", "test-key"), Experimental: true})
 
 	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'w'}})
 

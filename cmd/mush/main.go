@@ -173,17 +173,18 @@ func renderHealthProbe(out *output.Writer, cliErr *clierrors.CLIError) {
 
 func newRootCmd() *cobra.Command {
 	var (
-		jsonOutput bool
-		quiet      bool
-		noColor    bool
-		noInput    bool
-		noTUI      bool
-		logLevel   string
-		logFormat  string
-		logFile    string
-		logStderr  string
-		apiURL     string
-		apiKey     string
+		jsonOutput   bool
+		quiet        bool
+		noColor      bool
+		noInput      bool
+		noTUI        bool
+		experimental bool
+		logLevel     string
+		logFormat    string
+		logFile      string
+		logStderr    string
+		apiURL       string
+		apiKey       string
 	)
 
 	out := output.Default()
@@ -350,6 +351,7 @@ Get started:  mush bundle load`,
 	rootCmd.PersistentFlags().BoolVar(&noColor, "no-color", false, "Disable colored output")
 	rootCmd.PersistentFlags().BoolVar(&noInput, "no-input", false, "Disable interactive prompts")
 	rootCmd.PersistentFlags().BoolVar(&noTUI, "no-tui", false, "Disable interactive TUI navigation")
+	rootCmd.PersistentFlags().BoolVar(&experimental, "experimental", false, "Enable experimental features")
 	rootCmd.PersistentFlags().StringVar(&logLevel, "log-level", "", "Log level: error, warn, info, debug")
 	rootCmd.PersistentFlags().StringVar(&logFormat, "log-format", "", "Log format: json, text")
 	rootCmd.PersistentFlags().StringVar(&logFile, "log-file", "", "Optional structured log file path")
@@ -357,11 +359,12 @@ Get started:  mush bundle load`,
 	rootCmd.PersistentFlags().StringVar(&apiURL, "api-url", "", "Override Musher API URL for this command")
 	rootCmd.PersistentFlags().StringVar(&apiKey, "api-key", "", "API key override (prefer MUSH_API_KEY env var)")
 
-	// Hide logging flags from default help — still functional via MUSH_LOG_* env vars
+	// Hide logging and experimental flags from default help — still functional via env vars
 	_ = rootCmd.PersistentFlags().MarkHidden("log-level")
 	_ = rootCmd.PersistentFlags().MarkHidden("log-format")
 	_ = rootCmd.PersistentFlags().MarkHidden("log-file")
 	_ = rootCmd.PersistentFlags().MarkHidden("log-stderr")
+	_ = rootCmd.PersistentFlags().MarkHidden("experimental")
 
 	// Enable typo suggestions for unknown commands
 	rootCmd.SuggestionsMinimumDistance = 2
@@ -375,13 +378,22 @@ Get started:  mush bundle load`,
 		}
 	})
 
+	// Determine whether experimental features are enabled.
+	experimentalEnabled := experimentalOn() || hasExperimentalFlag()
+
 	// Command groups for organized help output
-	rootCmd.AddGroup(
-		&cobra.Group{ID: "bundles", Title: "Bundle Commands:"},
-		&cobra.Group{ID: "account", Title: "Account & Configuration:"},
-		&cobra.Group{ID: "setup", Title: "Setup & Diagnostics:"},
-		&cobra.Group{ID: "advanced", Title: "Advanced:"},
-	)
+	groups := []*cobra.Group{
+		{ID: "bundles", Title: "Bundle Commands:"},
+		{ID: "account", Title: "Account & Configuration:"},
+		{ID: "setup", Title: "Setup & Diagnostics:"},
+		{ID: "advanced", Title: "Advanced:"},
+	}
+
+	if experimentalEnabled {
+		groups = append(groups, &cobra.Group{ID: "experimental", Title: "Experimental:"})
+	}
+
+	rootCmd.AddGroup(groups...)
 
 	// Bundle commands (primary workflow)
 	bundleCmd := newBundleCmd()
@@ -424,6 +436,16 @@ Get started:  mush bundle load`,
 	rootCmd.AddCommand(updateCmd)
 
 	rootCmd.AddCommand(newUpdateAgentCmd())
+
+	// Experimental commands (hidden unless enabled)
+	experimentalCmd := newExperimentalCmd()
+	experimentalCmd.Hidden = !experimentalEnabled
+
+	if experimentalEnabled {
+		experimentalCmd.GroupID = "experimental"
+	}
+
+	rootCmd.AddCommand(experimentalCmd)
 
 	pathsCmd := newPathsCmd()
 	pathsCmd.GroupID = "setup"
@@ -506,6 +528,31 @@ func validateAPIURL(raw string) (string, error) {
 	return parsed.String(), nil
 }
 
+// experimentalOn returns true if experimental features are enabled via flag, env, or config.
+func experimentalOn() bool {
+	if pickBoolFlagOrEnv(false, "MUSH_EXPERIMENTAL") {
+		return true
+	}
+
+	return config.Load().Experimental()
+}
+
+// hasExperimentalFlag scans os.Args for the --experimental flag.
+// Used at command-tree construction time before Cobra has parsed flags.
+func hasExperimentalFlag() bool {
+	for _, arg := range os.Args[1:] {
+		if arg == "--experimental" || strings.HasPrefix(arg, "--experimental=") {
+			return true
+		}
+
+		if arg == "--" {
+			break
+		}
+	}
+
+	return false
+}
+
 func isInteractiveCommand(path string) bool {
 	return path == "mush worker start" || strings.HasPrefix(path, "mush worker start ") ||
 		path == "mush bundle load" || strings.HasPrefix(path, "mush bundle load ")
@@ -515,7 +562,8 @@ func isInteractiveCommand(path string) bool {
 func buildTUIDeps() *nav.Dependencies {
 	cfg := config.Load()
 	deps := &nav.Dependencies{
-		Config: cfg,
+		Config:       cfg,
+		Experimental: experimentalOn() || hasExperimentalFlag(),
 	}
 
 	// Build API client — use credentials if available, otherwise create
