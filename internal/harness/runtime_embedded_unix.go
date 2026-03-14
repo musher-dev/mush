@@ -793,6 +793,14 @@ func (r *embeddedRuntime) captureScrolledLines(p []byte) {
 	for i := 0; i < scrolledOff; i++ {
 		r.scrollback.Push(before[i])
 	}
+
+	// Anchor scroll position so the user keeps viewing the same content.
+	if scrolledOff > 0 && r.scrollOffset > 0 {
+		r.scrollOffset += scrolledOff
+		if r.scrollOffset > r.scrollback.Len() {
+			r.scrollOffset = r.scrollback.Len()
+		}
+	}
 }
 
 // glyphRowsEqual compares two slices of glyph rows for character equality.
@@ -1008,16 +1016,51 @@ func (r *embeddedRuntime) renderViewport() {
 		}
 	}
 
-	if r.vt.CursorVisible() {
-		cursor := r.vt.Cursor()
-		if cursor.Y >= 0 && cursor.Y < rows && cursor.X >= 0 && cursor.X < r.frame.PaneWidth {
-			r.screen.ShowCursor(paneX+cursor.X, paneY+cursor.Y)
+	cursor := r.vt.Cursor()
+	inBounds := cursor.Y >= 0 && cursor.Y < rows &&
+		cursor.X >= 0 && cursor.X < r.frame.PaneWidth
 
-			return
+	if inBounds {
+		screenX := paneX + cursor.X
+		screenY := paneY + cursor.Y
+
+		// Always render a software cursor (reverse-video) for reliable visibility.
+		// This handles terminals where the hardware cursor is not visible, and
+		// child processes (like Ink/React TUIs) that leave cursor hidden after
+		// render passes even when waiting for input.
+		r.applySoftwareCursor(screenX, screenY)
+
+		if r.vt.CursorVisible() {
+			r.screen.ShowCursor(screenX, screenY)
+		} else {
+			r.screen.HideCursor()
+		}
+	} else {
+		r.screen.HideCursor()
+	}
+}
+
+// applySoftwareCursor renders a reverse-video cell at the given screen position
+// to provide a visible cursor regardless of terminal emulator or hardware cursor state.
+func (r *embeddedRuntime) applySoftwareCursor(screenX, screenY int) {
+	content, style, _ := r.screen.Get(screenX, screenY)
+
+	ch := ' '
+
+	var combc []rune
+
+	if content != "" {
+		runes := []rune(content)
+
+		ch = runes[0]
+		if len(runes) > 1 {
+			combc = runes[1:]
 		}
 	}
 
-	r.screen.HideCursor()
+	fg, bg, attrs := style.Decompose()
+	reversed := tcell.StyleDefault.Foreground(bg).Background(fg).Attributes(attrs)
+	r.screen.SetContent(screenX, screenY, ch, combc, reversed)
 }
 
 // renderScrolledViewport renders the viewport from a mix of scrollback buffer
