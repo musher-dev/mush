@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.16.1](https://github.com/musher-dev/mush/compare/v3.16.0...v3.16.1) (2026-03-15)
+
+
+### Bug Fixes
+
+* **harness:** fix scroll/input UX bugs and remove dead code ([#117](https://github.com/musher-dev/mush/issues/117)) ([05cdb8a](https://github.com/musher-dev/mush/commit/05cdb8a93ca32218747b8f43c1a3d1570c8ba3fb))
+
 ## [3.16.0](https://github.com/musher-dev/mush/compare/v3.15.0...v3.16.0) (2026-03-14)
 
 
