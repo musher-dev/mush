@@ -1,5 +1,6 @@
 api = map[url:https://api.musher.dev]
 experimental = false
+harness = map[scrollback_lines:1000]
 history = map[dir:/tmp/mush-history enabled:true retention:720h0m0s scrollback_lines:10000]
 network = map[ca_cert_file:]
 tui = true
