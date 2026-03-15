@@ -258,53 +258,43 @@ func renderDescription(mdl *model) string {
 	return mdl.styles.description.Render(mdl.items[mdl.cursor].description)
 }
 
-// renderContextContent renders auth and recent jobs in a two-column layout.
+// renderContextContent renders the auth summary card.
 func renderContextContent(mdl *model, panelWidth int) string {
-	// Left column: Auth status.
 	authTitle := mdl.styles.sectionTitle.Render("Auth")
-	authValue := mdl.styles.placeholder.Render("Loading...")
-
-	if !mdl.ctxInfo.loading {
-		if mdl.ctxInfo.authStatus == "authenticated" {
-			authValue = renderStatusDot(&mdl.styles.statusOK, "Authenticated")
-		} else {
-			authValue = renderStatusDot(&mdl.styles.statusWarning, "Not authenticated")
-		}
-	}
-
-	leftCol := authTitle + "\n" + authValue
-
-	// Right column: Recent jobs.
-	recentTitle := mdl.styles.sectionTitle.Render("Recent jobs")
-
-	var rightCol string
-
-	switch {
-	case mdl.ctxInfo.loading:
-		rightCol = recentTitle + "\n" + mdl.styles.placeholder.Render("Loading...")
-	case len(mdl.ctxInfo.recentSessions) == 0:
-		rightCol = recentTitle + "\n" + mdl.styles.placeholder.Render("no jobs yet")
-	default:
-		var sessionLines []string
-
-		for _, s := range mdl.ctxInfo.recentSessions {
-			id := s.SessionID
-			if len(id) > 7 {
-				id = id[:7]
-			}
-
-			ago := formatTimeAgo(s.StartedAt)
-			line := mdl.styles.progressText.Render(id) + "  " + mdl.styles.placeholder.Render(ago)
-			sessionLines = append(sessionLines, line)
-		}
-
-		rightCol = recentTitle + "\n" + strings.Join(sessionLines, "\n")
-	}
 
 	contentWidth := panelWidth - 6 //nolint:mnd // border(2)+padding(4)
 
-	columns := lipgloss.JoinHorizontal(lipgloss.Top, leftCol, "        ", rightCol)
-	columns = lipgloss.PlaceHorizontal(contentWidth, lipgloss.Center, columns)
+	var bodyLines []string
+
+	switch {
+	case mdl.ctxInfo.loading:
+		bodyLines = []string{
+			mdl.styles.placeholder.Render("Loading..."),
+		}
+	case mdl.ctxInfo.authStatus == "authenticated":
+		name := contextDisplayName(mdl)
+
+		greeting := strings.TrimSpace(mdl.ctxInfo.greeting)
+		if greeting == "" {
+			greeting = "Welcome back"
+		}
+
+		if name != "" {
+			bodyLines = append(bodyLines, mdl.styles.progressText.Render(greeting+", "+name))
+		} else {
+			bodyLines = append(bodyLines, mdl.styles.progressText.Render(greeting))
+		}
+
+		if mdl.ctxInfo.organizationName != "" {
+			bodyLines = append(bodyLines, mdl.styles.placeholder.Render("Organization: "+mdl.ctxInfo.organizationName))
+		}
+	case mdl.ctxInfo.authStatus != "authenticated":
+		bodyLines = []string{
+			renderStatusDot(&mdl.styles.statusWarning, "Not authenticated"),
+		}
+	}
+
+	body := authTitle + "\n" + strings.Join(bodyLines, "\n")
 
 	// Social links row.
 	sep := lipgloss.NewStyle().Foreground(colorMuted).Render(" · ")
@@ -314,7 +304,7 @@ func renderContextContent(mdl *model, panelWidth int) string {
 		hyperlink("https://x.com/musherdev", linkStyle.Render("X"))
 	socialRow := lipgloss.PlaceHorizontal(contentWidth, lipgloss.Center, links)
 
-	return columns + "\n\n" + socialRow
+	return body + "\n\n" + socialRow
 }
 
 // renderStatusLine renders a collapsed context line for single-panel mode.
@@ -325,13 +315,21 @@ func renderStatusLine(mdl *model) string {
 
 	var parts []string
 
+	if mdl.ctxInfo.authStatus == "authenticated" {
+		if greeting := strings.TrimSpace(mdl.ctxInfo.greeting); greeting != "" {
+			if name := contextDisplayName(mdl); name != "" {
+				parts = append(parts, mdl.styles.progressText.Render(greeting+", "+name))
+			} else {
+				parts = append(parts, mdl.styles.progressText.Render(greeting))
+			}
+		}
+	}
+
 	if mdl.ctxInfo.organizationName != "" {
 		parts = append(parts, mdl.styles.progressText.Render(mdl.ctxInfo.organizationName))
 	}
 
-	if mdl.ctxInfo.authStatus == "authenticated" {
-		parts = append(parts, renderStatusDot(&mdl.styles.statusOK, "authenticated"))
-	} else {
+	if mdl.ctxInfo.authStatus != "authenticated" {
 		parts = append(parts, renderStatusDot(&mdl.styles.statusWarning, "not authenticated"))
 	}
 
@@ -340,10 +338,24 @@ func renderStatusLine(mdl *model) string {
 	return strings.Join(parts, sep)
 }
 
+func contextDisplayName(mdl *model) string {
+	for _, value := range []string{
+		mdl.ctxInfo.userFullName,
+		mdl.ctxInfo.username,
+		mdl.ctxInfo.credentialName,
+	} {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+
+	return ""
+}
+
 // renderHomeFooter returns the key-hint bar for the home screen.
 func renderHomeFooter(mdl *model) string {
 	hints := []hint{
-		{key: "j/k", desc: "navigate"},
+		navigationHint(mdl.keys.Up, mdl.keys.Down, "navigate"),
 	}
 
 	// Show tab hint when additional focus areas are available.
@@ -351,13 +363,13 @@ func renderHomeFooter(mdl *model) string {
 	hasExperimental := len(mdl.experimentalPanel.items) > 0
 
 	if hasHarness || hasExperimental {
-		hints = append(hints, hint{key: "tab", desc: "switch"})
+		hints = append(hints, bindingHint(mdl.keys.Tab, "switch"))
 	}
 
 	hints = append(hints,
-		hint{key: "enter", desc: "select"},
-		hint{key: ",", desc: "status"},
-		hint{key: "q", desc: "quit"},
+		bindingHint(mdl.keys.Select, "select"),
+		bindingHint(mdl.keys.Status, "status"),
+		bindingHint(mdl.keys.Quit, "quit"),
 	)
 
 	return renderKeyHints(&mdl.styles, hints)

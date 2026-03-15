@@ -117,6 +117,60 @@ func TestClientValidateKeyLegacyWorkspacePayload(t *testing.T) {
 	}
 }
 
+func TestClientGetCurrentUserProfile(t *testing.T) {
+	tests := []struct {
+		name       string
+		statusCode int
+		body       string
+		wantErr    string
+		wantName   string
+		wantUser   string
+	}{
+		{
+			name:       "success",
+			statusCode: http.StatusOK,
+			body:       `{"id":"user-1","email":"user@example.com","username":"alice","fullName":"Alice Smith"}`,
+			wantName:   "Alice Smith",
+			wantUser:   "alice",
+		},
+		{name: "unauthorized", statusCode: http.StatusUnauthorized, wantErr: "not authenticated"},
+		{name: "forbidden", statusCode: http.StatusForbidden, wantErr: "forbidden"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := newMockClient(t, func(r *http.Request) (*http.Response, error) {
+				if r.URL.Path != "/api/v1/users/me" {
+					t.Fatalf("path = %q, want %q", r.URL.Path, "/api/v1/users/me")
+				}
+
+				return jsonResponse(tt.statusCode, tt.body), nil
+			})
+
+			profile, err := c.GetCurrentUserProfile(t.Context())
+			if tt.wantErr != "" {
+				if err == nil || err.Error() != tt.wantErr {
+					t.Fatalf("error = %v, want %q", err, tt.wantErr)
+				}
+
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("GetCurrentUserProfile() error = %v", err)
+			}
+
+			if profile.FullName != tt.wantName {
+				t.Fatalf("FullName = %q, want %q", profile.FullName, tt.wantName)
+			}
+
+			if profile.Username != tt.wantUser {
+				t.Fatalf("Username = %q, want %q", profile.Username, tt.wantUser)
+			}
+		})
+	}
+}
+
 func TestClientClaimJob(t *testing.T) {
 	tests := []struct {
 		name       string

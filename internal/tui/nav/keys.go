@@ -1,6 +1,12 @@
 package nav
 
-import "github.com/charmbracelet/bubbles/key"
+import (
+	"strings"
+
+	"github.com/charmbracelet/bubbles/key"
+
+	"github.com/musher-dev/mush/internal/config"
+)
 
 // keyMap defines all key bindings for the TUI navigation.
 type keyMap struct {
@@ -17,62 +23,72 @@ type keyMap struct {
 	Search   key.Binding
 	Install  key.Binding
 	LoadMore key.Binding
+	Status   key.Binding
 }
 
-// defaultKeyMap returns the standard key bindings (vim-aware + arrows).
-func defaultKeyMap() keyMap {
+// defaultKeyMap returns the resolved key bindings for the TUI.
+func defaultKeyMap(cfg *config.Config) keyMap {
+	resolved := config.DefaultKeybindings()
+	if cfg != nil {
+		resolved = cfg.Keybindings()
+	}
+
 	return keyMap{
-		Up: key.NewBinding(
-			key.WithKeys("up", "k"),
-			key.WithHelp("k/\u2191", "up"),
-		),
-		Down: key.NewBinding(
-			key.WithKeys("down", "j"),
-			key.WithHelp("j/\u2193", "down"),
-		),
-		Left: key.NewBinding(
-			key.WithKeys("left", "h"),
-			key.WithHelp("h/\u2190", "left"),
-		),
-		Right: key.NewBinding(
-			key.WithKeys("right", "l"),
-			key.WithHelp("l/\u2192", "right"),
-		),
-		Select: key.NewBinding(
-			key.WithKeys("enter"),
-			key.WithHelp("enter", "select"),
-		),
-		Quit: key.NewBinding(
-			key.WithKeys("q", "ctrl+c"),
-			key.WithHelp("q", "quit"),
-		),
-		Back: key.NewBinding(
-			key.WithKeys("esc"),
-			key.WithHelp("esc", "back"),
-		),
-		Tab: key.NewBinding(
-			key.WithKeys("tab"),
-			key.WithHelp("tab", "switch focus"),
-		),
-		Retry: key.NewBinding(
-			key.WithKeys("r"),
-			key.WithHelp("r", "retry"),
-		),
-		Help: key.NewBinding(
-			key.WithKeys("?"),
-			key.WithHelp("?", "help"),
-		),
-		Search: key.NewBinding(
-			key.WithKeys("/"),
-			key.WithHelp("/", "search"),
-		),
-		Install: key.NewBinding(
-			key.WithKeys("i"),
-			key.WithHelp("i", "install"),
-		),
-		LoadMore: key.NewBinding(
-			key.WithKeys("l"),
-			key.WithHelp("l", "load more"),
-		),
+		Up:       newBinding(resolved["up"], "up"),
+		Down:     newBinding(resolved["down"], "down"),
+		Left:     newBinding(resolved["left"], "left"),
+		Right:    newBinding(resolved["right"], "right"),
+		Select:   newBinding(resolved["select"], "select"),
+		Quit:     newBinding(resolved["quit"], "quit"),
+		Back:     newBinding(resolved["back"], "back"),
+		Tab:      newBinding(resolved["tab"], "switch focus"),
+		Retry:    newBinding(resolved["retry"], "retry"),
+		Help:     newBinding(resolved["help"], "help"),
+		Search:   newBinding(resolved["search"], "search"),
+		Install:  newBinding(resolved["install"], "install"),
+		LoadMore: newBinding(resolved["load_more"], "load more"),
+		Status:   newBinding(resolved["status"], "status"),
+	}
+}
+
+func newBinding(keys []string, desc string) key.Binding {
+	return key.NewBinding(
+		key.WithKeys(keys...),
+		key.WithHelp(renderBindingKeys(keys), desc),
+	)
+}
+
+func renderBindingKeys(keys []string) string {
+	labels := make([]string, 0, len(keys))
+	for _, k := range keys {
+		labels = append(labels, displayKey(k))
+	}
+
+	return strings.Join(labels, "/")
+}
+
+func primaryHelpKey(binding key.Binding) string {
+	keys := binding.Keys()
+	if len(keys) == 0 {
+		return ""
+	}
+
+	return displayKey(keys[0])
+}
+
+func displayKey(keyName string) string {
+	switch strings.ToLower(strings.TrimSpace(keyName)) {
+	case "up":
+		return "\u2191"
+	case "down":
+		return "\u2193"
+	case "left":
+		return "\u2190"
+	case "right":
+		return "\u2192"
+	case "ctrl+c":
+		return "ctrl+c"
+	default:
+		return keyName
 	}
 }

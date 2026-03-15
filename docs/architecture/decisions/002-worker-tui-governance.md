@@ -14,7 +14,6 @@ Mush already has interactive terminal features built without a framework depende
 - **Status bar + scroll region** — `internal/harness/` uses ANSI escape sequences to render a live status bar and scrolling PTY output during job execution.
 - **Arrow-key prompt selection** — `internal/prompt/` provides arrow-key navigation with Up/Down cursor movement, Enter to confirm, Esc to cancel. Falls back to numbered input when stdin is not a TTY.
 - **Raw mode management** — `golang.org/x/term` handles raw mode entry/exit for interactive prompts and password input.
-- **Copy mode** — Ctrl+S toggles a copy-friendly mode in the watch UI; Esc returns to live input.
 
 These features work well for the current use cases without adding a TUI framework dependency.
 

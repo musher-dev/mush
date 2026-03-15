@@ -66,15 +66,9 @@ func topBarLine(s *state.Snapshot) string {
 	parts := []string{
 		accentFG + bold + "MUSH" + barReset,
 		fmt.Sprintf("Status: %s", styleStatus(s.StatusLabel)),
+		"Mode: " + green + "LIVE" + barReset,
+		dimGray + "^C Int  ^Q Quit" + barReset, // keyboard hints
 	}
-	if s.CopyMode {
-		parts = append(parts, "Mode: "+yellow+"COPY"+barReset)
-	} else {
-		parts = append(parts, "Mode: "+green+"LIVE"+barReset)
-	}
-
-	// Keyboard shortcut hints — always visible for discoverability.
-	parts = append(parts, dimGray+"^C Int  ^S Copy  ^Q Quit"+barReset)
 
 	line := strings.Join(parts, sep)
 	line = barBG + barFG + " " + line

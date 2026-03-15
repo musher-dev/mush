@@ -57,15 +57,15 @@ func renderHistoryList(mdl *model) string {
 	panel := renderPanel(&mdl.styles, "Sessions", body, mdl.styles.hubWidth, true)
 
 	hints := []hint{
-		{key: "esc", desc: "back"},
-		{key: "q", desc: "quit"},
+		bindingHint(mdl.keys.Back, "back"),
+		bindingHint(mdl.keys.Quit, "quit"),
 	}
 
 	if !mdl.history.loading {
 		actionHints := []hint{
-			{key: "r", desc: "refresh"},
-			{key: "j/k", desc: "navigate"},
-			{key: "enter", desc: "view"},
+			bindingHint(mdl.keys.Retry, "refresh"),
+			navigationHint(mdl.keys.Up, mdl.keys.Down, "navigate"),
+			bindingHint(mdl.keys.Select, "view"),
 		}
 
 		hints = append(actionHints, hints...)
@@ -174,9 +174,9 @@ func renderHistoryDetail(mdl *model) string {
 	panel := renderPanel(&mdl.styles, "Transcript", body, mdl.styles.hubWidth, true)
 
 	footer := renderKeyHints(&mdl.styles, []hint{
-		{key: "j/k", desc: "scroll"},
-		{key: "esc", desc: "back"},
-		{key: "q", desc: "quit"},
+		navigationHint(mdl.keys.Up, mdl.keys.Down, "scroll"),
+		bindingHint(mdl.keys.Back, "back"),
+		bindingHint(mdl.keys.Quit, "quit"),
 	})
 
 	content := lipgloss.JoinVertical(lipgloss.Center, crumbs, "", panel, "", footer)

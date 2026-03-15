@@ -2,11 +2,11 @@ package nav
 
 import (
 	"context"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/musher-dev/mush/internal/auth"
-	"github.com/musher-dev/mush/internal/transcript"
 )
 
 // contextInfoMsg carries async-loaded context data back to the model.
@@ -14,17 +14,20 @@ type contextInfoMsg struct {
 	authStatus       string
 	organizationName string
 	organizationID   string
-	recentSessions   []transcript.Session
+	credentialName   string
+	userFullName     string
+	username         string
+	greeting         string
 }
 
-// maxRecentSessions is the number of recent sessions shown in the context panel.
-const maxRecentSessions = 3
+var nowFunc = time.Now
 
-// cmdLoadContext loads auth status, organization name, and recent sessions asynchronously.
+// cmdLoadContext loads auth status and identity context asynchronously.
 func cmdLoadContext(ctx context.Context, deps *Dependencies) tea.Cmd {
 	return func() tea.Msg {
 		msg := contextInfoMsg{
 			authStatus: "not authenticated",
+			greeting:   greetingForTime(nowFunc()),
 		}
 
 		if deps == nil {
@@ -43,17 +46,29 @@ func cmdLoadContext(ctx context.Context, deps *Dependencies) tea.Cmd {
 			if err == nil {
 				msg.organizationName = identity.OrganizationName
 				msg.organizationID = identity.OrganizationID
+				msg.credentialName = identity.CredentialName
+			}
+
+			profile, err := deps.Client.GetCurrentUserProfile(navBaseCtx(ctx))
+			if err == nil {
+				msg.userFullName = profile.FullName
+				msg.username = profile.Username
 			}
 		}
 
-		// 3. Load recent transcript sessions.
-		sessions, err := transcript.ListSessions("")
-		if err == nil && len(sessions) > maxRecentSessions {
-			sessions = sessions[:maxRecentSessions]
-		}
-
-		msg.recentSessions = sessions
-
 		return msg
+	}
+}
+
+func greetingForTime(now time.Time) string {
+	hour := now.Hour()
+
+	switch {
+	case hour < 12:
+		return "Good morning"
+	case hour < 18:
+		return "Good afternoon"
+	default:
+		return "Good evening"
 	}
 }

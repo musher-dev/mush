@@ -137,6 +137,10 @@ Mush looks for configuration in this order (highest priority first):
 ```yaml
 api:
   url: https://api.musher.dev
+keybindings:
+  up: [up, k]
+  down: [down, j]
+  status: [","]
 worker:
   poll_interval: 30
   heartbeat_interval: 30

@@ -12,7 +12,7 @@ func renderHubExplore(mdl *model) string {
 	crumbs := renderBreadcrumb(&mdl.styles, []string{"Home", "Find a Bundle"})
 
 	// Search input.
-	searchLabel := mdl.styles.hintKey.Render("/") + " "
+	searchLabel := mdl.styles.hintKey.Render(primaryHelpKey(mdl.keys.Search)) + " "
 	searchView := searchLabel + mdl.hubExplore.searchInput.View()
 
 	// Results area.
@@ -38,11 +38,11 @@ func renderHubExplore(mdl *model) string {
 	panel := renderPanel(&mdl.styles, "Find a Bundle", body, mdl.styles.hubWidth, true)
 
 	footer := renderKeyHints(&mdl.styles, []hint{
-		{key: "/", desc: "search"},
-		{key: "j/k", desc: "navigate"},
-		{key: "enter", desc: "view"},
-		{key: "r", desc: "load"},
-		{key: "esc", desc: "back"},
+		bindingHint(mdl.keys.Search, "search"),
+		navigationHint(mdl.keys.Up, mdl.keys.Down, "navigate"),
+		bindingHint(mdl.keys.Select, "view"),
+		bindingHint(mdl.keys.Retry, "load"),
+		bindingHint(mdl.keys.Back, "back"),
 	})
 
 	content := lipgloss.JoinVertical(lipgloss.Center, crumbs, "", panel, "", footer)
@@ -79,7 +79,7 @@ func renderHubResultsList(mdl *model) string {
 	list := strings.Join(rows, "\n")
 
 	if mdl.hubExplore.hasMore {
-		more := mdl.styles.placeholder.Render("  Press l to load more...")
+		more := mdl.styles.placeholder.Render("  Press " + primaryHelpKey(mdl.keys.LoadMore) + " to load more...")
 		list += "\n" + more
 	}
 
@@ -172,9 +172,9 @@ func renderHubDetail(mdl *model) string {
 	panel := renderPanel(&mdl.styles, "Bundle Detail", body, mdl.styles.hubWidth, true)
 
 	footer := renderKeyHints(&mdl.styles, []hint{
-		{key: "r", desc: "load"},
-		{key: "j/k", desc: "scroll"},
-		{key: "esc", desc: "back"},
+		bindingHint(mdl.keys.Retry, "load"),
+		navigationHint(mdl.keys.Up, mdl.keys.Down, "scroll"),
+		bindingHint(mdl.keys.Back, "back"),
 	})
 
 	content := lipgloss.JoinVertical(lipgloss.Center, crumbLine, "", panel, "", footer)

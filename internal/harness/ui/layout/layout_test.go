@@ -33,12 +33,20 @@ func TestComputeFrameShowsSidebarWhenWide(t *testing.T) {
 	if frame.PaneWidth <= 0 || frame.PaneXStart <= 1 {
 		t.Fatalf("invalid pane dimensions: %+v", frame)
 	}
+
+	if frame.ViewportWidth != frame.PaneWidth-ScrollbarWidth {
+		t.Fatalf("ViewportWidth = %d, want %d", frame.ViewportWidth, frame.PaneWidth-ScrollbarWidth)
+	}
+
+	if frame.ScrollbarXStart != frame.PaneXStart+frame.ViewportWidth {
+		t.Fatalf("ScrollbarXStart = %d, want %d", frame.ScrollbarXStart, frame.PaneXStart+frame.ViewportWidth)
+	}
 }
 
 func TestResizeSequenceWithCursor(t *testing.T) {
 	frame := ComputeFrame(140, 40, true)
-	withCursor := ResizeSequenceWithCursor(frame, true, true)
-	withoutCursor := ResizeSequenceWithCursor(frame, true, false)
+	withCursor := ResizeSequenceWithCursor(&frame, true, true)
+	withoutCursor := ResizeSequenceWithCursor(&frame, true, false)
 
 	paneMove := ansi.Move(frame.ContentTop, frame.PaneXStart)
 
@@ -53,7 +61,7 @@ func TestResizeSequenceWithCursor(t *testing.T) {
 
 func TestSetupSequenceIncludesPaneMove(t *testing.T) {
 	frame := ComputeFrame(140, 40, true)
-	got := SetupSequence(frame, true)
+	got := SetupSequence(&frame, true)
 
 	paneMove := ansi.Move(frame.ContentTop, frame.PaneXStart)
 	if !contains(got, paneMove) {

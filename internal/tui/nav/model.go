@@ -369,7 +369,10 @@ type contextInfo struct {
 	authStatus       string // "authenticated", "not authenticated"
 	organizationName string
 	organizationID   string
-	recentSessions   []transcript.Session
+	credentialName   string
+	userFullName     string
+	username         string
+	greeting         string
 }
 
 // model is the top-level Bubbletea model for the interactive TUI.
@@ -510,7 +513,7 @@ func newModel(ctx context.Context, deps *Dependencies) *model {
 		items:        buildMenuItems(deps),
 		activeScreen: screenHome,
 		screenStack:  nil,
-		keys:         defaultKeyMap(),
+		keys:         defaultKeyMap(depsConfig(deps)),
 		styles:       newTheme(defaultWidth),
 		deps:         deps,
 		ctx:          ctx,
@@ -683,7 +686,10 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			authStatus:       msg.authStatus,
 			organizationName: msg.organizationName,
 			organizationID:   msg.organizationID,
-			recentSessions:   msg.recentSessions,
+			credentialName:   msg.credentialName,
+			userFullName:     msg.userFullName,
+			username:         msg.username,
+			greeting:         msg.greeting,
 		}
 
 		return m, nil
@@ -929,22 +935,21 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // handleHomeKey processes key events on the home screen.
 func (m *model) handleHomeKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if key.Matches(msg, m.keys.Status) {
+		m.status = statusState{
+			spinner:        m.status.spinner,
+			loading:        true,
+			harnessLoading: true,
+		}
+
+		m.pushScreen(screenStatus)
+
+		return m, tea.Batch(m.status.spinner.Tick, cmdRunStatusChecks(m.ctx), cmdRunHarnessHealthChecks(m.ctx))
+	}
+
 	// Menu hotkeys work regardless of focus area.
 	if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 {
 		r := msg.Runes[0]
-
-		// Hidden comma hotkey for settings/status screen.
-		if r == ',' {
-			m.status = statusState{
-				spinner:        m.status.spinner,
-				loading:        true,
-				harnessLoading: true,
-			}
-
-			m.pushScreen(screenStatus)
-
-			return m, tea.Batch(m.status.spinner.Tick, cmdRunStatusChecks(m.ctx), cmdRunHarnessHealthChecks(m.ctx))
-		}
 
 		for idx, item := range m.items {
 			if item.hotkey == r {

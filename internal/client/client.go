@@ -98,6 +98,14 @@ type Identity struct {
 	OrganizationName string `json:"organizationName"`
 }
 
+// UserProfile represents the authenticated user profile.
+type UserProfile struct {
+	ID       string `json:"id"`
+	Email    string `json:"email"`
+	Username string `json:"username"`
+	FullName string `json:"fullName"`
+}
+
 // UnmarshalJSON accepts both organization-scoped and legacy workspace-scoped payloads.
 func (i *Identity) UnmarshalJSON(data []byte) error {
 	type identityAlias struct {
@@ -595,6 +603,39 @@ func (c *Client) ValidateKeyWithMeta(ctx context.Context) (*Identity, *ResponseM
 	}
 
 	return &identity, meta, nil
+}
+
+// GetCurrentUserProfile fetches the current authenticated user profile.
+func (c *Client) GetCurrentUserProfile(ctx context.Context) (*UserProfile, error) {
+	req, err := c.newRequest(ctx, "GET", c.baseURL+"/api/v1/users/me", http.NoBody)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.do(req, "/api/v1/users/me")
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch current user profile: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusUnauthorized {
+		return nil, fmt.Errorf("not authenticated")
+	}
+
+	if resp.StatusCode == http.StatusForbidden {
+		return nil, fmt.Errorf("forbidden")
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, unexpectedStatus("current user profile", resp)
+	}
+
+	var profile UserProfile
+	if err := decodeJSON(resp.Body, &profile, "failed to parse current user profile"); err != nil {
+		return nil, err
+	}
+
+	return &profile, nil
 }
 
 // GetRunnerConfig fetches runner runtime configuration for startup provisioning.

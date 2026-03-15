@@ -44,3 +44,5 @@ Thumbs.db
 # Local tooling/cache (workspace-specific)
 .tools/
 .cache/
+.gocache/
+bin/

@@ -264,6 +264,60 @@ func TestBundleActionInstallPushesHarness(t *testing.T) {
 	}
 }
 
+func TestBundleActionViewIncludesHelpText(t *testing.T) {
+	t.Parallel()
+
+	mdl := testModel()
+	mdl.pushScreen(screenBundleAction)
+	mdl.bundleAction = bundleActionState{
+		namespace: "acme",
+		slug:      "test",
+		version:   "1.0.0",
+		cachePath: "/tmp/test",
+	}
+
+	view := mdl.View()
+
+	for _, want := range []string{
+		"Bundle ready",
+		"Run",
+		"Install",
+		"launch this bundle without installing assets",
+	} {
+		if !strings.Contains(view, want) {
+			t.Errorf("bundle action view should contain %q", want)
+		}
+	}
+
+	if strings.Contains(view, "copy bundle assets into the current project") {
+		t.Error("bundle action view should not show install help when Run is selected")
+	}
+}
+
+func TestBundleActionViewIncludesInstallHelpWhenSelected(t *testing.T) {
+	t.Parallel()
+
+	mdl := testModel()
+	mdl.pushScreen(screenBundleAction)
+	mdl.bundleAction = bundleActionState{
+		namespace: "acme",
+		slug:      "test",
+		version:   "1.0.0",
+		cachePath: "/tmp/test",
+		buttonIdx: 1,
+	}
+
+	view := mdl.View()
+
+	if !strings.Contains(view, "copy bundle assets into the current project") {
+		t.Error("bundle action view should show install help when Install is selected")
+	}
+
+	if strings.Contains(view, "launch this bundle without installing assets") {
+		t.Error("bundle action view should not show run help when Install is selected")
+	}
+}
+
 func TestBundleHarnessSelectRun(t *testing.T) {
 	t.Parallel()
 

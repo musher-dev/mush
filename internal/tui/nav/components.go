@@ -3,6 +3,7 @@ package nav
 import (
 	"strings"
 
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -17,6 +18,34 @@ func hyperlink(url, text string) string {
 type hint struct {
 	key  string
 	desc string
+}
+
+func bindingHint(binding key.Binding, desc string) hint {
+	return hint{key: binding.Help().Key, desc: desc}
+}
+
+func navigationHint(up, down key.Binding, desc string) hint {
+	return hint{
+		key:  primaryHelpKey(up) + "/" + primaryHelpKey(down),
+		desc: desc,
+	}
+}
+
+func switchHint(tab, left, right key.Binding, desc string) hint {
+	keys := []string{bindingHelpKey(tab)}
+	if leftKey := primaryHelpKey(left); leftKey != "" {
+		keys = append(keys, leftKey)
+	}
+
+	if rightKey := primaryHelpKey(right); rightKey != "" {
+		keys = append(keys, rightKey)
+	}
+
+	return hint{key: strings.Join(keys, "/"), desc: desc}
+}
+
+func bindingHelpKey(binding key.Binding) string {
+	return binding.Help().Key
 }
 
 // renderBorderTitle builds a top border line with an embedded title (e.g. ╭── title ────╮).
@@ -142,9 +171,9 @@ func renderErrorScreen(mdl *model, crumbs []string, message, hintText string, bu
 	panel := renderPanel(&mdl.styles, "Error", body, mdl.styles.menuWidth, true)
 
 	footer := renderKeyHints(&mdl.styles, []hint{
-		{key: "tab/\u2190\u2192", desc: "switch"},
-		{key: "r", desc: "retry"},
-		{key: "esc", desc: "back"},
+		switchHint(mdl.keys.Tab, mdl.keys.Left, mdl.keys.Right, "switch"),
+		bindingHint(mdl.keys.Retry, "retry"),
+		bindingHint(mdl.keys.Back, "back"),
 	})
 
 	content := lipgloss.JoinVertical(lipgloss.Center, crumbLine, "", panel, "", footer)

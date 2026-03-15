@@ -9,6 +9,9 @@ const (
 	defaultSidebarWidth = 36
 	minSidebarWidth     = 24
 	minPaneWidth        = 40
+
+	// ScrollbarWidth is the number of columns reserved for the scrollbar.
+	ScrollbarWidth = 1
 )
 
 // Frame describes the terminal layout dimensions for the harness TUI.
@@ -23,6 +26,10 @@ type Frame struct {
 
 	PaneXStart int
 	PaneWidth  int
+
+	ViewportWidth    int
+	ScrollbarVisible bool
+	ScrollbarXStart  int
 }
 
 // ClampTerminalSize enforces minimum terminal dimensions.
@@ -43,11 +50,14 @@ func ClampTerminalSize(width, height int) (clampedWidth, clampedHeight int) {
 func ComputeFrame(width, height int, allowSidebar bool) Frame {
 	width, height = ClampTerminalSize(width, height)
 	frame := Frame{
-		Width:      width,
-		Height:     height,
-		ContentTop: TopBarHeight + 1,
-		PaneXStart: 1,
-		PaneWidth:  width,
+		Width:            width,
+		Height:           height,
+		ContentTop:       TopBarHeight + 1,
+		PaneXStart:       1,
+		PaneWidth:        width,
+		ViewportWidth:    max(1, width-ScrollbarWidth),
+		ScrollbarVisible: true,
+		ScrollbarXStart:  max(1, width-ScrollbarWidth+1),
 	}
 
 	if !allowSidebar {
@@ -73,6 +83,9 @@ func ComputeFrame(width, height int, allowSidebar bool) Frame {
 	frame.SidebarWidth = sidebar
 	frame.PaneXStart = sidebar + 2 // one separator column
 	frame.PaneWidth = width - sidebar - 1
+	frame.ViewportWidth = max(1, frame.PaneWidth-ScrollbarWidth)
+	frame.ScrollbarVisible = true
+	frame.ScrollbarXStart = frame.PaneXStart + frame.ViewportWidth
 
 	return frame
 }
@@ -88,23 +101,23 @@ func PtyRowsForHeight(height int) int {
 }
 
 // PtyRowsForFrame returns the PTY row count for a given layout frame.
-func PtyRowsForFrame(frame Frame) int {
+func PtyRowsForFrame(frame *Frame) int {
 	return PtyRowsForHeight(frame.Height)
 }
 
 // SetupSequence returns the ANSI escape sequence for initial terminal setup.
-func SetupSequence(frame Frame, useLRMargins bool) string {
+func SetupSequence(frame *Frame, useLRMargins bool) string {
 	return ansi.ClearScreen + ResizeSequenceWithCursor(frame, useLRMargins, true)
 }
 
 // ResizeSequence returns the ANSI escape sequence for terminal resize.
-func ResizeSequence(frame Frame, useLRMargins bool) string {
+func ResizeSequence(frame *Frame, useLRMargins bool) string {
 	return ResizeSequenceWithCursor(frame, useLRMargins, true)
 }
 
 // ResizeSequenceWithCursor returns the ANSI escape sequence for terminal resize.
 // When moveCursor is false, pane constraints are applied without forcing cursor position.
-func ResizeSequenceWithCursor(frame Frame, useLRMargins, moveCursor bool) string {
+func ResizeSequenceWithCursor(frame *Frame, useLRMargins, moveCursor bool) string {
 	seq := ansi.DisableLRMode
 	if useLRMargins && frame.SidebarVisible {
 		// DECSLRM moves the cursor to (1,1) and resets pending wrap state (per VT510 spec).

@@ -62,3 +62,11 @@ type Result struct {
 	// Harness install fields
 	InstallCommands [][]string
 }
+
+func depsConfig(deps *Dependencies) *config.Config {
+	if deps == nil {
+		return nil
+	}
+
+	return deps.Config
+}

@@ -24,7 +24,7 @@ In watch mode, terminal input is read in raw mode and handled locally by the har
   2. Second press within 2 seconds exits the harness.
 - `Ctrl+C` when no Claude job is active: exits immediately.
 - `Ctrl+Q`: exits immediately.
-- `Ctrl+S`: toggles copy mode (Esc returns to live mode).
+- direct mouse selection works when the active child app is not using terminal mouse mode.
 
 Shutdown is hardened with a bounded lifecycle:
 
@@ -73,6 +73,8 @@ Claude jobs run through an interactive `claude` process launched in a PTY:
 6. Report output to the platform and send `/clear` to reset Claude for the next job
 
 This approach prioritizes faithful rendering and operator visibility.
+The embedded renderer also applies a software cursor so the insertion point stays visible
+even when the child PTY leaves the hardware cursor hidden between renders.
 
 ## Bash Jobs (Subprocess)
 
