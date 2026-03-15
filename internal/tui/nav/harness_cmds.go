@@ -68,7 +68,7 @@ func detectVersion(ctx context.Context, spec *harnesstype.ProviderSpec) string {
 		return ""
 	}
 
-	return strings.TrimSpace(strings.SplitN(string(out), "\n", 2)[0]) //nolint:mnd // split into at most 2 parts
+	return strings.TrimSpace(strings.SplitN(string(out), "\n", maxSplitParts)[0])
 }
 
 // cmdRunSingleHarnessHealthCheck runs health checks for a single harness.

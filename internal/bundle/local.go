@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/musher-dev/mush/internal/client"
+	"github.com/musher-dev/mush/internal/safeio"
 )
 
 // LoadFromDir loads a bundle from a local directory, bypassing the API.
@@ -51,7 +52,7 @@ func loadCacheCompatible(absDir, assetsDir string) (*client.BundleResolveRespons
 	manifestPath := filepath.Join(absDir, "manifest.json")
 	if _, err := os.Stat(manifestPath); err == nil {
 		// Read existing manifest.
-		data, readErr := os.ReadFile(manifestPath) //nolint:gosec // G304: user-specified path
+		data, readErr := safeio.ReadFile(manifestPath)
 		if readErr != nil {
 			return nil, "", nil, fmt.Errorf("read manifest.json: %w", readErr)
 		}
@@ -111,7 +112,7 @@ func loadBareDir(absDir string) (*client.BundleResolveResponse, string, func(), 
 	for i, layer := range layers {
 		destPath := filepath.Join(assetsDir, layer.LogicalPath)
 
-		if mkErr := os.MkdirAll(filepath.Dir(destPath), 0o755); mkErr != nil { //nolint:gosec // G301: temp dir
+		if mkErr := safeio.MkdirAll(filepath.Dir(destPath), 0o755); mkErr != nil {
 			cleanup()
 			return nil, "", nil, fmt.Errorf("create asset dir: %w", mkErr)
 		}
@@ -236,7 +237,7 @@ func inferAssetType(relPath string) string {
 
 // buildLayer creates a BundleLayer from a file on disk.
 func buildLayer(absPath, logicalPath, assetType string) (client.BundleLayer, error) {
-	data, err := os.ReadFile(absPath) //nolint:gosec // G304: user-specified path
+	data, err := safeio.ReadFile(absPath)
 	if err != nil {
 		return client.BundleLayer{}, fmt.Errorf("read %s: %w", logicalPath, err)
 	}

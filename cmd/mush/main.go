@@ -3,11 +3,9 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
-	"net/url"
 	"os"
 	"os/exec"
 	"strings"
@@ -27,6 +25,7 @@ import (
 	"github.com/musher-dev/mush/internal/prompt"
 	"github.com/musher-dev/mush/internal/tui/nav"
 	"github.com/musher-dev/mush/internal/update"
+	"github.com/musher-dev/mush/internal/validate"
 )
 
 // Version information (set via ldflags during build).
@@ -476,7 +475,7 @@ func wrapNamedPostRunCleanup(postRun func(*cobra.Command, []string) error, name 
 		}
 
 		if err := cleanup(); err != nil {
-			return fmt.Errorf("cleanup %s: %w", name, err) //nolint:rawerror // internal cleanup, not user-facing
+			return clierrors.Wrap(clierrors.ExitGeneral, fmt.Sprintf("cleanup %s", name), err)
 		}
 
 		return nil
@@ -507,25 +506,12 @@ func pickFlagOrEnv(flagValue, envKey, fallback string) string {
 }
 
 func validateAPIURL(raw string) (string, error) {
-	trimmed := strings.TrimSpace(raw)
-	if trimmed == "" {
-		return "", errors.New("value cannot be empty") //nolint:rawerror // validation helper
-	}
-
-	parsed, err := url.Parse(trimmed)
+	validatedURL, err := validate.APIURL(raw)
 	if err != nil {
-		return "", fmt.Errorf("parse URL: %w", err) //nolint:rawerror // wraps stdlib error
+		return "", clierrors.Wrap(clierrors.ExitConfig, "Invalid API URL", err)
 	}
 
-	if parsed.Scheme != "http" && parsed.Scheme != "https" {
-		return "", errors.New("scheme must be http or https") //nolint:rawerror // validation helper
-	}
-
-	if parsed.Host == "" {
-		return "", errors.New("host is required") //nolint:rawerror // validation helper
-	}
-
-	return parsed.String(), nil
+	return validatedURL, nil
 }
 
 // experimentalOn returns true if experimental features are enabled via flag, env, or config.
@@ -756,7 +742,7 @@ func handleHarnessInstall(ctx context.Context, out *output.Writer, result *nav.R
 
 	ok, promptErr := p.Confirm("Run these install commands?", false)
 	if promptErr != nil {
-		return fmt.Errorf("install confirmation: %w", promptErr) //nolint:rawerror // not a CLIError context
+		return clierrors.Wrap(clierrors.ExitGeneral, "Install confirmation failed", promptErr)
 	}
 
 	if !ok {

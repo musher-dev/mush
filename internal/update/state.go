@@ -9,6 +9,7 @@ import (
 
 	"github.com/Masterminds/semver/v3"
 	"github.com/musher-dev/mush/internal/paths"
+	"github.com/musher-dev/mush/internal/safeio"
 )
 
 const (
@@ -45,12 +46,12 @@ func statePath() (string, error) {
 
 // LoadState reads the state file. Returns zero-value State if the file doesn't exist.
 func LoadState() (*State, error) {
-	path, err := statePath()
-	if err != nil {
-		return &State{}, nil //nolint:nilerr // graceful: treat path failure as empty state
+	path, ok := statePathOrEmpty()
+	if !ok {
+		return &State{}, nil
 	}
 
-	data, err := os.ReadFile(path) //nolint:gosec // G304: path from controlled config directory
+	data, err := safeio.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return &State{}, nil
@@ -59,13 +60,13 @@ func LoadState() (*State, error) {
 		return nil, fmt.Errorf("read update state file: %w", err)
 	}
 
-	var state State
-	if err := json.Unmarshal(data, &state); err != nil {
+	state, ok := decodeState(data)
+	if !ok {
 		// Corrupted state file; treat as empty
-		return &State{}, nil //nolint:nilerr // graceful: corrupted state file treated as empty
+		return &State{}, nil
 	}
 
-	return &state, nil
+	return state, nil
 }
 
 // SaveState writes the state file atomically.
@@ -76,7 +77,7 @@ func SaveState(state *State) error {
 	}
 
 	dir := filepath.Dir(path)
-	if mkdirErr := os.MkdirAll(dir, 0o700); mkdirErr != nil {
+	if mkdirErr := safeio.MkdirAll(dir, 0o700); mkdirErr != nil {
 		return fmt.Errorf("create update state directory: %w", mkdirErr)
 	}
 
@@ -178,4 +179,22 @@ func (s *State) HasStagedUpdate(currentVersion string) bool {
 func (s *State) ClearStaged() {
 	s.StagedVersion = ""
 	s.StagedAt = time.Time{}
+}
+
+func statePathOrEmpty() (string, bool) {
+	path, err := statePath()
+	if err != nil {
+		return "", false
+	}
+
+	return path, true
+}
+
+func decodeState(data []byte) (*State, bool) {
+	var state State
+	if err := json.Unmarshal(data, &state); err != nil {
+		return nil, false
+	}
+
+	return &state, true
 }

@@ -145,7 +145,7 @@ func (m *model) handleWorkerConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.popScreen()
 
 	case key.Matches(msg, m.keys.Tab):
-		m.workerConfirm.buttonIdx = (m.workerConfirm.buttonIdx + 1) % 2 //nolint:mnd // 2 buttons
+		m.workerConfirm.buttonIdx = (m.workerConfirm.buttonIdx + 1) % buttonCount
 
 	case key.Matches(msg, m.keys.Select):
 		if m.workerConfirm.buttonIdx == 1 {

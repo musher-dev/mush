@@ -26,6 +26,7 @@ import (
 	"github.com/musher-dev/mush/internal/client"
 	"github.com/musher-dev/mush/internal/config"
 	"github.com/musher-dev/mush/internal/paths"
+	"github.com/musher-dev/mush/internal/safeio"
 	"github.com/musher-dev/mush/internal/update"
 )
 
@@ -201,7 +202,7 @@ func checkConfigFile(context.Context) Result {
 
 	configPath := filepath.Join(configDir, "config.yaml")
 
-	data, err := os.ReadFile(configPath) //nolint:gosec // configPath is derived from XDG config root, not user input
+	data, err := safeio.ReadFile(configPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return Result{

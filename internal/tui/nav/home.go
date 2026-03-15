@@ -52,7 +52,7 @@ func renderHomeTwoPanel(mdl *model) string {
 	footer := renderHomeFooter(mdl)
 
 	// Context panel spans the full width of both panels + gap.
-	ctxWidth := mdl.styles.menuWidth*2 + 2 //nolint:mnd // two panels + gap
+	ctxWidth := mdl.styles.menuWidth*2 + twoPanelContextGap
 	if maxW := mdl.width - 4; ctxWidth > maxW {
 		ctxWidth = maxW
 	}
@@ -229,7 +229,7 @@ func renderMenuItem(mdl *model, idx int, item menuItem) string {
 	// Calculate available width for the label to right-align the hotkey badge.
 	// Badge is 3 chars visual width: [x]
 	// Item width = menuWidth - 6 (border + padding). Prefix=2, badge=3, gap=1.
-	labelWidth := mdl.styles.menuWidth - 12 //nolint:mnd // border(2)+pad(4)+prefix(2)+badge(3)+gap(1)
+	labelWidth := mdl.styles.menuWidth - homeLabelWidthOffset
 	if labelWidth < 8 {
 		labelWidth = 8
 	}
@@ -262,7 +262,7 @@ func renderDescription(mdl *model) string {
 func renderContextContent(mdl *model, panelWidth int) string {
 	authTitle := mdl.styles.sectionTitle.Render("Auth")
 
-	contentWidth := panelWidth - 6 //nolint:mnd // border(2)+padding(4)
+	contentWidth := panelWidth - panelContentWidthOffset
 
 	var bodyLines []string
 
@@ -400,11 +400,11 @@ func formatTimeAgo(when time.Time) string {
 	case elapsed < time.Hour:
 		mins := int(elapsed.Minutes())
 		return fmt.Sprintf("%dm ago", mins)
-	case elapsed < 24*time.Hour: //nolint:mnd // 24 hours in a day
+	case elapsed < hoursPerDay*time.Hour:
 		hours := int(elapsed.Hours())
 		return fmt.Sprintf("%dh ago", hours)
 	default:
-		days := int(elapsed.Hours() / 24) //nolint:mnd // 24 hours in a day
+		days := int(elapsed.Hours() / hoursPerDay)
 		return fmt.Sprintf("%dd ago", days)
 	}
 }

@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -20,6 +19,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 
 	"github.com/musher-dev/mush/internal/client"
+	"github.com/musher-dev/mush/internal/safeio"
 )
 
 // PullOCI pulls a bundle from an OCI registry and extracts its layers.
@@ -205,11 +205,11 @@ func materializeFromMetadata(
 			return nil, fmt.Errorf("materialized path escapes destination: %s", asset.LogicalPath)
 		}
 
-		if err := os.MkdirAll(filepath.Dir(destPathClean), 0o755); err != nil { //nolint:gosec // G301: cache path
+		if err := safeio.MkdirAll(filepath.Dir(destPathClean), 0o755); err != nil {
 			return nil, fmt.Errorf("create dir for %s: %w", asset.LogicalPath, err)
 		}
 
-		if err := os.WriteFile(destPathClean, content, 0o644); err != nil { //nolint:gosec // G306: cache files are readable
+		if err := safeio.WriteFile(destPathClean, content, 0o644); err != nil {
 			return nil, fmt.Errorf("write %s: %w", asset.LogicalPath, err)
 		}
 

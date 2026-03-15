@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/musher-dev/mush/internal/client"
+	"github.com/musher-dev/mush/internal/safeio"
 )
 
 // AssetMapper maps bundle assets to a harness's native directory structure.
@@ -62,7 +63,7 @@ func prepareLoadCommon(mapper AssetMapper, cachePath string, manifest *client.Bu
 		// Read from cache.
 		srcPath := filepath.Join(cachePath, "assets", layer.LogicalPath)
 
-		data, readErr := os.ReadFile(srcPath) //nolint:gosec // G304: path from controlled cache
+		data, readErr := safeio.ReadFile(srcPath)
 		if readErr != nil {
 			cleanup()
 			return "", nil, fmt.Errorf("read cached asset %s: %w", layer.LogicalPath, readErr)
@@ -82,12 +83,12 @@ func prepareLoadCommon(mapper AssetMapper, cachePath string, manifest *client.Bu
 		case "tool_config":
 			toolConfigs[asset.targetPath] = append(toolConfigs[asset.targetPath], asset.data)
 		default:
-			if mkErr := os.MkdirAll(filepath.Dir(asset.targetPath), 0o755); mkErr != nil { //nolint:gosec // G301: temp dir
+			if mkErr := safeio.MkdirAll(filepath.Dir(asset.targetPath), 0o755); mkErr != nil {
 				cleanup()
 				return "", nil, fmt.Errorf("create dir for %s: %w", asset.targetPath, mkErr)
 			}
 
-			if writeErr := os.WriteFile(asset.targetPath, asset.data, 0o644); writeErr != nil { //nolint:gosec // G306: temp file
+			if writeErr := safeio.WriteFile(asset.targetPath, asset.data, 0o644); writeErr != nil {
 				cleanup()
 				return "", nil, fmt.Errorf("write %s: %w", asset.targetPath, writeErr)
 			}
@@ -101,12 +102,12 @@ func prepareLoadCommon(mapper AssetMapper, cachePath string, manifest *client.Bu
 			return "", nil, mergeErr
 		}
 
-		if mkErr := os.MkdirAll(filepath.Dir(targetPath), 0o755); mkErr != nil { //nolint:gosec // G301: temp dir
+		if mkErr := safeio.MkdirAll(filepath.Dir(targetPath), 0o755); mkErr != nil {
 			cleanup()
 			return "", nil, fmt.Errorf("create dir for %s: %w", targetPath, mkErr)
 		}
 
-		if writeErr := os.WriteFile(targetPath, merged, 0o644); writeErr != nil { //nolint:gosec // G306: temp file
+		if writeErr := safeio.WriteFile(targetPath, merged, 0o644); writeErr != nil {
 			cleanup()
 			return "", nil, fmt.Errorf("write merged tool config %s: %w", targetPath, writeErr)
 		}

@@ -31,7 +31,7 @@ func cmdLoadMyBundles(ctx context.Context, c *client.Client) tea.Cmd {
 			return myBundlesLoadedMsg{errorMsg: "No publisher handle found"}
 		}
 
-		resp, err := c.ListPublisherBundles(navBaseCtx(ctx), publishers[0].Handle, 20, "") //nolint:mnd // reasonable page size
+		resp, err := c.ListPublisherBundles(navBaseCtx(ctx), publishers[0].Handle, myBundlesPageSize, "")
 		if err != nil {
 			return myBundlesLoadedMsg{errorMsg: "Could not load bundles"}
 		}

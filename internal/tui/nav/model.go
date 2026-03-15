@@ -456,7 +456,7 @@ func newModel(ctx context.Context, deps *Dependencies) *model {
 	slugInput := textinput.New()
 	slugInput.Placeholder = "namespace/slug or namespace/slug:version"
 	slugInput.CharLimit = 128
-	slugInput.Width = menuWidthFull - 8 //nolint:mnd // padding
+	slugInput.Width = menuWidthFull - slugInputWidthOffset
 
 	harnessExpandSpinner := spinner.New()
 	harnessExpandSpinner.Spinner = spinner.Dot
@@ -494,7 +494,7 @@ func newModel(ctx context.Context, deps *Dependencies) *model {
 	hubSearchInput := textinput.New()
 	hubSearchInput.Placeholder = "Search bundles..."
 	hubSearchInput.CharLimit = 128
-	hubSearchInput.Width = clampHubWidth(defaultWidth) - 12 //nolint:mnd // panel padding + border
+	hubSearchInput.Width = clampHubWidth(defaultWidth) - searchInputWidthOffset
 
 	prog := progress.New(progress.WithDefaultGradient())
 
@@ -1061,7 +1061,7 @@ func (m *model) activateByHotkey(hotkey rune) (tea.Model, tea.Cmd) {
 		slugField := textinput.New()
 		slugField.Placeholder = "namespace/slug or namespace/slug:version"
 		slugField.CharLimit = 128
-		slugField.Width = m.styles.menuWidth - 8 //nolint:mnd // padding
+		slugField.Width = m.styles.menuWidth - slugInputWidthOffset
 		slugField.Focus()
 
 		m.bundleInput = bundleInputState{
@@ -1117,7 +1117,7 @@ func (m *model) activateByHotkey(hotkey rune) (tea.Model, tea.Cmd) {
 		searchField := textinput.New()
 		searchField.Placeholder = "Search bundles..."
 		searchField.CharLimit = 128
-		searchField.Width = m.styles.hubWidth - 12 //nolint:mnd // panel padding + border
+		searchField.Width = m.styles.hubWidth - searchInputWidthOffset
 		searchField.Focus()
 
 		m.hubExplore = hubExploreState{
@@ -1172,7 +1172,7 @@ func (m *model) handleErrorScreenKey(
 		m.popScreen()
 
 	case key.Matches(msg, m.keys.Tab), key.Matches(msg, m.keys.Left), key.Matches(msg, m.keys.Right):
-		*buttonIdx = (*buttonIdx + 1) % 2 //nolint:mnd // 2 buttons
+		*buttonIdx = (*buttonIdx + 1) % buttonCount
 
 	case key.Matches(msg, m.keys.Retry):
 		return retryFn()

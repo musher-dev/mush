@@ -14,7 +14,7 @@ func (m *model) handleHubExploreKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case key.Matches(msg, m.keys.Tab):
-		m.hubExplore.focusArea = (m.hubExplore.focusArea + 1) % 2 //nolint:mnd // 2 focus areas
+		m.hubExplore.focusArea = (m.hubExplore.focusArea + 1) % buttonCount
 
 		if m.hubExplore.focusArea == 0 {
 			m.hubExplore.searchInput.Focus()

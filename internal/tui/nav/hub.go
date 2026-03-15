@@ -58,7 +58,7 @@ func renderHubExplore(mdl *model) string {
 func renderHubResultsList(mdl *model) string {
 	results := mdl.hubExplore.results
 
-	maxVisible := 5 //nolint:mnd // max visible items
+	maxVisible := hubMaxVisibleItems
 	startIdx := 0
 
 	if mdl.hubExplore.resultCur >= maxVisible {
@@ -118,9 +118,9 @@ func renderHubResultItem(mdl *model, idx int) string {
 	// Summary line.
 	summary := b.Summary
 
-	maxSumLen := mdl.styles.hubWidth - 12 //nolint:mnd // padding + indent
+	maxSumLen := mdl.styles.hubWidth - hubSummaryTrimOffset
 	if maxSumLen > 0 && len(summary) > maxSumLen {
-		summary = summary[:maxSumLen-3] + "..." //nolint:mnd // ellipsis
+		summary = summary[:maxSumLen-ellipsisWidth] + "..."
 	}
 
 	line2 := "    " + mdl.styles.placeholder.Render(summary)

@@ -37,6 +37,8 @@ var (
 		moduleRoot + "/internal/observability": true,
 		moduleRoot + "/internal/transcript":    true,
 		moduleRoot + "/internal/testutil":      true,
+		moduleRoot + "/internal/safeio":        true,
+		moduleRoot + "/internal/validate":      true,
 	}
 
 	presentationPkgs = map[string]bool{

@@ -178,7 +178,7 @@ func (m *model) activateBundleHubLink() (tea.Model, tea.Cmd) {
 	searchField := textinput.New()
 	searchField.Placeholder = "Search bundles..."
 	searchField.CharLimit = 128
-	searchField.Width = m.styles.hubWidth - 12 //nolint:mnd // panel padding + border
+	searchField.Width = m.styles.hubWidth - searchInputWidthOffset
 	searchField.Focus()
 
 	m.hubExplore = hubExploreState{
@@ -293,7 +293,7 @@ func (m *model) handleBundleActionKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.activeScreen = screenHome
 
 	case key.Matches(msg, m.keys.Tab), key.Matches(msg, m.keys.Left), key.Matches(msg, m.keys.Right):
-		m.bundleAction.buttonIdx = (m.bundleAction.buttonIdx + 1) % 2 //nolint:mnd // 2 buttons
+		m.bundleAction.buttonIdx = (m.bundleAction.buttonIdx + 1) % buttonCount
 
 	case key.Matches(msg, m.keys.Select):
 		// Build list of installed harness indices.
@@ -404,11 +404,11 @@ func (m *model) handleBundleInstallConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cm
 	case key.Matches(msg, m.keys.Tab):
 		if m.bundleInstallConfirm.hasConflicts {
 			// Cycle: force toggle → Install → Cancel → force toggle.
-			maxIdx := 2 //nolint:mnd // 3 focusable areas
+			maxIdx := threeOptionLastIndex
 			m.bundleInstallConfirm.buttonIdx = (m.bundleInstallConfirm.buttonIdx + 1) % (maxIdx + 1)
 		} else {
 			// Cycle: Install → Cancel.
-			m.bundleInstallConfirm.buttonIdx = (m.bundleInstallConfirm.buttonIdx + 1) % 2 //nolint:mnd // 2 buttons
+			m.bundleInstallConfirm.buttonIdx = (m.bundleInstallConfirm.buttonIdx + 1) % buttonCount
 		}
 
 	case msg.Type == tea.KeySpace:

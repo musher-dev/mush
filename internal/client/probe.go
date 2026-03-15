@@ -9,9 +9,10 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"time"
+
+	"github.com/musher-dev/mush/internal/safeio"
 )
 
 const probeTimeout = 3 * time.Second
@@ -193,7 +194,7 @@ func summarizeNetworkError(err error) string {
 // buildProbeTLSConfig creates a TLS config that appends custom CA certs
 // to the system pool — mirroring what NewInstrumentedHTTPClient does.
 func buildProbeTLSConfig(caPath string) (*tls.Config, error) {
-	pemData, err := os.ReadFile(caPath) //nolint:gosec // path is user-provided config
+	pemData, err := safeio.ReadFile(caPath)
 	if err != nil {
 		return nil, fmt.Errorf("read probe CA cert: %w", err)
 	}

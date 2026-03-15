@@ -218,6 +218,10 @@ func TestCursorSetup_InteractiveBundleMode(t *testing.T) {
 		TermWidth:  80,
 	})
 	if err != nil {
+		if strings.Contains(err.Error(), "open /dev/ptmx: permission denied") {
+			t.Skip("PTY unavailable in sandbox")
+		}
+
 		t.Fatalf("Setup(bundle mode) error = %v", err)
 	}
 

@@ -81,16 +81,16 @@ func (u *Updater) CheckLatest(ctx context.Context, currentVersion string) (*Info
 	info.ReleaseURL = latest.URL
 	info.Release = latest
 
-	current, err := semver.NewVersion(currentVersion)
-	if err != nil {
+	current, currentOK := parseSemver(currentVersion)
+	if !currentOK {
 		// Can't parse current version (e.g. "dev"), treat as needing update
 		info.UpdateAvailable = true
-		return info, nil //nolint:nilerr // graceful: unparseable current version treated as needing update
+		return info, nil
 	}
 
-	latestSemver, err := semver.NewVersion(latest.Version())
-	if err != nil {
-		return info, nil //nolint:nilerr // graceful: unparseable latest version is non-fatal
+	latestSemver, latestOK := parseSemver(latest.Version())
+	if !latestOK {
+		return info, nil
 	}
 
 	if latestSemver.GreaterThan(current) {
@@ -98,6 +98,15 @@ func (u *Updater) CheckLatest(ctx context.Context, currentVersion string) (*Info
 	}
 
 	return info, nil
+}
+
+func parseSemver(raw string) (*semver.Version, bool) {
+	version, err := semver.NewVersion(raw)
+	if err != nil {
+		return nil, false
+	}
+
+	return version, true
 }
 
 // Apply downloads and installs the given release, replacing the current binary.

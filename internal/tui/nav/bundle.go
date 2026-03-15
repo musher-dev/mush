@@ -121,7 +121,7 @@ func renderBundleListRow(mdl *model, label, detail string, active bool) string {
 		style = mdl.styles.menuItemActive
 	}
 
-	labelWidth := mdl.styles.menuWidth - 16 //nolint:mnd // border+pad+prefix+detail+gap
+	labelWidth := mdl.styles.menuWidth - bundleListDetailWidthOffset
 	if labelWidth < 8 {
 		labelWidth = 8
 	}
@@ -149,7 +149,7 @@ func renderBundleActionLink(mdl *model, label string, hotkey rune, active bool) 
 		hotkeyBadge = mdl.styles.hotkeyActive.Render(fmt.Sprintf("[%c]", hotkey))
 	}
 
-	labelWidth := mdl.styles.menuWidth - 14 //nolint:mnd // border+pad+prefix+badge+gap
+	labelWidth := mdl.styles.menuWidth - bundleActionWidthOffset
 	if labelWidth < 8 {
 		labelWidth = 8
 	}
@@ -239,7 +239,7 @@ func renderBundleAction(mdl *model) string {
 	installBtn := renderButton(&mdl.styles, "Install", mdl.bundleAction.buttonIdx == 1)
 	buttons := lipgloss.JoinHorizontal(lipgloss.Center, runBtn, "  ", installBtn)
 
-	contentWidth := mdl.styles.menuWidth - 4 //nolint:mnd // panel padding
+	contentWidth := mdl.styles.menuWidth - panelInnerWidthOffset
 	if contentWidth < 20 {
 		contentWidth = 20
 	}
@@ -383,7 +383,7 @@ func renderBundleInstallConfirm(mdl *model) string {
 
 	if mdl.bundleInstallConfirm.hasConflicts {
 		installBtnIdx = 1
-		cancelBtnIdx = 2 //nolint:mnd // 3 focusable areas with toggle
+		cancelBtnIdx = threeOptionLastIndex
 	}
 
 	installBtn := renderButton(&mdl.styles, "Install", mdl.bundleInstallConfirm.buttonIdx == installBtnIdx)
@@ -448,7 +448,7 @@ func groupLayers(layers []client.BundleLayer) []assetGroup {
 			info = struct {
 				label string
 				order int
-			}{label: layer.AssetType, order: 99} //nolint:mnd // unknown types sort last
+			}{label: layer.AssetType, order: unknownAssetSortOrder}
 		}
 
 		group, exists := grouped[layer.AssetType]
@@ -511,9 +511,9 @@ func renderBundleContents(styles *theme, layers []client.BundleLayer, layout lay
 	lines := []string{title}
 
 	// Available width for content inside the panel (minus border/padding).
-	contentWidth := availWidth - 8 //nolint:mnd // border + padding
-	if contentWidth < 20 {         //nolint:mnd // minimum usable width
-		contentWidth = 20
+	contentWidth := availWidth - panelBodyWidthOffset
+	if contentWidth < minUsableContentWidth {
+		contentWidth = minUsableContentWidth
 	}
 
 	for _, group := range groups {

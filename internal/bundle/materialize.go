@@ -7,6 +7,7 @@ import (
 	"sort"
 
 	"github.com/musher-dev/mush/internal/client"
+	"github.com/musher-dev/mush/internal/safeio"
 )
 
 // InstallFromCache installs bundle assets into workDir using mapper rules.
@@ -34,7 +35,7 @@ func InstallFromCache(
 
 		srcPath := filepath.Join(cachePath, "assets", layer.LogicalPath)
 
-		data, readErr := os.ReadFile(srcPath) //nolint:gosec // G304: path from controlled cache
+		data, readErr := safeio.ReadFile(srcPath)
 		if readErr != nil {
 			return nil, fmt.Errorf("read cached asset %s: %w", layer.LogicalPath, readErr)
 		}
@@ -60,11 +61,11 @@ func InstallFromCache(
 				}
 			}
 
-			if mkErr := os.MkdirAll(filepath.Dir(asset.targetPath), 0o755); mkErr != nil { //nolint:gosec // G301: project dir
+			if mkErr := safeio.MkdirAll(filepath.Dir(asset.targetPath), 0o755); mkErr != nil {
 				return nil, fmt.Errorf("create directory for %s: %w", asset.targetPath, mkErr)
 			}
 
-			if writeErr := os.WriteFile(asset.targetPath, asset.data, 0o644); writeErr != nil { //nolint:gosec // G306: project file
+			if writeErr := safeio.WriteFile(asset.targetPath, asset.data, 0o644); writeErr != nil {
 				return nil, fmt.Errorf("write %s: %w", asset.targetPath, writeErr)
 			}
 
@@ -79,7 +80,7 @@ func InstallFromCache(
 
 	for targetPath, docs := range toolConfigs {
 		var existing []byte
-		if data, readErr := os.ReadFile(targetPath); readErr == nil { //nolint:gosec // G304: mapped project path
+		if data, readErr := safeio.ReadFile(targetPath); readErr == nil {
 			existing = data
 		}
 
@@ -88,11 +89,11 @@ func InstallFromCache(
 			return nil, mergeErr
 		}
 
-		if mkErr := os.MkdirAll(filepath.Dir(targetPath), 0o755); mkErr != nil { //nolint:gosec // G301: project dir
+		if mkErr := safeio.MkdirAll(filepath.Dir(targetPath), 0o755); mkErr != nil {
 			return nil, fmt.Errorf("create directory for %s: %w", targetPath, mkErr)
 		}
 
-		if writeErr := os.WriteFile(targetPath, merged, 0o644); writeErr != nil { //nolint:gosec // G306: project file
+		if writeErr := safeio.WriteFile(targetPath, merged, 0o644); writeErr != nil {
 			return nil, fmt.Errorf("write merged tool config %s: %w", targetPath, writeErr)
 		}
 
@@ -171,7 +172,7 @@ func InjectAssetsForLoad(
 
 		srcPath := filepath.Join(cachePath, "assets", layer.LogicalPath)
 
-		data, readErr := os.ReadFile(srcPath) //nolint:gosec // G304: path from controlled cache
+		data, readErr := safeio.ReadFile(srcPath)
 		if readErr != nil {
 			return nil, nil, makeCleanup(), fmt.Errorf("read cached asset %s: %w", layer.LogicalPath, readErr)
 		}
@@ -214,11 +215,11 @@ func InjectAssetsForLoad(
 			ancestor = parent
 		}
 
-		if mkErr := os.MkdirAll(dir, 0o755); mkErr != nil { //nolint:gosec // G301: project dir
+		if mkErr := safeio.MkdirAll(dir, 0o755); mkErr != nil {
 			return nil, nil, makeCleanup(), fmt.Errorf("create directory for %s: %w", layer.LogicalPath, mkErr)
 		}
 
-		if writeErr := os.WriteFile(targetPath, data, 0o644); writeErr != nil { //nolint:gosec // G306: project file
+		if writeErr := safeio.WriteFile(targetPath, data, 0o644); writeErr != nil {
 			return nil, nil, makeCleanup(), fmt.Errorf("write %s: %w", layer.LogicalPath, writeErr)
 		}
 
@@ -266,7 +267,7 @@ func InjectToolConfigsForLoad(
 				if b.data == nil {
 					_ = os.Remove(b.path)
 				} else {
-					_ = os.WriteFile(b.path, b.data, 0o644) //nolint:gosec // G306: restoring original
+					_ = safeio.WriteFile(b.path, b.data, 0o644)
 				}
 			}
 		}
@@ -287,7 +288,7 @@ func InjectToolConfigsForLoad(
 
 		srcPath := filepath.Join(cachePath, "assets", layer.LogicalPath)
 
-		data, readErr := os.ReadFile(srcPath) //nolint:gosec // G304: path from controlled cache
+		data, readErr := safeio.ReadFile(srcPath)
 		if readErr != nil {
 			return nil, makeCleanup(), fmt.Errorf("read cached asset %s: %w", layer.LogicalPath, readErr)
 		}
@@ -299,7 +300,7 @@ func InjectToolConfigsForLoad(
 		// Back up existing file if present.
 		var existing []byte
 
-		data, readErr := os.ReadFile(targetPath) //nolint:gosec // G304: mapped project path
+		data, readErr := safeio.ReadFile(targetPath)
 
 		switch {
 		case readErr == nil:
@@ -316,11 +317,11 @@ func InjectToolConfigsForLoad(
 			return nil, makeCleanup(), mergeErr
 		}
 
-		if mkErr := os.MkdirAll(filepath.Dir(targetPath), 0o755); mkErr != nil { //nolint:gosec // G301: project dir
+		if mkErr := safeio.MkdirAll(filepath.Dir(targetPath), 0o755); mkErr != nil {
 			return nil, makeCleanup(), fmt.Errorf("create directory for %s: %w", targetPath, mkErr)
 		}
 
-		if writeErr := os.WriteFile(targetPath, merged, 0o644); writeErr != nil { //nolint:gosec // G306: project file
+		if writeErr := safeio.WriteFile(targetPath, merged, 0o644); writeErr != nil {
 			return nil, makeCleanup(), fmt.Errorf("write tool config %s: %w", targetPath, writeErr)
 		}
 
