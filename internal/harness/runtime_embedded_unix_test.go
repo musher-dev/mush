@@ -36,7 +36,7 @@ func TestEmbeddedSidebarLinesIncludeBundleAssetSections(t *testing.T) {
 		},
 	}
 
-	lines := r.sidebarLines(layout.PtyRowsForFrame(r.frame))
+	lines := r.sidebarLines(layout.PtyRowsForFrame(&r.frame))
 	joined := strings.Join(lines, "\n")
 
 	for _, want := range []string{

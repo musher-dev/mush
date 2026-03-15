@@ -17,6 +17,7 @@ import (
 	clierrors "github.com/musher-dev/mush/internal/errors"
 	"github.com/musher-dev/mush/internal/harness"
 	"github.com/musher-dev/mush/internal/output"
+	"github.com/musher-dev/mush/internal/safeio"
 	"github.com/musher-dev/mush/internal/tui/nav"
 )
 
@@ -165,7 +166,7 @@ func validateNavHarness(raw string) (string, error) {
 func loadCachedBundleResolve(cachePath string) (*client.BundleResolveResponse, error) {
 	manifestPath := filepath.Join(cachePath, "manifest.json")
 
-	data, err := os.ReadFile(manifestPath) //nolint:gosec // path is from controlled bundle cache.
+	data, err := safeio.ReadFile(manifestPath)
 	if err != nil {
 		return nil, clierrors.Wrap(clierrors.ExitGeneral, fmt.Sprintf("read %s", manifestPath), err)
 	}

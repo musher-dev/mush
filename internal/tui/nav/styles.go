@@ -14,6 +14,39 @@ const (
 	contextPanelWidth = 24
 
 	menuPaddingInline = 4
+
+	terminalSideMargin       = 4
+	twoPanelContextGap       = 2
+	twoPanelContextWidthTrim = 5
+	maxContextPanelWidth     = 36
+	panelInnerWidthOffset    = 4
+	panelContentWidthOffset  = 6
+	slugInputWidthOffset     = 8
+	searchInputWidthOffset   = 12
+	buttonCount              = 2
+	threeOptionLastIndex     = 2
+	minUsableContentWidth    = 20
+	historyIDWidth           = 8
+	historyChromeLines       = 12
+	secondsPerMinute         = 60
+	hoursPerDay              = 24
+	hubMaxVisibleItems       = 5
+	hubSummaryTrimOffset     = 12
+	ellipsisWidth            = 3
+	myBundlesPageSize        = 20
+	maxSplitParts            = 2
+)
+
+const (
+	bundleListDetailWidthOffset = 16
+	bundleActionWidthOffset     = 14
+	homeLabelWidthOffset        = 12
+	experimentalWidthOffset     = 12
+	harnessRowWidthOffset       = 6
+	harnessLabelGapWidth        = 3
+	harnessMessageWidthOffset   = 8
+	panelBodyWidthOffset        = 8
+	unknownAssetSortOrder       = 99
 )
 
 // layoutMode classifies the current terminal width for responsive rendering.
@@ -141,7 +174,7 @@ func clampMenuWidth(termWidth int) int {
 // clampHubWidth picks the hub panel width — wider than menu, capped at hubWidthMax.
 func clampHubWidth(termWidth int) int {
 	// Leave 4 chars margin (2 per side) for centering.
-	available := termWidth - 4 //nolint:mnd // centering margin
+	available := termWidth - terminalSideMargin
 	if available > hubWidthMax {
 		available = hubWidthMax
 	}
@@ -162,18 +195,18 @@ func newTheme(width int) theme {
 
 	ctxW := contextPanelWidth
 	if lay == layoutTwoPanel {
-		ctxW = width - menuW - 5 //nolint:mnd // gap=3 + border=2
+		ctxW = width - menuW - twoPanelContextWidthTrim
 		if ctxW < contextPanelWidth {
 			ctxW = contextPanelWidth
 		}
 
-		if ctxW > 36 {
-			ctxW = 36
+		if ctxW > maxContextPanelWidth {
+			ctxW = maxContextPanelWidth
 		}
 	}
 
 	hubW := clampHubWidth(width)
-	itemWidth := menuW - 6 //nolint:mnd // box width minus border (2) and horizontal padding (4)
+	itemWidth := menuW - panelContentWidthOffset
 
 	return theme{
 		menuWidth:    menuW,
@@ -257,7 +290,7 @@ func newTheme(width int) theme {
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(colorBorder).
 			Padding(0, 1).
-			Width(menuW - 4), //nolint:mnd // inner padding
+			Width(menuW - panelInnerWidthOffset),
 
 		button: lipgloss.NewStyle().
 			Foreground(colorDim).

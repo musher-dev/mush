@@ -42,15 +42,15 @@ func (b *scrollbackBuffer) Push(cells []vt10x.Glyph) {
 	}
 }
 
-// Line returns the line at offset from the most recent (0 = newest).
-// Returns nil if offset is out of range.
-func (b *scrollbackBuffer) Line(offset int) []vt10x.Glyph {
-	if offset < 0 || offset >= b.count {
+// Line returns the line at index from the oldest retained entry (0 = oldest).
+// Returns nil if index is out of range.
+func (b *scrollbackBuffer) Line(index int) []vt10x.Glyph {
+	if index < 0 || index >= b.count {
 		return nil
 	}
 
-	// head-1 is the most recent; head-1-offset is the requested line
-	idx := (b.head - 1 - offset + b.capacity) % b.capacity
+	oldest := (b.head - b.count + b.capacity) % b.capacity
+	idx := (oldest + index) % b.capacity
 
 	return b.lines[idx].cells
 }
@@ -58,4 +58,10 @@ func (b *scrollbackBuffer) Line(offset int) []vt10x.Glyph {
 // Len returns the number of lines stored.
 func (b *scrollbackBuffer) Len() int {
 	return b.count
+}
+
+// Clear drops all retained lines without reallocating the buffer.
+func (b *scrollbackBuffer) Clear() {
+	b.head = 0
+	b.count = 0
 }

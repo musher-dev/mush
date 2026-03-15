@@ -35,8 +35,7 @@ type Snapshot struct {
 
 	StatusLabel string
 
-	CopyMode bool
-	JobID    string
+	JobID string
 
 	LastHeartbeat time.Time
 	Completed     int

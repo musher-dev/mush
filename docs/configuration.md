@@ -61,6 +61,7 @@ Mush reads `config.yaml` from the config root. The file is created automatically
 | `network.ca_cert_file` | string | `""` | `MUSH_NETWORK_CA_CERT_FILE` | Optional PEM CA bundle for corporate proxy/TLS interception |
 | `worker.poll_interval` | duration | `30s` | `MUSH_WORKER_POLL_INTERVAL` | Job poll interval (e.g. `30s`, `1m`) |
 | `worker.heartbeat_interval` | duration | `30s` | `MUSH_WORKER_HEARTBEAT_INTERVAL` | Heartbeat interval (e.g. `30s`, `1m`) |
+| `keybindings.<action>` | string[] | action-specific defaults | none | Override TUI action bindings; set per action to replace that action's defaults |
 | `tui` | bool | `true` | `MUSH_TUI` / `MUSH_NO_TUI` | Enable interactive TUI when running bare `mush` |
 | `history.enabled` | bool | `true` | `MUSH_HISTORY_ENABLED` | Enable transcript history recording |
 | `history.dir` | string | `<state root>/history` | `MUSH_HISTORY_DIR` | Transcript storage directory |
@@ -72,6 +73,15 @@ Mush reads `config.yaml` from the config root. The file is created automatically
 Environment variables use the `MUSH_` prefix with dots replaced by underscores (e.g., `api.url` becomes `MUSH_API_URL`). Environment variables take precedence over the config file.
 
 When `network.ca_cert_file` / `MUSH_NETWORK_CA_CERT_FILE` is configured, Mush appends the provided CA certificates to the system trust store for outbound API TLS verification.
+
+Supported `keybindings.<action>` names:
+
+- `up`, `down`, `left`, `right`
+- `select`, `quit`, `back`, `tab`
+- `retry`, `help`, `search`
+- `install`, `load_more`, `status`
+
+Keybinding overrides replace the default key list for that action only. Actions not set in `config.yaml` continue using the built-in defaults. For example, setting `keybindings.up: [w]` disables the default `k` binding for the `up` action while leaving all other actions unchanged.
 
 ### Precedence
 
@@ -111,6 +121,10 @@ history:
   enabled: true
   scrollback_lines: 10000
   retention: 720h
+keybindings:
+  up: [up, k]
+  down: [down, j]
+  status: [","]
 ```
 
 ## Credentials

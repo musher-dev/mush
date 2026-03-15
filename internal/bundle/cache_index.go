@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/musher-dev/mush/internal/client"
+	"github.com/musher-dev/mush/internal/safeio"
 )
 
 // CachedBundle is a locally cached bundle version.
@@ -67,7 +68,7 @@ func ListCached() ([]CachedBundle, error) {
 				versionPath := filepath.Join(slugPath, versionDir.Name())
 				manifestPath := filepath.Join(versionPath, "manifest.json")
 
-				data, err := os.ReadFile(manifestPath) //nolint:gosec // G304: controlled cache path
+				data, err := safeio.ReadFile(manifestPath)
 				if err != nil {
 					continue
 				}

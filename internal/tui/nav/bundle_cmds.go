@@ -14,6 +14,7 @@ import (
 	"github.com/musher-dev/mush/internal/bundle"
 	"github.com/musher-dev/mush/internal/client"
 	harnesslib "github.com/musher-dev/mush/internal/harness"
+	"github.com/musher-dev/mush/internal/safeio"
 )
 
 // --- Message types ---
@@ -215,7 +216,7 @@ func cmdCheckInstallConflicts(cachePath, harnessName, workDir string) tea.Cmd {
 func loadManifestFromCache(cachePath string) (*client.BundleResolveResponse, error) {
 	manifestPath := filepath.Join(cachePath, "manifest.json")
 
-	data, err := os.ReadFile(manifestPath) //nolint:gosec // G304: controlled cache path
+	data, err := safeio.ReadFile(manifestPath)
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", manifestPath, err)
 	}
@@ -255,7 +256,7 @@ func downloadBundle(ctx context.Context, c *client.Client, resolved *client.Bund
 
 	assetsDir := filepath.Join(stagingDir, "assets")
 
-	if mkdirErr := os.MkdirAll(assetsDir, 0o755); mkdirErr != nil { //nolint:gosec // G301: subdirs inside private cache root
+	if mkdirErr := safeio.MkdirAll(assetsDir, 0o755); mkdirErr != nil {
 		return fmt.Errorf("create staging assets directory: %w", mkdirErr)
 	}
 
@@ -286,11 +287,11 @@ func downloadBundle(ctx context.Context, c *client.Client, resolved *client.Bund
 
 		// Write to staging.
 		destPath := filepath.Join(assetsDir, layer.LogicalPath)
-		if mkdirErr := os.MkdirAll(filepath.Dir(destPath), 0o755); mkdirErr != nil { //nolint:gosec // G301: cache subdirs
+		if mkdirErr := safeio.MkdirAll(filepath.Dir(destPath), 0o755); mkdirErr != nil {
 			return fmt.Errorf("create asset directory: %w", mkdirErr)
 		}
 
-		if writeErr := os.WriteFile(destPath, data, 0o644); writeErr != nil { //nolint:gosec // G306: cache files are readable
+		if writeErr := safeio.WriteFile(destPath, data, 0o644); writeErr != nil {
 			return fmt.Errorf("write asset %s: %w", layer.LogicalPath, writeErr)
 		}
 	}
@@ -301,7 +302,7 @@ func downloadBundle(ctx context.Context, c *client.Client, resolved *client.Bund
 		return fmt.Errorf("marshal manifest: %w", err)
 	}
 
-	if err := os.WriteFile(filepath.Join(stagingDir, "manifest.json"), manifestData, 0o644); err != nil { //nolint:gosec // G306: manifest is readable
+	if err := safeio.WriteFile(filepath.Join(stagingDir, "manifest.json"), manifestData, 0o644); err != nil {
 		return fmt.Errorf("write manifest: %w", err)
 	}
 

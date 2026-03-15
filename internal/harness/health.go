@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/musher-dev/mush/internal/harness/harnesstype"
 )
@@ -81,21 +82,40 @@ func CheckHealth(ctx context.Context, name string) (*HealthReport, error) {
 	return report, nil
 }
 
-// CheckAllHealth runs health checks for every registered provider.
+// CheckAllHealth runs health checks for every registered provider concurrently.
 func CheckAllHealth(ctx context.Context) []*HealthReport {
 	names := ProviderNames()
-	reports := make([]*HealthReport, 0, len(names))
+	reports := make([]*HealthReport, len(names))
 
-	for _, name := range names {
-		report, err := CheckHealth(ctx, name)
-		if err != nil {
-			continue
-		}
+	var wg sync.WaitGroup
 
-		reports = append(reports, report)
+	for i, name := range names {
+		wg.Add(1)
+
+		go func(i int, name string) {
+			defer wg.Done()
+
+			report, err := CheckHealth(ctx, name)
+			if err != nil {
+				return // leaves reports[i] as nil
+			}
+
+			reports[i] = report
+		}(i, name)
 	}
 
-	return reports
+	wg.Wait()
+
+	// Filter out nil entries (failed lookups).
+	filtered := make([]*HealthReport, 0, len(names))
+
+	for _, r := range reports {
+		if r != nil {
+			filtered = append(filtered, r)
+		}
+	}
+
+	return filtered
 }
 
 func checkBinary(spec *harnesstype.ProviderSpec) HealthResult {

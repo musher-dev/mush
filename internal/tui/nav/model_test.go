@@ -2,10 +2,13 @@ package nav
 
 import (
 	"context"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/musher-dev/mush/internal/config"
 )
 
 func testModel() *model {
@@ -235,6 +238,46 @@ func TestHotkeyCommaOpensSettings(t *testing.T) {
 	}
 }
 
+func TestCustomStatusBindingOpensSettings(t *testing.T) {
+	cfgDir := filepath.Join(t.TempDir(), ".config")
+	t.Setenv("XDG_CONFIG_HOME", cfgDir)
+
+	cfg := config.Load()
+	if err := cfg.Set("keybindings.status", []string{"g"}); err != nil {
+		t.Fatalf("Set(keybindings.status) error = %v", err)
+	}
+
+	mdl := newModel(t.Context(), &Dependencies{Config: config.Load()})
+	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
+
+	if mdl.activeScreen != screenStatus {
+		t.Errorf("activeScreen = %d, want screenStatus", mdl.activeScreen)
+	}
+}
+
+func TestCustomUpBindingReplacesDefaultVimBinding(t *testing.T) {
+	cfgDir := filepath.Join(t.TempDir(), ".config")
+	t.Setenv("XDG_CONFIG_HOME", cfgDir)
+
+	cfg := config.Load()
+	if err := cfg.Set("keybindings.up", []string{"w"}); err != nil {
+		t.Fatalf("Set(keybindings.up) error = %v", err)
+	}
+
+	mdl := newModel(t.Context(), &Dependencies{Config: config.Load()})
+	mdl.cursor = 2
+
+	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
+	if mdl.cursor != 2 {
+		t.Fatalf("cursor after legacy k = %d, want 2", mdl.cursor)
+	}
+
+	mdl = updateModel(mdl, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'w'}})
+	if mdl.cursor != 1 {
+		t.Fatalf("cursor after custom w = %d, want 1", mdl.cursor)
+	}
+}
+
 func TestEscReturnsHome(t *testing.T) {
 	t.Parallel()
 
@@ -392,6 +435,19 @@ func TestPlaceholderView(t *testing.T) {
 
 	if !strings.Contains(view, "esc") {
 		t.Error("placeholder view should contain back hint")
+	}
+}
+
+func TestHomeFooterShowsArrowKeysByDefault(t *testing.T) {
+	t.Parallel()
+
+	footer := renderHomeFooter(testModel())
+	if !strings.Contains(footer, "↑/↓") {
+		t.Fatalf("footer = %q, want arrow navigation hint", footer)
+	}
+
+	if strings.Contains(footer, "j/k navigate") {
+		t.Fatalf("footer = %q, should not show j/k as primary home hint", footer)
 	}
 }
 
@@ -583,6 +639,10 @@ func TestContextInfoMsg(t *testing.T) {
 		authStatus:       "authenticated",
 		organizationName: "test-org",
 		organizationID:   "org-123",
+		credentialName:   "runner-key",
+		userFullName:     "Test User",
+		username:         "test-user",
+		greeting:         "Good morning",
 	}
 
 	mdl = updateModel(mdl, msg)
@@ -597,6 +657,102 @@ func TestContextInfoMsg(t *testing.T) {
 
 	if mdl.ctxInfo.organizationName != "test-org" {
 		t.Errorf("organizationName = %q, want 'test-org'", mdl.ctxInfo.organizationName)
+	}
+
+	if mdl.ctxInfo.userFullName != "Test User" {
+		t.Errorf("userFullName = %q, want 'Test User'", mdl.ctxInfo.userFullName)
+	}
+}
+
+func TestHomeViewRemovesRecentJobs(t *testing.T) {
+	t.Parallel()
+
+	mdl := testModel()
+	mdl = updateModel(mdl, tea.WindowSizeMsg{Width: 130, Height: 40})
+	mdl.ctxInfo = contextInfo{
+		loading:          false,
+		authStatus:       "authenticated",
+		organizationName: "Acme Organization",
+		credentialName:   "runner-key",
+		userFullName:     "Alice Smith",
+		greeting:         "Good morning",
+	}
+
+	view := mdl.View()
+
+	if strings.Contains(view, "Recent jobs") {
+		t.Fatal("view should not contain 'Recent jobs'")
+	}
+
+	if !strings.Contains(view, "Good morning, Alice Smith") {
+		t.Fatal("view should contain personalized greeting")
+	}
+
+	if strings.Contains(view, "Authenticated") {
+		t.Fatal("view should not contain authenticated status label")
+	}
+
+	if !strings.Contains(view, "Discord") || !strings.Contains(view, "GitHub") || !strings.Contains(view, "X") {
+		t.Fatal("view should contain social links")
+	}
+}
+
+func TestHomeViewFallsBackToCredentialName(t *testing.T) {
+	t.Parallel()
+
+	mdl := testModel()
+	mdl = updateModel(mdl, tea.WindowSizeMsg{Width: 130, Height: 40})
+	mdl.ctxInfo = contextInfo{
+		loading:        false,
+		authStatus:     "authenticated",
+		credentialName: "org-runner-key",
+		greeting:       "Welcome back",
+	}
+
+	view := mdl.View()
+
+	if !strings.Contains(view, "Welcome back, org-runner-key") {
+		t.Fatal("view should fall back to credential name")
+	}
+}
+
+func TestHomeViewShowsUnauthenticatedState(t *testing.T) {
+	t.Parallel()
+
+	mdl := testModel()
+	mdl = updateModel(mdl, tea.WindowSizeMsg{Width: 130, Height: 40})
+	mdl.ctxInfo = contextInfo{
+		loading:    false,
+		authStatus: "not authenticated",
+	}
+
+	view := mdl.View()
+
+	if !strings.Contains(view, "Not authenticated") {
+		t.Fatal("view should contain unauthenticated state")
+	}
+}
+
+func TestStatusLineAuthenticatedOmitsStatusLabel(t *testing.T) {
+	t.Parallel()
+
+	mdl := testModel()
+	mdl.ctxInfo = contextInfo{
+		loading:          false,
+		authStatus:       "authenticated",
+		organizationName: "Acme Organization",
+		userFullName:     "Alice Smith",
+		greeting:         "Good morning",
+	}
+
+	line := renderStatusLine(mdl)
+
+	if !strings.Contains(line, "Good morning, Alice Smith") {
+		t.Fatal("status line should contain personalized greeting")
+	}
+
+	if strings.Contains(strings.ToLower(line), "authenticated") {
+		t.Fatal("status line should not contain authenticated status label")
 	}
 }
 

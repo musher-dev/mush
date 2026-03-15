@@ -13,6 +13,7 @@ import (
 	"github.com/musher-dev/mush/internal/observability"
 	"github.com/musher-dev/mush/internal/output"
 	"github.com/musher-dev/mush/internal/paths"
+	"github.com/musher-dev/mush/internal/safeio"
 )
 
 // CacheDir returns the base cache directory for bundles.
@@ -130,7 +131,7 @@ func Pull(ctx context.Context, c *client.Client, namespace, slug, version string
 	}()
 
 	assetsDir := filepath.Join(stagingDir, "assets")
-	if err := os.MkdirAll(assetsDir, 0o755); err != nil { //nolint:gosec // G301: subdirs inside private cache root
+	if err := safeio.MkdirAll(assetsDir, 0o755); err != nil {
 		return nil, "", fmt.Errorf("create staging assets directory: %w", err)
 	}
 
@@ -218,11 +219,11 @@ func Pull(ctx context.Context, c *client.Client, namespace, slug, version string
 
 			// Write to staging cache.
 			destPath := filepath.Join(assetsDir, layer.LogicalPath)
-			if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil { //nolint:gosec // G301: cache subdirs
+			if err := safeio.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
 				return nil, "", fmt.Errorf("create asset directory: %w", err)
 			}
 
-			if err := os.WriteFile(destPath, data, 0o644); err != nil { //nolint:gosec // G306: cache files are readable
+			if err := safeio.WriteFile(destPath, data, 0o644); err != nil {
 				return nil, "", fmt.Errorf("write asset %s: %w", layer.LogicalPath, err)
 			}
 		}
@@ -260,7 +261,7 @@ func writeManifest(cachePath string, resolved *client.BundleResolveResponse) err
 		return fmt.Errorf("marshal manifest: %w", err)
 	}
 
-	if err := os.WriteFile(filepath.Join(cachePath, "manifest.json"), manifestData, 0o644); err != nil { //nolint:gosec // G306: manifest is readable
+	if err := safeio.WriteFile(filepath.Join(cachePath, "manifest.json"), manifestData, 0o644); err != nil {
 		return fmt.Errorf("write manifest: %w", err)
 	}
 

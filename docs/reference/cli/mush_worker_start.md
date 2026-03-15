@@ -32,7 +32,6 @@ Harness Types:
 
 Press Ctrl+C once to interrupt Claude; press Ctrl+C again quickly to exit.
 Press Ctrl+Q to exit the watch UI immediately.
-Press Ctrl+S to toggle copy mode (Esc to return to live input).
 
 ```
 mush worker start [flags]

@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/musher-dev/mush/internal/paths"
+	"github.com/musher-dev/mush/internal/safeio"
 	"github.com/zalando/go-keyring"
 )
 
@@ -103,7 +104,7 @@ func readCredentialsFile() string {
 		return ""
 	}
 
-	data, err := os.ReadFile(path) //nolint:gosec // G304: path from controlled config directory
+	data, err := safeio.ReadFile(path)
 	if err != nil {
 		return ""
 	}

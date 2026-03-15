@@ -1,7 +1,10 @@
 package main
 
 import (
+	"errors"
+	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -62,15 +65,17 @@ func newConfigListCmd() *cobra.Command {
 				return nil
 			}
 
-			keys := make([]string, 0, len(settings))
-			for key := range settings {
+			flat := flattenSettings(settings)
+
+			keys := make([]string, 0, len(flat))
+			for key := range flat {
 				keys = append(keys, key)
 			}
 
 			sort.Strings(keys)
 
 			for _, key := range keys {
-				value := settings[key]
+				value := flat[key]
 				out.Print("%s = %v\n", key, value)
 			}
 
@@ -97,7 +102,7 @@ func newConfigGetCmd() *cobra.Command {
 				return nil
 			}
 
-			out.Print("%s = %v\n", key, value)
+			out.Print("%s = %v\n", key, formatConfigValue(value))
 
 			return nil
 		},
@@ -116,13 +121,81 @@ func newConfigSetCmd() *cobra.Command {
 			key, value := args[0], args[1]
 			cfg := config.Load()
 
-			if err := cfg.Set(key, value); err != nil {
+			parsedValue, err := parseConfigValue(key, value)
+			if err != nil {
 				return clierrors.ConfigFailed("set config", err)
 			}
 
-			out.Success("Set %s = %s", key, value)
+			if err := cfg.Set(key, parsedValue); err != nil {
+				return clierrors.ConfigFailed("set config", err)
+			}
+
+			out.Success("Set %s = %v", key, parsedValue)
 
 			return nil
 		},
+	}
+}
+
+func parseConfigValue(key, value string) (interface{}, error) {
+	if key == "keybindings" {
+		return nil, errors.New("set individual keybindings via keybindings.<action>")
+	}
+
+	if strings.HasPrefix(key, "keybindings.") {
+		action := strings.TrimPrefix(key, "keybindings.")
+		if !config.IsKnownKeybindingAction(action) {
+			return nil, clierrors.New(1, "unknown keybinding action: "+action)
+		}
+
+		parsed, err := config.ParseKeybindingValue(value)
+		if err != nil {
+			return nil, clierrors.Wrap(1, "parse keybinding", err)
+		}
+
+		return parsed, nil
+	}
+
+	return value, nil
+}
+
+func flattenSettings(settings map[string]interface{}) map[string]interface{} {
+	flat := make(map[string]interface{})
+	flattenInto(flat, "", settings)
+
+	return flat
+}
+
+func flattenInto(dst map[string]interface{}, prefix string, value interface{}) {
+	nested, ok := value.(map[string]interface{})
+	if !ok {
+		if prefix != "" {
+			dst[prefix] = value
+		}
+
+		return
+	}
+
+	for key, child := range nested {
+		fullKey := key
+		if prefix != "" {
+			fullKey = prefix + "." + key
+		}
+
+		flattenInto(dst, fullKey, child)
+	}
+}
+
+func formatConfigValue(value interface{}) interface{} {
+	switch typed := value.(type) {
+	case []interface{}:
+		items := make([]string, 0, len(typed))
+		for _, item := range typed {
+			items = append(items, fmt.Sprint(item))
+		}
+
+		return items
+	default:
+		return value
 	}
 }

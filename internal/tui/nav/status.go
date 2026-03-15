@@ -42,15 +42,15 @@ func renderStatus(mdl *model) string {
 
 	// Footer hints.
 	hints := []hint{
-		{key: "esc", desc: "back"},
-		{key: "q", desc: "quit"},
+		bindingHint(mdl.keys.Back, "back"),
+		bindingHint(mdl.keys.Quit, "quit"),
 	}
 
 	if !mdl.status.loading && !mdl.status.harnessLoading {
-		actionHints := []hint{{key: "r", desc: "re-run"}}
+		actionHints := []hint{bindingHint(mdl.keys.Retry, "re-run")}
 
 		if hasMissingHarnesses(mdl.status.harnessReports) {
-			actionHints = append(actionHints, hint{key: "i", desc: "install missing"})
+			actionHints = append(actionHints, bindingHint(mdl.keys.Install, "install missing"))
 		}
 
 		hints = append(actionHints, hints...)

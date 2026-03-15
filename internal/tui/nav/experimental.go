@@ -56,7 +56,7 @@ func renderExperimentalItem(mdl *model, item menuItem, panelWidth int, selected 
 	hotkeyBadge := hotkeyStyle.Render(fmt.Sprintf("[%c]", item.hotkey))
 
 	// Match the same width math as renderMenuItem.
-	labelWidth := panelWidth - 12 //nolint:mnd // border(2)+pad(4)+prefix(2)+badge(3)+gap(1)
+	labelWidth := panelWidth - experimentalWidthOffset
 	if labelWidth < 8 {
 		labelWidth = 8
 	}

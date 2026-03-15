@@ -14,7 +14,7 @@ func (m *model) handleHubExploreKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case key.Matches(msg, m.keys.Tab):
-		m.hubExplore.focusArea = (m.hubExplore.focusArea + 1) % 2 //nolint:mnd // 2 focus areas
+		m.hubExplore.focusArea = (m.hubExplore.focusArea + 1) % buttonCount
 
 		if m.hubExplore.focusArea == 0 {
 			m.hubExplore.searchInput.Focus()
@@ -90,19 +90,17 @@ func (m *model) handleHubListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.hubViewDetail()
 
 	default:
-		if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 {
-			switch msg.Runes[0] {
-			case 'r':
-				return m.hubRunSelected()
-			case '/':
-				m.hubExplore.focusArea = 0
-				m.hubExplore.searchInput.Focus()
+		switch {
+		case key.Matches(msg, m.keys.Retry):
+			return m.hubRunSelected()
+		case key.Matches(msg, m.keys.Search):
+			m.hubExplore.focusArea = 0
+			m.hubExplore.searchInput.Focus()
 
-				return m, nil
-			case 'l':
-				if m.hubExplore.hasMore && !m.hubExplore.loading {
-					return m.hubLoadMore()
-				}
+			return m, nil
+		case key.Matches(msg, m.keys.LoadMore):
+			if m.hubExplore.hasMore && !m.hubExplore.loading {
+				return m.hubLoadMore()
 			}
 		}
 	}
@@ -134,7 +132,7 @@ func (m *model) handleHubDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	default:
-		if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 && msg.Runes[0] == 'r' {
+		if key.Matches(msg, m.keys.Retry) {
 			return m.hubRunFromDetail()
 		}
 	}

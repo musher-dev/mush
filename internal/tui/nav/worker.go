@@ -39,9 +39,9 @@ func renderWorkerHabitats(mdl *model) string {
 	panel := renderPanel(&mdl.styles, "Select Habitat", body, mdl.styles.menuWidth, true)
 
 	footer := renderKeyHints(&mdl.styles, []hint{
-		{key: "j/k", desc: "navigate"},
-		{key: "enter", desc: "select"},
-		{key: "esc", desc: "back"},
+		navigationHint(mdl.keys.Up, mdl.keys.Down, "navigate"),
+		bindingHint(mdl.keys.Select, "select"),
+		bindingHint(mdl.keys.Back, "back"),
 	})
 
 	content := lipgloss.JoinVertical(lipgloss.Center, crumbs, "", panel, "", footer)
@@ -88,9 +88,9 @@ func renderWorkerQueues(mdl *model) string {
 	panel := renderPanel(&mdl.styles, "Select Queue", body, mdl.styles.menuWidth, true)
 
 	footer := renderKeyHints(&mdl.styles, []hint{
-		{key: "j/k", desc: "navigate"},
-		{key: "enter", desc: "select"},
-		{key: "esc", desc: "back"},
+		navigationHint(mdl.keys.Up, mdl.keys.Down, "navigate"),
+		bindingHint(mdl.keys.Select, "select"),
+		bindingHint(mdl.keys.Back, "back"),
 	})
 
 	content := lipgloss.JoinVertical(lipgloss.Center, crumbs, "", panel, "", footer)
@@ -130,9 +130,9 @@ func renderWorkerHarness(mdl *model) string {
 	panel := renderPanel(&mdl.styles, "Select Harness", body, mdl.styles.menuWidth, true)
 
 	footer := renderKeyHints(&mdl.styles, []hint{
-		{key: "j/k", desc: "navigate"},
-		{key: "enter", desc: "select"},
-		{key: "esc", desc: "back"},
+		navigationHint(mdl.keys.Up, mdl.keys.Down, "navigate"),
+		bindingHint(mdl.keys.Select, "select"),
+		bindingHint(mdl.keys.Back, "back"),
 	})
 
 	content := lipgloss.JoinVertical(lipgloss.Center, crumbs, "", panel, "", footer)
@@ -157,7 +157,7 @@ func renderWorkerChecking(mdl *model) string {
 	panel := renderPanel(&mdl.styles, "Checking", body, mdl.styles.menuWidth, true)
 
 	footer := renderKeyHints(&mdl.styles, []hint{
-		{key: "esc", desc: "cancel"},
+		bindingHint(mdl.keys.Back, "cancel"),
 	})
 
 	content := lipgloss.JoinVertical(lipgloss.Center, crumbs, "", panel, "", footer)
@@ -194,9 +194,9 @@ func renderWorkerConfirm(mdl *model) string {
 	panel := renderPanel(&mdl.styles, "Confirm", body, mdl.styles.menuWidth, true)
 
 	footer := renderKeyHints(&mdl.styles, []hint{
-		{key: "tab", desc: "switch"},
-		{key: "enter", desc: "confirm"},
-		{key: "esc", desc: "back"},
+		switchHint(mdl.keys.Tab, mdl.keys.Left, mdl.keys.Right, "switch"),
+		bindingHint(mdl.keys.Select, "confirm"),
+		bindingHint(mdl.keys.Back, "back"),
 	})
 
 	content := lipgloss.JoinVertical(lipgloss.Center, crumbs, "", panel, "", footer)

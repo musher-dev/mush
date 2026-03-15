@@ -30,10 +30,10 @@ func renderBundleInput(mdl *model) string {
 	}
 
 	footer := renderKeyHints(&mdl.styles, []hint{
-		{key: "tab", desc: "switch focus"},
-		{key: "j/k", desc: "navigate"},
-		{key: "enter", desc: "select"},
-		{key: "esc", desc: "back"},
+		bindingHint(mdl.keys.Tab, "switch focus"),
+		navigationHint(mdl.keys.Up, mdl.keys.Down, "navigate"),
+		bindingHint(mdl.keys.Select, "select"),
+		bindingHint(mdl.keys.Back, "back"),
 	})
 
 	content := lipgloss.JoinVertical(lipgloss.Center, crumbs, "", panels, "", footer)
@@ -121,7 +121,7 @@ func renderBundleListRow(mdl *model, label, detail string, active bool) string {
 		style = mdl.styles.menuItemActive
 	}
 
-	labelWidth := mdl.styles.menuWidth - 16 //nolint:mnd // border+pad+prefix+detail+gap
+	labelWidth := mdl.styles.menuWidth - bundleListDetailWidthOffset
 	if labelWidth < 8 {
 		labelWidth = 8
 	}
@@ -149,7 +149,7 @@ func renderBundleActionLink(mdl *model, label string, hotkey rune, active bool) 
 		hotkeyBadge = mdl.styles.hotkeyActive.Render(fmt.Sprintf("[%c]", hotkey))
 	}
 
-	labelWidth := mdl.styles.menuWidth - 14 //nolint:mnd // border+pad+prefix+badge+gap
+	labelWidth := mdl.styles.menuWidth - bundleActionWidthOffset
 	if labelWidth < 8 {
 		labelWidth = 8
 	}
@@ -179,7 +179,7 @@ func renderBundleResolving(mdl *model) string {
 	panel := renderPanel(&mdl.styles, "Resolving", body, mdl.styles.menuWidth, true)
 
 	footer := renderKeyHints(&mdl.styles, []hint{
-		{key: "esc", desc: "cancel"},
+		bindingHint(mdl.keys.Back, "cancel"),
 	})
 
 	content := lipgloss.JoinVertical(lipgloss.Center, crumbs, "", panel, "", footer)
@@ -239,6 +239,26 @@ func renderBundleAction(mdl *model) string {
 	installBtn := renderButton(&mdl.styles, "Install", mdl.bundleAction.buttonIdx == 1)
 	buttons := lipgloss.JoinHorizontal(lipgloss.Center, runBtn, "  ", installBtn)
 
+	contentWidth := mdl.styles.menuWidth - panelInnerWidthOffset
+	if contentWidth < 20 {
+		contentWidth = 20
+	}
+
+	centeredButtons := lipgloss.NewStyle().
+		Width(contentWidth).
+		Align(lipgloss.Center).
+		Render(buttons)
+
+	helpCopy := []string{
+		"launch this bundle without installing assets",
+		"copy bundle assets into the current project",
+	}
+
+	helpText := lipgloss.NewStyle().
+		Width(contentWidth).
+		Align(lipgloss.Center).
+		Render(mdl.styles.placeholder.Render(helpCopy[mdl.bundleAction.buttonIdx]))
+
 	contentsSection := renderBundleContents(&mdl.styles, mdl.bundleAction.layers, mdl.styles.layout, mdl.styles.menuWidth)
 
 	lines := []string{
@@ -249,16 +269,17 @@ func renderBundleAction(mdl *model) string {
 		"",
 		contentsSection,
 		"",
-		buttons,
+		centeredButtons,
+		helpText,
 	}
 
 	body := strings.Join(lines, "\n")
 	panel := renderPanel(&mdl.styles, "Action", body, mdl.styles.menuWidth, true)
 
 	footer := renderKeyHints(&mdl.styles, []hint{
-		{key: "tab", desc: "switch"},
-		{key: "enter", desc: "select"},
-		{key: "esc", desc: "home"},
+		switchHint(mdl.keys.Tab, mdl.keys.Left, mdl.keys.Right, "switch"),
+		bindingHint(mdl.keys.Select, "select"),
+		bindingHint(mdl.keys.Back, "home"),
 	})
 
 	content := lipgloss.JoinVertical(lipgloss.Center, crumbs, "", panel, "", footer)
@@ -310,9 +331,9 @@ func renderBundleHarness(mdl *model) string {
 	panel := renderPanel(&mdl.styles, "Harness", body, mdl.styles.menuWidth, true)
 
 	footer := renderKeyHints(&mdl.styles, []hint{
-		{key: "j/k", desc: "navigate"},
-		{key: "enter", desc: "select"},
-		{key: "esc", desc: "back"},
+		navigationHint(mdl.keys.Up, mdl.keys.Down, "navigate"),
+		bindingHint(mdl.keys.Select, "select"),
+		bindingHint(mdl.keys.Back, "back"),
 	})
 
 	content := lipgloss.JoinVertical(lipgloss.Center, crumbs, "", panel, "", footer)
@@ -362,7 +383,7 @@ func renderBundleInstallConfirm(mdl *model) string {
 
 	if mdl.bundleInstallConfirm.hasConflicts {
 		installBtnIdx = 1
-		cancelBtnIdx = 2 //nolint:mnd // 3 focusable areas with toggle
+		cancelBtnIdx = threeOptionLastIndex
 	}
 
 	installBtn := renderButton(&mdl.styles, "Install", mdl.bundleInstallConfirm.buttonIdx == installBtnIdx)
@@ -374,9 +395,9 @@ func renderBundleInstallConfirm(mdl *model) string {
 	panel := renderPanel(&mdl.styles, "Install", body, mdl.styles.menuWidth, true)
 
 	footer := renderKeyHints(&mdl.styles, []hint{
-		{key: "tab", desc: "switch"},
-		{key: "enter", desc: "confirm"},
-		{key: "esc", desc: "back"},
+		switchHint(mdl.keys.Tab, mdl.keys.Left, mdl.keys.Right, "switch"),
+		bindingHint(mdl.keys.Select, "confirm"),
+		bindingHint(mdl.keys.Back, "back"),
 	})
 
 	content := lipgloss.JoinVertical(lipgloss.Center, crumbs, "", panel, "", footer)
@@ -427,7 +448,7 @@ func groupLayers(layers []client.BundleLayer) []assetGroup {
 			info = struct {
 				label string
 				order int
-			}{label: layer.AssetType, order: 99} //nolint:mnd // unknown types sort last
+			}{label: layer.AssetType, order: unknownAssetSortOrder}
 		}
 
 		group, exists := grouped[layer.AssetType]
@@ -490,9 +511,9 @@ func renderBundleContents(styles *theme, layers []client.BundleLayer, layout lay
 	lines := []string{title}
 
 	// Available width for content inside the panel (minus border/padding).
-	contentWidth := availWidth - 8 //nolint:mnd // border + padding
-	if contentWidth < 20 {         //nolint:mnd // minimum usable width
-		contentWidth = 20
+	contentWidth := availWidth - panelBodyWidthOffset
+	if contentWidth < minUsableContentWidth {
+		contentWidth = minUsableContentWidth
 	}
 
 	for _, group := range groups {

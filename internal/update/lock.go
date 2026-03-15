@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/musher-dev/mush/internal/paths"
+	"github.com/musher-dev/mush/internal/safeio"
 )
 
 const (
@@ -30,7 +31,7 @@ func WithAgentLock(runFn func() error) error {
 		return err
 	}
 
-	if mkdirErr := os.MkdirAll(filepath.Dir(path), 0o700); mkdirErr != nil {
+	if mkdirErr := safeio.MkdirAll(filepath.Dir(path), 0o700); mkdirErr != nil {
 		return fmt.Errorf("create lock directory: %w", mkdirErr)
 	}
 
@@ -49,7 +50,7 @@ func WithAgentLock(runFn func() error) error {
 }
 
 func tryAcquire(path string) (bool, error) {
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600) //nolint:gosec // lock path is derived from controlled state root
+	file, err := safeio.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 	if err == nil {
 		defer func() { _ = file.Close() }()
 

@@ -107,7 +107,7 @@ func TestTopBarShowsKeyboardHints(t *testing.T) {
 
 	line := topBarLine(&s)
 
-	for _, hint := range []string{"^C Int", "^S Copy", "^Q Quit"} {
+	for _, hint := range []string{"^C Int", "^Q Quit"} {
 		if !strings.Contains(line, hint) {
 			t.Fatalf("topBarLine missing hint %q in: %q", hint, line)
 		}

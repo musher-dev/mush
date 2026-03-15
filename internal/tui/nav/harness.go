@@ -32,7 +32,7 @@ func renderHarnessPanelContent(mdl *model, panelWidth int) string {
 	}
 
 	// Content width = panel width - border(2) - padding(4).
-	contentWidth := panelWidth - 6 //nolint:mnd // border + padding
+	contentWidth := panelWidth - harnessRowWidthOffset
 	if contentWidth < 10 {
 		contentWidth = 10
 	}
@@ -79,7 +79,7 @@ func renderHarnessRow(mdl *model, status harnessQuickStatus, contentWidth int, s
 	statusVisualWidth := ansi.StringWidth(statusText)
 
 	// Calculate label width: content - indicator(2) - status - gap(1).
-	labelWidth := contentWidth - 2 - statusVisualWidth - 1 //nolint:mnd // indicator + gap
+	labelWidth := contentWidth - 2 - statusVisualWidth - 1
 	if labelWidth < 4 {
 		labelWidth = 4
 	}
@@ -119,7 +119,7 @@ func renderHarnessExpandedDetail(mdl *model, status harnessQuickStatus, contentW
 	// Available width for message text after: indent(2) + symbol(2) + check(~12) + gap(2).
 	checkColWidth := 12
 
-	msgMaxWidth := contentWidth - 2 - 2 - checkColWidth - 2 //nolint:mnd // indent + symbol + check col + gap
+	msgMaxWidth := contentWidth - harnessMessageWidthOffset - checkColWidth
 	if msgMaxWidth < 10 {
 		msgMaxWidth = 10
 	}

@@ -2,6 +2,8 @@ package config
 
 import (
 	"os"
+	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -369,6 +371,103 @@ func TestConfig_UpdateCheckInterval(t *testing.T) {
 			})
 			if got != tt.want {
 				t.Errorf("UpdateCheckInterval() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestConfig_KeybindingsDefaults(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+
+	cfg := Load()
+	got := cfg.Keybindings()
+
+	if !reflect.DeepEqual(got["up"], []string{"up", "k"}) {
+		t.Fatalf("Keybindings()[\"up\"] = %v, want [up k]", got["up"])
+	}
+
+	if !reflect.DeepEqual(got["status"], []string{","}) {
+		t.Fatalf("Keybindings()[\"status\"] = %v, want [,]", got["status"])
+	}
+}
+
+func TestConfig_KeybindingsOverride(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(tmpDir, ".config"))
+
+	cfg := Load()
+	if err := cfg.Set("keybindings.up", []string{"w"}); err != nil {
+		t.Fatalf("Set(keybindings.up) error = %v", err)
+	}
+
+	reloaded := Load()
+	got := reloaded.Keybindings()
+
+	if !reflect.DeepEqual(got["up"], []string{"w"}) {
+		t.Fatalf("Keybindings()[\"up\"] = %v, want [w]", got["up"])
+	}
+
+	if !reflect.DeepEqual(got["down"], []string{"down", "j"}) {
+		t.Fatalf("Keybindings()[\"down\"] = %v, want [down j]", got["down"])
+	}
+}
+
+func TestConfig_KeybindingsInvalidValueFallsBack(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(tmpDir, ".config"))
+
+	if err := os.MkdirAll(filepath.Join(tmpDir, ".config", "mush"), 0o700); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+
+	configPath := filepath.Join(tmpDir, ".config", "mush", "config.yaml")
+	if err := os.WriteFile(configPath, []byte("keybindings:\n  up: [w, w]\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	cfg := Load()
+	got := cfg.Keybindings()
+
+	if !reflect.DeepEqual(got["up"], []string{"up", "k"}) {
+		t.Fatalf("Keybindings()[\"up\"] = %v, want fallback [up k]", got["up"])
+	}
+}
+
+func TestParseKeybindingValue(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		raw     string
+		want    []string
+		wantErr bool
+	}{
+		{name: "single", raw: "w", want: []string{"w"}},
+		{name: "list", raw: `["up", "w"]`, want: []string{"up", "w"}},
+		{name: "duplicate", raw: `["w", "w"]`, wantErr: true},
+		{name: "empty", raw: "[]", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := ParseKeybindingValue(tt.raw)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("ParseKeybindingValue() error = nil, want error")
+				}
+
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("ParseKeybindingValue() error = %v", err)
+			}
+
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Fatalf("ParseKeybindingValue() = %v, want %v", got, tt.want)
 			}
 		})
 	}

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 
 	"github.com/musher-dev/mush/internal/client"
+	"github.com/musher-dev/mush/internal/safeio"
 )
 
 //go:embed sample/skills/hello/SKILL.md
@@ -51,12 +52,12 @@ func ExtractSampleBundle() (*client.BundleResolveResponse, string, func(), error
 
 		destPath := filepath.Join(assetsDir, asset.LogicalPath)
 
-		if mkErr := os.MkdirAll(filepath.Dir(destPath), 0o755); mkErr != nil { //nolint:gosec // G301: temp dir
+		if mkErr := safeio.MkdirAll(filepath.Dir(destPath), 0o755); mkErr != nil {
 			cleanup()
 			return nil, "", nil, fmt.Errorf("create asset dir: %w", mkErr)
 		}
 
-		if wErr := os.WriteFile(destPath, data, 0o644); wErr != nil { //nolint:gosec // G306: temp file
+		if wErr := safeio.WriteFile(destPath, data, 0o644); wErr != nil {
 			cleanup()
 			return nil, "", nil, fmt.Errorf("write asset %s: %w", asset.LogicalPath, wErr)
 		}

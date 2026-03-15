@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"sort"
 	"time"
+
+	"github.com/musher-dev/mush/internal/safeio"
 )
 
 // Session describes one stored transcript session.
@@ -51,7 +53,7 @@ func ListSessions(rootDir string) ([]Session, error) {
 		dir := filepath.Join(rootDir, ent.Name())
 		metaPath := filepath.Join(dir, metaFileName)
 
-		data, err := os.ReadFile(metaPath) //nolint:gosec // controlled directory
+		data, err := safeio.ReadFile(metaPath)
 		if err != nil {
 			continue
 		}
@@ -97,7 +99,7 @@ func ReadEvents(rootDir, sessionID string) (events []Event, err error) {
 
 	gzPath := filepath.Join(rootDir, sessionID, eventsFileName)
 
-	file, err := os.Open(gzPath) //nolint:gosec // controlled path
+	file, err := safeio.Open(gzPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			// Compressed file missing — fall back to live file (crashed session).
@@ -150,7 +152,7 @@ func ReadEvents(rootDir, sessionID string) (events []Event, err error) {
 func readEventsFromLiveFile(rootDir, sessionID string) (events []Event, err error) {
 	livePath := filepath.Join(rootDir, sessionID, eventsLiveFileName)
 
-	file, err := os.Open(livePath) //nolint:gosec // controlled path
+	file, err := safeio.Open(livePath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil
@@ -215,7 +217,7 @@ func ReadLiveEventsFrom(rootDir, sessionID string, offset int64) (events []Event
 
 	path := filepath.Join(rootDir, sessionID, eventsLiveFileName)
 
-	file, err := os.Open(path) //nolint:gosec // controlled path
+	file, err := safeio.Open(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, offset, nil

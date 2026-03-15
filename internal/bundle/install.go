@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/musher-dev/mush/internal/safeio"
 )
 
 // InstalledBundle records information about an installed bundle.
@@ -59,7 +61,7 @@ func TrackInstall(workDir string, bundle *InstalledBundle) error {
 func LoadInstalled(workDir string) ([]InstalledBundle, error) {
 	path := filepath.Join(workDir, ".mush", installedFileName)
 
-	data, err := os.ReadFile(path) //nolint:gosec // G304: path from known .mush directory
+	data, err := safeio.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil
@@ -184,7 +186,7 @@ func Uninstall(workDir string, ref Ref, harness string) ([]string, error) {
 
 func saveInstalled(workDir string, installed []InstalledBundle) error {
 	mushDir := filepath.Join(workDir, ".mush")
-	if err := os.MkdirAll(mushDir, 0o755); err != nil { //nolint:gosec // G301: project dir
+	if err := safeio.MkdirAll(mushDir, 0o755); err != nil {
 		return fmt.Errorf("create .mush directory: %w", err)
 	}
 

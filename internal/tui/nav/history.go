@@ -57,15 +57,15 @@ func renderHistoryList(mdl *model) string {
 	panel := renderPanel(&mdl.styles, "Sessions", body, mdl.styles.hubWidth, true)
 
 	hints := []hint{
-		{key: "esc", desc: "back"},
-		{key: "q", desc: "quit"},
+		bindingHint(mdl.keys.Back, "back"),
+		bindingHint(mdl.keys.Quit, "quit"),
 	}
 
 	if !mdl.history.loading {
 		actionHints := []hint{
-			{key: "r", desc: "refresh"},
-			{key: "j/k", desc: "navigate"},
-			{key: "enter", desc: "view"},
+			bindingHint(mdl.keys.Retry, "refresh"),
+			navigationHint(mdl.keys.Up, mdl.keys.Down, "navigate"),
+			bindingHint(mdl.keys.Select, "view"),
 		}
 
 		hints = append(actionHints, hints...)
@@ -90,8 +90,8 @@ func renderHistoryRow(mdl *model, idx int, s transcript.Session) string {
 	}
 
 	id := s.SessionID
-	if len(id) > 8 { //nolint:mnd // truncate to 8 chars
-		id = id[:8]
+	if len(id) > historyIDWidth {
+		id = id[:historyIDWidth]
 	}
 
 	// Date: "Jan 02, 15:04"
@@ -145,7 +145,7 @@ func renderHistoryDetail(mdl *model) string {
 		header := renderHistoryDetailHeader(mdl)
 
 		// Calculate visible window.
-		chrome := 12 //nolint:mnd // UI chrome lines
+		chrome := historyChromeLines
 		visible := mdl.height - chrome
 
 		if visible < 1 {
@@ -174,9 +174,9 @@ func renderHistoryDetail(mdl *model) string {
 	panel := renderPanel(&mdl.styles, "Transcript", body, mdl.styles.hubWidth, true)
 
 	footer := renderKeyHints(&mdl.styles, []hint{
-		{key: "j/k", desc: "scroll"},
-		{key: "esc", desc: "back"},
-		{key: "q", desc: "quit"},
+		navigationHint(mdl.keys.Up, mdl.keys.Down, "scroll"),
+		bindingHint(mdl.keys.Back, "back"),
+		bindingHint(mdl.keys.Quit, "quit"),
 	})
 
 	content := lipgloss.JoinVertical(lipgloss.Center, crumbs, "", panel, "", footer)
@@ -193,8 +193,8 @@ func renderHistoryDetailHeader(mdl *model) string {
 	s := mdl.historyDetail.session
 
 	id := s.SessionID
-	if len(id) > 8 { //nolint:mnd // truncate to 8 chars
-		id = id[:8]
+	if len(id) > historyIDWidth {
+		id = id[:historyIDWidth]
 	}
 
 	dateStr := s.StartedAt.Local().Format("Jan 02, 15:04:05")
@@ -230,7 +230,7 @@ func formatDuration(dur time.Duration) string {
 		return fmt.Sprintf("%ds", int(dur.Seconds()))
 	case dur < time.Hour:
 		mins := int(dur.Minutes())
-		secs := int(dur.Seconds()) % 60 //nolint:mnd // 60 seconds in a minute
+		secs := int(dur.Seconds()) % secondsPerMinute
 
 		if secs == 0 {
 			return fmt.Sprintf("%dm", mins)
@@ -239,7 +239,7 @@ func formatDuration(dur time.Duration) string {
 		return fmt.Sprintf("%dm %ds", mins, secs)
 	default:
 		hours := int(dur.Hours())
-		mins := int(dur.Minutes()) % 60 //nolint:mnd // 60 minutes in an hour
+		mins := int(dur.Minutes()) % secondsPerMinute
 
 		if mins == 0 {
 			return fmt.Sprintf("%dh", hours)

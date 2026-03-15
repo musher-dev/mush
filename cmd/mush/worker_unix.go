@@ -79,8 +79,7 @@ Harness Types:
   (default)         Handle all supported harness types
 
 Press Ctrl+C once to interrupt Claude; press Ctrl+C again quickly to exit.
-Press Ctrl+Q to exit the watch UI immediately.
-Press Ctrl+S to toggle copy mode (Esc to return to live input).`,
+Press Ctrl+Q to exit the watch UI immediately.`,
 		Example: `  mush worker start
   mush worker start --habitat prod --queue jobs
   mush worker start --harness claude

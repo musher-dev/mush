@@ -5,9 +5,9 @@ import (
 	"crypto/x509"
 	"fmt"
 	"net/http"
-	"os"
 	"strings"
 
+	"github.com/musher-dev/mush/internal/safeio"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
@@ -24,7 +24,7 @@ func NewInstrumentedHTTPClient(caCertFile string) (*http.Client, error) {
 
 	customCAPath := strings.TrimSpace(caCertFile)
 	if customCAPath != "" {
-		pemData, err := os.ReadFile(customCAPath) //nolint:gosec // path is user-provided config
+		pemData, err := safeio.ReadFile(customCAPath)
 		if err != nil {
 			return nil, fmt.Errorf("read CA cert file %q: %w", customCAPath, err)
 		}

@@ -43,17 +43,16 @@ func TestScrollbackBuffer_PushAndLine(t *testing.T) {
 		t.Fatalf("expected Len=3, got %d", buf.Len())
 	}
 
-	// offset 0 = newest
-	if got := glyphsToString(buf.Line(0)); got != "line2" {
-		t.Fatalf("Line(0) = %q, want %q", got, "line2")
+	if got := glyphsToString(buf.Line(0)); got != "line0" {
+		t.Fatalf("Line(0) = %q, want %q", got, "line0")
 	}
 
 	if got := glyphsToString(buf.Line(1)); got != "line1" {
 		t.Fatalf("Line(1) = %q, want %q", got, "line1")
 	}
 
-	if got := glyphsToString(buf.Line(2)); got != "line0" {
-		t.Fatalf("Line(2) = %q, want %q", got, "line0")
+	if got := glyphsToString(buf.Line(2)); got != "line2" {
+		t.Fatalf("Line(2) = %q, want %q", got, "line2")
 	}
 
 	// out of range
@@ -79,16 +78,16 @@ func TestScrollbackBuffer_WrapAround(t *testing.T) {
 		t.Fatalf("expected Len=3, got %d", buf.Len())
 	}
 
-	if got := glyphsToString(buf.Line(0)); got != "e" {
-		t.Fatalf("Line(0) = %q, want %q", got, "e")
+	if got := glyphsToString(buf.Line(0)); got != "c" {
+		t.Fatalf("Line(0) = %q, want %q", got, "c")
 	}
 
 	if got := glyphsToString(buf.Line(1)); got != "d" {
 		t.Fatalf("Line(1) = %q, want %q", got, "d")
 	}
 
-	if got := glyphsToString(buf.Line(2)); got != "c" {
-		t.Fatalf("Line(2) = %q, want %q", got, "c")
+	if got := glyphsToString(buf.Line(2)); got != "e" {
+		t.Fatalf("Line(2) = %q, want %q", got, "e")
 	}
 
 	if line := buf.Line(3); line != nil {
@@ -109,7 +108,7 @@ func TestScrollbackBuffer_PushCopiesData(t *testing.T) {
 	}
 }
 
-func TestScrollOffset_AnchoredDuringNewOutput(t *testing.T) {
+func TestViewportTop_AnchoredDuringNewOutput(t *testing.T) {
 	buf := newScrollbackBuffer(100)
 
 	// Push some initial lines.
@@ -117,9 +116,8 @@ func TestScrollOffset_AnchoredDuringNewOutput(t *testing.T) {
 	buf.Push(makeGlyphs("line1"))
 	buf.Push(makeGlyphs("line2"))
 
-	// Simulate user scrolled up 2 lines — viewing line1 and line0.
-	scrollOffset := 2
-	target := glyphsToString(buf.Line(scrollOffset)) // "line0"
+	viewportTop := 1
+	target := glyphsToString(buf.Line(viewportTop))
 
 	// New output arrives: 3 more lines scroll off into the buffer.
 	buf.Push(makeGlyphs("line3"))
@@ -128,21 +126,21 @@ func TestScrollOffset_AnchoredDuringNewOutput(t *testing.T) {
 
 	scrolledOff := 3
 
-	// Anchor the offset.
-	if scrolledOff > 0 && scrollOffset > 0 {
-		scrollOffset += scrolledOff
-		if scrollOffset > buf.Len() {
-			scrollOffset = buf.Len()
+	// Anchoring retained history rows should keep the same absolute index.
+	if scrolledOff > 0 && viewportTop >= buf.Len()-scrolledOff {
+		viewportTop += scrolledOff
+		if viewportTop > buf.Len()-1 {
+			viewportTop = buf.Len() - 1
 		}
 	}
 
-	got := glyphsToString(buf.Line(scrollOffset))
+	got := glyphsToString(buf.Line(viewportTop))
 	if got != target {
-		t.Fatalf("after anchoring, Line(%d) = %q, want %q", scrollOffset, got, target)
+		t.Fatalf("after anchoring, Line(%d) = %q, want %q", viewportTop, got, target)
 	}
 }
 
-func TestScrollOffset_ClampedOnWrapAround(t *testing.T) {
+func TestViewportTop_ClampedOnWrapAround(t *testing.T) {
 	buf := newScrollbackBuffer(5)
 
 	// Fill buffer to capacity.
@@ -150,7 +148,7 @@ func TestScrollOffset_ClampedOnWrapAround(t *testing.T) {
 		buf.Push(makeGlyphs("old"))
 	}
 
-	scrollOffset := 4 // near the top of history
+	viewportTop := 4 // near the newest retained row
 
 	// Push enough to wrap the ring buffer.
 	for range 10 {
@@ -159,43 +157,19 @@ func TestScrollOffset_ClampedOnWrapAround(t *testing.T) {
 
 	scrolledOff := 10
 
-	if scrolledOff > 0 && scrollOffset > 0 {
-		scrollOffset += scrolledOff
-		if scrollOffset > buf.Len() {
-			scrollOffset = buf.Len()
+	if scrolledOff > 0 && viewportTop >= buf.Len()-scrolledOff {
+		viewportTop += scrolledOff
+		if viewportTop > buf.Len()-1 {
+			viewportTop = buf.Len() - 1
 		}
 	}
 
-	if scrollOffset != buf.Len() {
-		t.Fatalf("expected offset clamped to %d, got %d", buf.Len(), scrollOffset)
+	if viewportTop != 4 {
+		t.Fatalf("expected viewportTop to stay anchored at 4, got %d", viewportTop)
 	}
 
-	// Len() is one past the last valid index, so Line(Len()) should be nil.
-	// This confirms the clamp prevents out-of-bounds reads.
-	if line := buf.Line(scrollOffset); line != nil {
-		t.Fatalf("expected nil for Line(%d), got non-nil", scrollOffset)
-	}
-}
-
-func TestScrollOffset_UnchangedWhenLive(t *testing.T) {
-	buf := newScrollbackBuffer(100)
-	scrollOffset := 0 // live mode — not scrolled
-
-	buf.Push(makeGlyphs("line0"))
-	buf.Push(makeGlyphs("line1"))
-
-	scrolledOff := 2
-
-	// Guard should prevent modification when scrollOffset == 0.
-	if scrolledOff > 0 && scrollOffset > 0 {
-		scrollOffset += scrolledOff
-		if scrollOffset > buf.Len() {
-			scrollOffset = buf.Len()
-		}
-	}
-
-	if scrollOffset != 0 {
-		t.Fatalf("expected scrollOffset to remain 0 in live mode, got %d", scrollOffset)
+	if line := buf.Line(viewportTop); line == nil {
+		t.Fatalf("expected retained line for Line(%d), got nil", viewportTop)
 	}
 }
 
@@ -204,5 +178,21 @@ func TestScrollbackBuffer_DefaultCapacity(t *testing.T) {
 
 	if buf.capacity != defaultScrollbackCapacity {
 		t.Fatalf("expected default capacity %d, got %d", defaultScrollbackCapacity, buf.capacity)
+	}
+}
+
+func TestScrollbackBuffer_Clear(t *testing.T) {
+	buf := newScrollbackBuffer(5)
+	buf.Push(makeGlyphs("line0"))
+	buf.Push(makeGlyphs("line1"))
+
+	buf.Clear()
+
+	if buf.Len() != 0 {
+		t.Fatalf("Len() = %d, want 0", buf.Len())
+	}
+
+	if line := buf.Line(0); line != nil {
+		t.Fatalf("expected nil after Clear(), got %v", line)
 	}
 }

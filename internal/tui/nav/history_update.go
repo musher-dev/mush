@@ -136,7 +136,7 @@ func (m *model) historyViewDetail() (tea.Model, tea.Cmd) {
 // historyDetailMaxScroll computes the maximum scroll offset for the detail view.
 func (m *model) historyDetailMaxScroll() int {
 	// Reserve lines for chrome: breadcrumb(1) + gap(1) + panel border/padding(5) + header(2) + gap(1) + footer(2).
-	chrome := 12 //nolint:mnd // UI chrome lines
+	chrome := historyChromeLines
 	visible := m.height - chrome
 
 	if visible < 1 {
