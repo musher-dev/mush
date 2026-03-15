@@ -137,8 +137,8 @@ func TestHandleMouse_DoesNotForwardWhenChildDoesNotOwnMouse(t *testing.T) {
 		t.Fatalf("WriteInput calls = %d, want 0", len(exec.writes))
 	}
 
-	if r.mouseCaptureEnabled {
-		t.Fatal("mouseCaptureEnabled = true, want false without child mouse mode")
+	if !r.mouseCaptureEnabled {
+		t.Fatal("mouseCaptureEnabled = false, want true (runtime always captures mouse for its own interactions)")
 	}
 }
 

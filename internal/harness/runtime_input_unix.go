@@ -34,12 +34,19 @@ func (r *embeddedRuntime) handleKey(ev *tcell.EventKey) bool {
 		case tcell.KeyPgDn:
 			r.scrollDown(max(layout.PtyRowsForFrame(&r.frame)-1, 1))
 			return false
-		case tcell.KeyHome:
-			r.scrollToTop()
-			return false
-		case tcell.KeyEnd, tcell.KeyEscape:
-			r.scrollToBottom()
-			return false
+		}
+
+		// Only intercept Home/End/Escape when scrolled back — at live
+		// tail these keys should pass through to the child process.
+		if !r.followTail {
+			switch ev.Key() {
+			case tcell.KeyHome:
+				r.scrollToTop()
+				return false
+			case tcell.KeyEnd, tcell.KeyEscape:
+				r.scrollToBottom()
+				return false
+			}
 		}
 	}
 
@@ -204,7 +211,11 @@ func (r *embeddedRuntime) syncMouseCaptureLocked() {
 		return
 	}
 
-	shouldCapture := r.childOwnsMouse()
+	// Always capture mouse events — the runtime needs them for its own
+	// viewport interactions (wheel scroll, scrollbar drag, sidebar clicks)
+	// regardless of whether the child process owns the mouse. Child
+	// forwarding is gated inside handleMouse via childOwnsMouse().
+	shouldCapture := true
 	if shouldCapture == r.mouseCaptureEnabled {
 		return
 	}

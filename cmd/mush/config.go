@@ -65,14 +65,14 @@ func newConfigListCmd() *cobra.Command {
 				return nil
 			}
 
-			keys := make([]string, 0, len(settings))
-			for key := range flattenSettings(settings) {
+			flat := flattenSettings(settings)
+
+			keys := make([]string, 0, len(flat))
+			for key := range flat {
 				keys = append(keys, key)
 			}
 
 			sort.Strings(keys)
-
-			flat := flattenSettings(settings)
 
 			for _, key := range keys {
 				value := flat[key]

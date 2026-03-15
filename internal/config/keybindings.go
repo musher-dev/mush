@@ -165,5 +165,14 @@ func coerceKeybindingKeys(raw interface{}) ([]string, error) {
 }
 
 func normalizeKeybindingToken(raw string) string {
-	return strings.ToLower(strings.TrimSpace(raw))
+	token := strings.TrimSpace(raw)
+
+	// Preserve case for single-character rune tokens (e.g. "G" vs "g")
+	// so users can bind shifted keys. Only lowercase named keys like
+	// "enter", "esc", "ctrl+c", "up", etc.
+	if len(token) > 1 {
+		token = strings.ToLower(token)
+	}
+
+	return token
 }
