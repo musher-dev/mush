@@ -484,12 +484,6 @@ func (r *embeddedRuntime) handleKey(ev *tcell.EventKey) bool {
 				r.uiMu.Unlock()
 
 				return false
-			default:
-				// Any forwarded key returns to live view.
-				r.uiMu.Lock()
-				r.resetScroll()
-				r.drawLocked()
-				r.uiMu.Unlock()
 			}
 		} else if ev.Key() == tcell.KeyPgUp {
 			r.scrollUp(max(layout.PtyRowsForFrame(r.frame)-1, 1))
@@ -500,6 +494,14 @@ func (r *embeddedRuntime) handleKey(ev *tcell.EventKey) bool {
 	keyBytes := encodeTCellKey(ev)
 	if len(keyBytes) == 0 {
 		return false
+	}
+
+	// Reset scroll to live view when we have actual bytes to forward.
+	if r.scrollOffset > 0 && !r.isAltScreenActive() {
+		r.uiMu.Lock()
+		r.resetScroll()
+		r.drawLocked()
+		r.uiMu.Unlock()
 	}
 
 	for _, harnessType := range r.supportedHarnesses {
@@ -647,12 +649,14 @@ const scrollLinesPerTick = 3
 func (r *embeddedRuntime) handleMouse(ev *tcell.EventMouse) {
 	switch ev.Buttons() {
 	case tcell.WheelUp:
+		// During alt-screen, suppress local scroll. Wheel-to-PTY forwarding
+		// is not implemented (tcell intercepts wheel events before the PTY).
 		if r.isAltScreenActive() {
 			return
 		}
 
 		x, y := ev.Position()
-		if y < layout.TopBarHeight || (r.frame.SidebarVisible && x < r.frame.SidebarWidth) {
+		if y < layout.TopBarHeight || (r.frame.SidebarVisible && x < r.frame.PaneXStart-1) {
 			return
 		}
 
@@ -663,7 +667,7 @@ func (r *embeddedRuntime) handleMouse(ev *tcell.EventMouse) {
 		}
 
 		x, y := ev.Position()
-		if y < layout.TopBarHeight || (r.frame.SidebarVisible && x < r.frame.SidebarWidth) {
+		if y < layout.TopBarHeight || (r.frame.SidebarVisible && x < r.frame.PaneXStart-1) {
 			return
 		}
 

@@ -53,7 +53,7 @@ type JobLoop struct {
 	refreshInterval time.Duration
 	runnerConfig    *client.RunnerConfigResponse
 
-	// Callbacks wired by the runtime host (embeddedRuntime or RootModel).
+	// Callbacks wired by the runtime host (embeddedRuntime).
 	drawStatusBar func()
 	infof         func(format string, args ...any)
 	signalDone    func()
