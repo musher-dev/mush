@@ -134,7 +134,7 @@ func AuthFailed(cause error) *CLIError {
 	switch {
 	case containsAny(strings.ToLower(errorString(cause)), "certificate", "x509", "tls"):
 		hint = fmt.Sprintf(
-			"TLS trust failed. If you are behind a corporate proxy, set MUSHER_NETWORK_CA_CERT_FILE to your CA bundle. See: %s",
+			"TLS trust failed. If you are behind a corporate proxy, set MUSH_NETWORK_CA_CERT_FILE to your CA bundle. See: %s",
 			tlsDocURL,
 		)
 		errorCode = "ERR-NET-001"
@@ -162,7 +162,7 @@ func CredentialsInvalid(cause error) *CLIError {
 	switch {
 	case containsAny(strings.ToLower(errorString(cause)), "certificate", "x509", "tls"):
 		hint = fmt.Sprintf(
-			"TLS trust failed. If you are behind a corporate proxy, set MUSHER_NETWORK_CA_CERT_FILE to your CA bundle. See: %s",
+			"TLS trust failed. If you are behind a corporate proxy, set MUSH_NETWORK_CA_CERT_FILE to your CA bundle. See: %s",
 			tlsDocURL,
 		)
 		errorCode = "ERR-NET-001"
@@ -272,7 +272,7 @@ func QueueRequired() *CLIError {
 func APIKeyEmpty() *CLIError {
 	return &CLIError{
 		Message: "API key cannot be empty",
-		Hint:    "Enter a valid API key or set MUSHER_API_KEY environment variable",
+		Hint:    "Enter a valid API key or set MUSH_API_KEY environment variable",
 		Code:    ExitAuth,
 	}
 }

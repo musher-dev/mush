@@ -27,7 +27,7 @@ func newUpdateCmd() *cobra.Command {
 Downloads the new binary, verifies its checksum, and replaces the current
 executable. If the binary is not writable, sudo is requested automatically.
 
-Set MUSHER_UPDATE_DISABLED=1 to disable update checks.`,
+Set MUSH_UPDATE_DISABLED=1 to disable update checks.`,
 		Example: `  mush update
   mush update --version 1.2.3
   mush update --force`,

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 	"time"
@@ -35,19 +36,19 @@ func configureRootRuntime(
 	logFile string,
 	logStderr string,
 ) (*rootRuntimeState, error) {
-	out.JSON = pickBoolFlagOrEnv(jsonOutput, "MUSHER_JSON", "MUSH_JSON")
-	out.Quiet = pickBoolFlagOrEnv(quiet, "MUSHER_QUIET", "MUSH_QUIET")
-	out.NoInput = pickBoolFlagOrEnv(noInput, "MUSHER_NO_INPUT", "MUSH_NO_INPUT") || pickBoolFlagOrEnv(false, "CI")
+	out.JSON = pickBoolFlagOrEnv(jsonOutput, "MUSH_JSON", "MUSH_JSON")
+	out.Quiet = pickBoolFlagOrEnv(quiet, "MUSH_QUIET", "MUSH_QUIET")
+	out.NoInput = pickBoolFlagOrEnv(noInput, "MUSH_NO_INPUT", "MUSH_NO_INPUT") || pickBoolFlagOrEnv(false, "CI")
 
 	if noColor {
 		out.SetNoColor(true)
 	}
 
 	logCfg := observability.Config{
-		Level:          pickFlagOrEnv(logLevel, "MUSHER_LOG_LEVEL", "info"),
-		Format:         pickFlagOrEnv(logFormat, "MUSHER_LOG_FORMAT", "json"),
-		LogFile:        pickFlagOrEnv(logFile, "MUSHER_LOG_FILE", ""),
-		StderrMode:     pickFlagOrEnv(logStderr, "MUSHER_LOG_STDERR", "auto"),
+		Level:          pickFlagOrEnv(logLevel, "MUSH_LOG_LEVEL", "info"),
+		Format:         pickFlagOrEnv(logFormat, "MUSH_LOG_FORMAT", "json"),
+		LogFile:        pickFlagOrEnv(logFile, "MUSH_LOG_FILE", ""),
+		StderrMode:     pickFlagOrEnv(logStderr, "MUSH_LOG_STDERR", "auto"),
 		InteractiveTTY: out.Terminal().IsTTY && isInteractiveCommand(cmd.CommandPath()),
 		SessionID:      uuid.NewString(),
 		CommandPath:    cmd.CommandPath(),
@@ -63,6 +64,8 @@ func configureRootRuntime(
 			Code:    clierrors.ExitUsage,
 		}
 	}
+
+	slog.SetDefault(logger)
 
 	ctx := out.WithContext(cmd.Context())
 	ctx = observability.WithLogger(ctx, logger)
@@ -146,7 +149,7 @@ func pickFlagOrEnv(flagValue, envKey, fallback string) string {
 
 // experimentalOn returns true if experimental features are enabled via flag, env, or config.
 func experimentalOn() bool {
-	if pickBoolFlagOrEnv(false, "MUSHER_EXPERIMENTAL", "MUSH_EXPERIMENTAL") {
+	if pickBoolFlagOrEnv(false, "MUSH_EXPERIMENTAL", "MUSH_EXPERIMENTAL") {
 		return true
 	}
 
@@ -208,7 +211,7 @@ func shouldShowTUI(noTUI bool, out *output.Writer) bool {
 		return false
 	}
 
-	if pickBoolFlagOrEnv(noTUI, "MUSHER_NO_TUI", "MUSH_NO_TUI") {
+	if pickBoolFlagOrEnv(noTUI, "MUSH_NO_TUI", "MUSH_NO_TUI") {
 		return false
 	}
 

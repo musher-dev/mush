@@ -768,6 +768,10 @@ func TestEndToEnd(t *testing.T) {
 	})
 
 	t.Run("install tmux via --install-tmux", func(t *testing.T) {
+		if runtime.GOOS != "linux" {
+			t.Skip("apt-get tmux install test is Linux-only")
+		}
+
 		archiveBytes, checksum := makeFakeArchive(t)
 		archiveName := hostArchiveName(t, "0.1.0")
 		checksumContent := fmt.Sprintf("%s  %s\n", checksum, archiveName)

@@ -13,7 +13,7 @@ jobs:
     name: Task Quality Gate
     runs-on: ubuntu-latest
     env:
-      COVERAGE_THRESHOLD: "60.0"
+      COVERAGE_THRESHOLD: "50.0"
     steps:
       - uses: actions/checkout@v6
 

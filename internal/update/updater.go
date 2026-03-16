@@ -17,9 +17,9 @@ import (
 
 const repoSlug = "musher-dev/mush"
 
-// IsDisabled returns true if update checks are disabled via MUSHER_UPDATE_DISABLED (or legacy MUSH_UPDATE_DISABLED).
+// IsDisabled returns true if update checks are disabled via MUSH_UPDATE_DISABLED.
 func IsDisabled() bool {
-	for _, key := range []string{"MUSHER_UPDATE_DISABLED", "MUSH_UPDATE_DISABLED"} {
+	for _, key := range []string{"MUSH_UPDATE_DISABLED"} {
 		v := os.Getenv(key)
 		if v == "1" || strings.EqualFold(v, "true") {
 			return true

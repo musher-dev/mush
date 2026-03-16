@@ -106,7 +106,14 @@ sleep 30
 	}
 
 	trace := string(traceData)
-	if !strings.Contains(trace, "PWD="+workDir) {
+
+	// On macOS, $PWD may resolve symlinks (e.g., /tmp → /private/tmp).
+	resolvedWorkDir := workDir
+	if resolved, err := filepath.EvalSymlinks(workDir); err == nil {
+		resolvedWorkDir = resolved
+	}
+
+	if !strings.Contains(trace, "PWD="+workDir) && !strings.Contains(trace, "PWD="+resolvedWorkDir) {
 		t.Fatalf("trace missing working directory, trace=%q", trace)
 	}
 

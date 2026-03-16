@@ -88,7 +88,7 @@ func resolveHabitatID(ctx context.Context, c *client.Client, habitatFlag string,
 		promptSelect: func(items []client.HabitatSummary, out *output.Writer) (client.HabitatSummary, error) {
 			selected, promptErr := prompt.SelectHabitat(items, out)
 			if promptErr != nil {
-				return client.HabitatSummary{}, fmt.Errorf("prompt select habitat: %w", promptErr)
+				return client.HabitatSummary{}, clierrors.Wrap(clierrors.ExitGeneral, "prompt select habitat", promptErr)
 			}
 
 			return *selected, nil
@@ -134,7 +134,7 @@ func resolveQueue(
 		promptSelect: func(items []client.QueueSummary, out *output.Writer) (client.QueueSummary, error) {
 			selected, promptErr := prompt.SelectQueue(items, out)
 			if promptErr != nil {
-				return client.QueueSummary{}, fmt.Errorf("prompt select queue: %w", promptErr)
+				return client.QueueSummary{}, clierrors.Wrap(clierrors.ExitGeneral, "prompt select queue", promptErr)
 			}
 
 			return *selected, nil
