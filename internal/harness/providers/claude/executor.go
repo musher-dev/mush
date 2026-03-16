@@ -18,6 +18,7 @@ import (
 
 	"github.com/musher-dev/mush/internal/ansi"
 	"github.com/musher-dev/mush/internal/client"
+	"github.com/musher-dev/mush/internal/executil"
 	"github.com/musher-dev/mush/internal/harness/harnesstype"
 )
 
@@ -404,7 +405,10 @@ func (e *Executor) startPTY(ctx context.Context) error {
 		slog.Any("harness.args", args),
 	)
 
-	cmd := exec.CommandContext(ctx, "claude", args...) //nolint:gosec // args are entirely controlled by our code
+	cmd, err := executil.CommandContext(ctx, "claude", args...)
+	if err != nil {
+		return fmt.Errorf("resolve claude command: %w", err)
+	}
 
 	cmd.Env = append(os.Environ(),
 		"TERM=xterm-256color",

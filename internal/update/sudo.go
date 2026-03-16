@@ -5,10 +5,10 @@ package update
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"syscall"
 
+	"github.com/musher-dev/mush/internal/executil"
 	"golang.org/x/sys/unix"
 )
 
@@ -21,7 +21,7 @@ func NeedsElevation(binaryPath string) bool {
 // ReExecWithSudo re-launches the current command under sudo.
 // This replaces the current process via syscall.Exec.
 func ReExecWithSudo() error {
-	sudoPath, err := exec.LookPath("sudo")
+	sudoPath, err := executil.LookPath("sudo")
 	if err != nil {
 		return fmt.Errorf("sudo not found in PATH; run this command with elevated permissions manually")
 	}

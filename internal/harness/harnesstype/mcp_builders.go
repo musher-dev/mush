@@ -49,8 +49,26 @@ type cursorMCPServer struct {
 	HTTPHeaders map[string]string `json:"httpHeaders,omitempty"`
 }
 
+func authorizationValue(tokenType, token string) string {
+	authScheme := "Bearer"
+	if strings.EqualFold(tokenType, "basic") {
+		authScheme = "Basic"
+	}
+
+	return fmt.Sprintf("%s %s", authScheme, token)
+}
+
+func marshalMCPConfig(cfg any, providerName string) ([]byte, error) {
+	encodedConfig, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("marshal %s mcp config: %w", providerName, err)
+	}
+
+	return encodedConfig, nil
+}
+
 // BuildJSONMCPConfig builds a Claude-format JSON MCP config from provider specs.
-func BuildJSONMCPConfig(specs []MCPProviderSpec) ([]byte, error) { //nolint:dupl // distinct struct types with different JSON field names
+func BuildJSONMCPConfig(specs []MCPProviderSpec) ([]byte, error) {
 	if len(specs) == 0 {
 		return nil, nil
 	}
@@ -59,26 +77,16 @@ func BuildJSONMCPConfig(specs []MCPProviderSpec) ([]byte, error) { //nolint:dupl
 		MCPServers: make(map[string]claudeMCPServer, len(specs)),
 	}
 	for _, spec := range specs {
-		authScheme := "Bearer"
-		if strings.EqualFold(spec.TokenType, "basic") {
-			authScheme = "Basic"
-		}
-
 		cfg.MCPServers[spec.Name] = claudeMCPServer{
 			Type: "http",
 			URL:  spec.URL,
 			Headers: map[string]string{
-				"Authorization": fmt.Sprintf("%s %s", authScheme, spec.Token),
+				"Authorization": authorizationValue(spec.TokenType, spec.Token),
 			},
 		}
 	}
 
-	encodedConfig, err := json.MarshalIndent(cfg, "", "  ")
-	if err != nil {
-		return nil, fmt.Errorf("marshal claude mcp config: %w", err)
-	}
-
-	return encodedConfig, nil
+	return marshalMCPConfig(cfg, "claude")
 }
 
 // BuildOpenCodeMCPConfig builds an OpenCode JSON config with MCP providers.
@@ -93,27 +101,17 @@ func BuildOpenCodeMCPConfig(specs []MCPProviderSpec) ([]byte, error) {
 	}
 
 	for _, spec := range specs {
-		authScheme := "Bearer"
-		if strings.EqualFold(spec.TokenType, "basic") {
-			authScheme = "Basic"
-		}
-
 		cfg.MCP[spec.Name] = openCodeMCPNode{
 			Type:    "remote",
 			URL:     spec.URL,
 			Enabled: true,
 			Headers: map[string]string{
-				"Authorization": fmt.Sprintf("%s %s", authScheme, spec.Token),
+				"Authorization": authorizationValue(spec.TokenType, spec.Token),
 			},
 		}
 	}
 
-	encodedConfig, err := json.MarshalIndent(cfg, "", "  ")
-	if err != nil {
-		return nil, fmt.Errorf("marshal opencode mcp config: %w", err)
-	}
-
-	return encodedConfig, nil
+	return marshalMCPConfig(cfg, "opencode")
 }
 
 // BuildGeminiMCPConfig builds a Gemini settings.json-compatible MCP config.
@@ -127,29 +125,19 @@ func BuildGeminiMCPConfig(specs []MCPProviderSpec) ([]byte, error) {
 	}
 
 	for _, spec := range specs {
-		authScheme := "Bearer"
-		if strings.EqualFold(spec.TokenType, "basic") {
-			authScheme = "Basic"
-		}
-
 		cfg.MCPServers[spec.Name] = geminiMCPServer{
 			HTTPURL: spec.URL,
 			Headers: map[string]string{
-				"Authorization": fmt.Sprintf("%s %s", authScheme, spec.Token),
+				"Authorization": authorizationValue(spec.TokenType, spec.Token),
 			},
 		}
 	}
 
-	encodedConfig, err := json.MarshalIndent(cfg, "", "  ")
-	if err != nil {
-		return nil, fmt.Errorf("marshal gemini mcp config: %w", err)
-	}
-
-	return encodedConfig, nil
+	return marshalMCPConfig(cfg, "gemini")
 }
 
 // BuildCursorMCPConfig builds a Cursor agent.json-compatible MCP config.
-func BuildCursorMCPConfig(specs []MCPProviderSpec) ([]byte, error) { //nolint:dupl // distinct struct types with different JSON field names
+func BuildCursorMCPConfig(specs []MCPProviderSpec) ([]byte, error) {
 	if len(specs) == 0 {
 		return nil, nil
 	}
@@ -159,26 +147,16 @@ func BuildCursorMCPConfig(specs []MCPProviderSpec) ([]byte, error) { //nolint:du
 	}
 
 	for _, spec := range specs {
-		authScheme := "Bearer"
-		if strings.EqualFold(spec.TokenType, "basic") {
-			authScheme = "Basic"
-		}
-
 		cfg.MCPServers[spec.Name] = cursorMCPServer{
 			Type: "http",
 			URL:  spec.URL,
 			HTTPHeaders: map[string]string{
-				"Authorization": fmt.Sprintf("%s %s", authScheme, spec.Token),
+				"Authorization": authorizationValue(spec.TokenType, spec.Token),
 			},
 		}
 	}
 
-	encodedConfig, err := json.MarshalIndent(cfg, "", "  ")
-	if err != nil {
-		return nil, fmt.Errorf("marshal cursor mcp config: %w", err)
-	}
-
-	return encodedConfig, nil
+	return marshalMCPConfig(cfg, "cursor")
 }
 
 // BuildTOMLMCPConfig builds a Codex-format TOML MCP config from provider specs.
@@ -194,16 +172,11 @@ func BuildTOMLMCPConfig(specs []MCPProviderSpec) ([]byte, error) {
 			b.WriteString("\n")
 		}
 
-		authScheme := "Bearer"
-		if strings.EqualFold(spec.TokenType, "basic") {
-			authScheme = "Basic"
-		}
-
 		fmt.Fprintf(&b, "[mcp_servers.%s]\n", spec.Name)
 		fmt.Fprintf(&b, "type = \"http\"\n")
 		fmt.Fprintf(&b, "url = %q\n", spec.URL)
 		fmt.Fprintf(&b, "\n[mcp_servers.%s.http_headers]\n", spec.Name)
-		fmt.Fprintf(&b, "Authorization = %q\n", fmt.Sprintf("%s %s", authScheme, spec.Token))
+		fmt.Fprintf(&b, "Authorization = %q\n", authorizationValue(spec.TokenType, spec.Token))
 	}
 
 	return []byte(b.String()), nil

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/musher-dev/mush/internal/client"
 	clierrors "github.com/musher-dev/mush/internal/errors"
@@ -9,67 +10,106 @@ import (
 	"github.com/musher-dev/mush/internal/prompt"
 )
 
-// resolveHabitatID determines the habitat ID to use, either from the flag,
-// non-interactive auto-selection, or interactive selection.
-func resolveHabitatID(ctx context.Context, c *client.Client, habitatFlag string, out *output.Writer) (string, error) {
-	// Priority: flag > non-interactive auto-selection > interactive selection
-	if habitatFlag != "" {
-		// Fetch habitats to resolve slug to ID
-		habitats, err := c.ListHabitats(ctx)
-		if err != nil {
-			return "", clierrors.Wrap(clierrors.ExitNetwork, "Failed to fetch habitats", err).
-				WithHint("Check your network connection and API credentials")
-		}
+type selectableItem[T any] struct {
+	items          []T
+	resolveByInput func(T, string) bool
+	label          func(T) string
+	promptSelect   func([]T, *output.Writer) (T, error)
+	notFound       func(string) error
+	noneAvailable  error
+	required       error
+	cancelMessage  string
+	cancelHint     string
+	selectError    string
+}
 
-		// Try to find by slug or ID
-		for _, h := range habitats {
-			if h.Slug == habitatFlag || h.ID == habitatFlag {
-				out.Print("Connecting to habitat: %s (%s)\n", h.Name, h.Slug)
-				return h.ID, nil
+func resolveSelectable[T any](
+	input string,
+	out *output.Writer,
+	cfg selectableItem[T],
+) (T, error) {
+	var zero T
+
+	if input != "" {
+		for _, item := range cfg.items {
+			if cfg.resolveByInput(item, input) {
+				out.Print("%s\n", cfg.label(item))
+				return item, nil
 			}
 		}
 
-		return "", clierrors.HabitatNotFound(habitatFlag)
+		return zero, cfg.notFound(input)
 	}
 
-	// Interactive selection
+	if len(cfg.items) == 0 {
+		return zero, cfg.noneAvailable
+	}
+
+	if out.NoInput {
+		if len(cfg.items) == 1 {
+			out.Print("%s\n", cfg.label(cfg.items[0]))
+			return cfg.items[0], nil
+		}
+
+		return zero, cfg.required
+	}
+
+	selected, err := cfg.promptSelect(cfg.items, out)
+	if err != nil {
+		if prompt.IsCanceled(err) {
+			return zero, clierrors.New(clierrors.ExitUsage, cfg.cancelMessage).
+				WithHint(cfg.cancelHint)
+		}
+
+		return zero, clierrors.Wrap(clierrors.ExitGeneral, cfg.selectError, err)
+	}
+
+	out.Print("%s\n", cfg.label(selected))
+
+	return selected, nil
+}
+
+// resolveHabitatID determines the habitat ID to use.
+func resolveHabitatID(ctx context.Context, c *client.Client, habitatFlag string, out *output.Writer) (string, error) {
 	habitats, err := c.ListHabitats(ctx)
 	if err != nil {
 		return "", clierrors.Wrap(clierrors.ExitNetwork, "Failed to fetch habitats", err).
 			WithHint("Check your network connection and API credentials")
 	}
 
-	if len(habitats) == 0 {
-		return "", clierrors.NoHabitats()
-	}
+	selected, err := resolveSelectable(habitatFlag, out, selectableItem[client.HabitatSummary]{
+		items: habitats,
+		resolveByInput: func(item client.HabitatSummary, input string) bool {
+			return item.Slug == input || item.ID == input
+		},
+		label: func(item client.HabitatSummary) string {
+			return fmt.Sprintf("Connecting to habitat: %s (%s)", item.Name, item.Slug)
+		},
+		promptSelect: func(items []client.HabitatSummary, out *output.Writer) (client.HabitatSummary, error) {
+			selected, promptErr := prompt.SelectHabitat(items, out)
+			if promptErr != nil {
+				return client.HabitatSummary{}, fmt.Errorf("prompt select habitat: %w", promptErr)
+			}
 
-	// Non-interactive mode: auto-select single habitat or error
-	if out.NoInput {
-		if len(habitats) == 1 {
-			out.Print("Connecting to habitat: %s (%s)\n", habitats[0].Name, habitats[0].Slug)
-			return habitats[0].ID, nil
-		}
-
-		return "", clierrors.HabitatRequired()
-	}
-
-	// Interactive mode: always prompt
-	selected, err := prompt.SelectHabitat(habitats, out)
+			return *selected, nil
+		},
+		notFound: func(input string) error {
+			return clierrors.HabitatNotFound(input)
+		},
+		noneAvailable: clierrors.NoHabitats(),
+		required:      clierrors.HabitatRequired(),
+		cancelMessage: "Habitat selection canceled",
+		cancelHint:    "Pass --habitat to select non-interactively",
+		selectError:   "Failed to select habitat",
+	})
 	if err != nil {
-		if prompt.IsCanceled(err) {
-			return "", clierrors.New(clierrors.ExitUsage, "Habitat selection canceled").
-				WithHint("Pass --habitat to select non-interactively")
-		}
-
-		return "", clierrors.Wrap(clierrors.ExitGeneral, "Failed to select habitat", err)
+		return "", err
 	}
-
-	out.Print("Connecting to habitat: %s (%s)\n", selected.Name, selected.Slug)
 
 	return selected.ID, nil
 }
 
-// resolveQueue determines the queue to use, either from flag validation or interactive selection.
+// resolveQueue determines the queue to use.
 func resolveQueue(
 	ctx context.Context,
 	c *client.Client,
@@ -83,43 +123,29 @@ func resolveQueue(
 			WithHint("Check your network connection and API credentials")
 	}
 
-	if queueFlag != "" {
-		for _, q := range queues {
-			if q.ID == queueFlag || q.Slug == queueFlag {
-				out.Print("Filtering by queue: %s (%s)\n", q.Name, q.Slug)
-				return q, nil
+	return resolveSelectable(queueFlag, out, selectableItem[client.QueueSummary]{
+		items: queues,
+		resolveByInput: func(item client.QueueSummary, input string) bool {
+			return item.ID == input || item.Slug == input
+		},
+		label: func(item client.QueueSummary) string {
+			return fmt.Sprintf("Filtering by queue: %s (%s)", item.Name, item.Slug)
+		},
+		promptSelect: func(items []client.QueueSummary, out *output.Writer) (client.QueueSummary, error) {
+			selected, promptErr := prompt.SelectQueue(items, out)
+			if promptErr != nil {
+				return client.QueueSummary{}, fmt.Errorf("prompt select queue: %w", promptErr)
 			}
-		}
 
-		return client.QueueSummary{}, clierrors.QueueNotFound(queueFlag)
-	}
-
-	if len(queues) == 0 {
-		return client.QueueSummary{}, clierrors.NoQueuesForHabitat()
-	}
-
-	// Non-interactive mode: auto-select single queue or error
-	if out.NoInput {
-		if len(queues) == 1 {
-			out.Print("Filtering by queue: %s (%s)\n", queues[0].Name, queues[0].Slug)
-			return queues[0], nil
-		}
-
-		return client.QueueSummary{}, clierrors.QueueRequired()
-	}
-
-	// Interactive mode: always prompt
-	selected, err := prompt.SelectQueue(queues, out)
-	if err != nil {
-		if prompt.IsCanceled(err) {
-			return client.QueueSummary{}, clierrors.New(clierrors.ExitUsage, "Queue selection canceled").
-				WithHint("Pass --queue to select non-interactively")
-		}
-
-		return client.QueueSummary{}, clierrors.Wrap(clierrors.ExitGeneral, "Failed to select queue", err)
-	}
-
-	out.Print("Filtering by queue: %s (%s)\n", selected.Name, selected.Slug)
-
-	return *selected, nil
+			return *selected, nil
+		},
+		notFound: func(input string) error {
+			return clierrors.QueueNotFound(input)
+		},
+		noneAvailable: clierrors.NoQueuesForHabitat(),
+		required:      clierrors.QueueRequired(),
+		cancelMessage: "Queue selection canceled",
+		cancelHint:    "Pass --queue to select non-interactively",
+		selectError:   "Failed to select queue",
+	})
 }

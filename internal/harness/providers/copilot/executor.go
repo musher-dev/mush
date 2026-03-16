@@ -14,13 +14,11 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
-
-	"github.com/creack/pty"
 
 	"github.com/musher-dev/mush/internal/ansi"
 	"github.com/musher-dev/mush/internal/client"
+	"github.com/musher-dev/mush/internal/executil"
 	"github.com/musher-dev/mush/internal/harness/harnesstype"
 )
 
@@ -35,16 +33,17 @@ type Executor struct {
 	pgid       int
 	waitDoneCh chan struct{}
 
-	mcpConfigPath   string
-	mcpConfigSig    string
-	mcpConfigRemove func() error
+	mcpConfigPath        string
+	mcpConfigSig         string
+	mcpConfigRemove      func() error
+	startInteractiveFunc func(context.Context, *harnesstype.SetupOptions) error
 }
 
 // Setup stores options and starts interactive mode for bundle sessions.
 func (e *Executor) Setup(ctx context.Context, opts *harnesstype.SetupOptions) error {
 	e.opts = *opts
 
-	if _, err := exec.LookPath("copilot"); err != nil {
+	if _, err := executil.LookPath("copilot"); err != nil {
 		return fmt.Errorf("copilot CLI not found in PATH")
 	}
 
@@ -55,7 +54,12 @@ func (e *Executor) Setup(ctx context.Context, opts *harnesstype.SetupOptions) er
 	}
 
 	if opts.BundleDir != "" {
-		if err := e.startInteractive(ctx, opts); err != nil {
+		startInteractive := e.startInteractiveFunc
+		if startInteractive == nil {
+			startInteractive = e.startInteractive
+		}
+
+		if err := startInteractive(ctx, opts); err != nil {
 			e.cleanupMCPConfigFile()
 			return err
 		}
@@ -87,7 +91,10 @@ func (e *Executor) Execute(ctx context.Context, job *client.Job) (*harnesstype.E
 		args = append(args, mcpArgs...)
 	}
 
-	cmd := exec.CommandContext(ctx, "copilot", args...) //nolint:gosec // G204: command originates from trusted job execution payload
+	cmd, err := executil.CommandContext(ctx, "copilot", args...)
+	if err != nil {
+		return nil, &harnesstype.ExecError{Reason: "execution_error", Message: err.Error()}
+	}
 
 	if job.Execution != nil && job.Execution.WorkingDirectory != "" {
 		cmd.Dir = job.Execution.WorkingDirectory
@@ -126,35 +133,7 @@ func (e *Executor) Execute(ctx context.Context, job *client.Job) (*harnesstype.E
 	fallbackOutput := ansi.Strip(rawOutput)
 
 	if runErr != nil {
-		if ctxErr := ctx.Err(); ctxErr != nil {
-			if errors.Is(ctxErr, context.DeadlineExceeded) {
-				return nil, &harnesstype.ExecError{Reason: "timeout", Message: "copilot execution timed out", Retry: true}
-			}
-
-			return nil, &harnesstype.ExecError{
-				Reason:  "execution_error",
-				Message: fmt.Sprintf("copilot execution canceled: %v", ctxErr),
-				Retry:   true,
-			}
-		}
-
-		exitCode := 1
-
-		var exitErr *exec.ExitError
-		if errors.As(runErr, &exitErr) {
-			exitCode = exitErr.ExitCode()
-		}
-
-		msg := fmt.Sprintf("copilot exited with code %d", exitCode)
-		if fallbackOutput != "" {
-			msg = fmt.Sprintf("%s: %s", msg, fallbackOutput)
-		}
-
-		return nil, &harnesstype.ExecError{
-			Reason:  "execution_error",
-			Message: msg,
-			Retry:   true,
-		}
+		return nil, copilotRunError(ctx, runErr, fallbackOutput)
 	}
 
 	resultOutput := parsedOutput
@@ -169,6 +148,42 @@ func (e *Executor) Execute(ctx context.Context, job *client.Job) (*harnesstype.E
 			"durationMs": int(duration / time.Millisecond),
 		},
 	}, nil
+}
+
+func copilotRunError(ctx context.Context, runErr error, fallbackOutput string) *harnesstype.ExecError {
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		if errors.Is(ctxErr, context.DeadlineExceeded) {
+			return &harnesstype.ExecError{Reason: "timeout", Message: "copilot execution timed out", Retry: true}
+		}
+
+		return &harnesstype.ExecError{
+			Reason:  "execution_error",
+			Message: fmt.Sprintf("copilot execution canceled: %v", ctxErr),
+			Retry:   true,
+		}
+	}
+
+	exitCode := 1
+
+	var exitErr *exec.ExitError
+	if errors.As(runErr, &exitErr) {
+		exitCode = exitErr.ExitCode()
+	}
+
+	return &harnesstype.ExecError{
+		Reason:  "execution_error",
+		Message: copilotExitMessage(exitCode, fallbackOutput),
+		Retry:   true,
+	}
+}
+
+func copilotExitMessage(exitCode int, fallbackOutput string) string {
+	msg := fmt.Sprintf("copilot exited with code %d", exitCode)
+	if strings.TrimSpace(fallbackOutput) == "" {
+		return msg
+	}
+
+	return fmt.Sprintf("%s: %s", msg, fallbackOutput)
 }
 
 // Reset is a no-op for copilot one-shot worker jobs.
@@ -248,7 +263,10 @@ func (e *Executor) startInteractive(ctx context.Context, opts *harnesstype.Setup
 		args = append(args, mcpArgs...)
 	}
 
-	cmd := exec.CommandContext(ctx, "copilot", args...) //nolint:gosec // G204: args from controlled input
+	cmd, err := executil.CommandContext(ctx, "copilot", args...)
+	if err != nil {
+		return fmt.Errorf("resolve copilot command: %w", err)
+	}
 
 	cmd.Env = append(os.Environ(), "TERM=xterm-256color", "FORCE_COLOR=1")
 
@@ -257,10 +275,7 @@ func (e *Executor) startInteractive(ctx context.Context, opts *harnesstype.Setup
 		cmd.Dir = opts.WorkingDir
 	}
 
-	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{
-		Rows: uint16(opts.TermHeight),
-		Cols: uint16(opts.TermWidth),
-	})
+	ptmx, pgid, waitDoneCh, err := harnesstype.StartInteractiveProcess(cmd, opts, opts.OnExit)
 	if err != nil {
 		return fmt.Errorf("start copilot interactive session: %w", err)
 	}
@@ -268,47 +283,9 @@ func (e *Executor) startInteractive(ctx context.Context, opts *harnesstype.Setup
 	e.mu.Lock()
 	e.cmd = cmd
 	e.ptmx = ptmx
-	e.pgid = 0
-
-	if cmd.Process != nil && cmd.Process.Pid > 0 {
-		if pgid, pgErr := syscall.Getpgid(cmd.Process.Pid); pgErr == nil {
-			e.pgid = pgid
-		}
-	}
-
-	e.waitDoneCh = make(chan struct{})
-	waitDoneCh := e.waitDoneCh
+	e.pgid = pgid
+	e.waitDoneCh = waitDoneCh
 	e.mu.Unlock()
-
-	go func() {
-		buf := make([]byte, 4096)
-		for {
-			n, readErr := ptmx.Read(buf)
-			if n > 0 {
-				if opts.TermWriter != nil {
-					_, _ = opts.TermWriter.Write(buf[:n])
-				}
-
-				if opts.OnOutput != nil {
-					opts.OnOutput(buf[:n])
-				}
-			}
-
-			if readErr != nil {
-				return
-			}
-		}
-	}()
-
-	go func() {
-		_ = cmd.Wait()
-
-		close(waitDoneCh)
-
-		if opts.OnExit != nil {
-			opts.OnExit()
-		}
-	}()
 
 	return nil
 }

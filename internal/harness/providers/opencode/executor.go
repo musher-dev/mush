@@ -21,6 +21,7 @@ import (
 
 	"github.com/musher-dev/mush/internal/ansi"
 	"github.com/musher-dev/mush/internal/client"
+	"github.com/musher-dev/mush/internal/executil"
 	"github.com/musher-dev/mush/internal/harness/harnesstype"
 )
 
@@ -43,7 +44,7 @@ type Executor struct {
 func (e *Executor) Setup(ctx context.Context, opts *harnesstype.SetupOptions) error {
 	e.opts = *opts
 
-	if _, err := exec.LookPath("opencode"); err != nil {
+	if _, err := executil.LookPath("opencode"); err != nil {
 		return fmt.Errorf("opencode CLI not found in PATH")
 	}
 
@@ -82,7 +83,11 @@ func (e *Executor) Execute(ctx context.Context, job *client.Job) (*harnesstype.E
 	}
 
 	args := []string{"run", "--format", "json", prompt}
-	cmd := exec.CommandContext(ctx, "opencode", args...) //nolint:gosec // G204: command originates from trusted job execution payload
+
+	cmd, err := executil.CommandContext(ctx, "opencode", args...)
+	if err != nil {
+		return nil, &harnesstype.ExecError{Reason: "execution_error", Message: err.Error()}
+	}
 
 	if job.Execution != nil && job.Execution.WorkingDirectory != "" {
 		cmd.Dir = job.Execution.WorkingDirectory
@@ -288,7 +293,10 @@ func (e *Executor) startInteractive(ctx context.Context, opts *harnesstype.Setup
 		args = append(args, opts.BundleDir)
 	}
 
-	cmd := exec.CommandContext(ctx, "opencode", args...) //nolint:gosec // G204: args from controlled input
+	cmd, err := executil.CommandContext(ctx, "opencode", args...)
+	if err != nil {
+		return fmt.Errorf("resolve opencode command: %w", err)
+	}
 
 	cmd.Env = append(os.Environ(), "TERM=xterm-256color", "FORCE_COLOR=1")
 

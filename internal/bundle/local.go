@@ -18,9 +18,7 @@ import (
 //   - Bare: directory contains files directly (symlinked into a temp cache structure)
 //
 // Returns the synthetic resolve response, cache path, cleanup function, and any error.
-//
-//nolint:gocritic // unnamedResult: four returns match the pattern used across the package
-func LoadFromDir(dirPath string) (*client.BundleResolveResponse, string, func(), error) {
+func LoadFromDir(dirPath string) (resolved *client.BundleResolveResponse, cachePath string, cleanup func(), err error) {
 	info, err := os.Stat(dirPath)
 	if err != nil {
 		return nil, "", nil, fmt.Errorf("directory not found: %w", err)
@@ -45,12 +43,10 @@ func LoadFromDir(dirPath string) (*client.BundleResolveResponse, string, func(),
 }
 
 // loadCacheCompatible handles directories that already have assets/ layout.
-//
-//nolint:gocritic // unnamedResult: internal helper, signature matches LoadFromDir
-func loadCacheCompatible(absDir, assetsDir string) (*client.BundleResolveResponse, string, func(), error) {
+func loadCacheCompatible(absDir, assetsDir string) (resolved *client.BundleResolveResponse, cachePath string, cleanup func(), err error) {
 	// Check for existing manifest.json.
 	manifestPath := filepath.Join(absDir, "manifest.json")
-	if _, err := os.Stat(manifestPath); err == nil {
+	if _, statErr := os.Stat(manifestPath); statErr == nil {
 		// Read existing manifest.
 		data, readErr := safeio.ReadFile(manifestPath)
 		if readErr != nil {
@@ -75,7 +71,7 @@ func loadCacheCompatible(absDir, assetsDir string) (*client.BundleResolveRespons
 		return nil, "", nil, fmt.Errorf("no recognized bundle assets found in %s", assetsDir)
 	}
 
-	resolved := syntheticResolveResponse(filepath.Base(absDir), layers)
+	resolved = syntheticResolveResponse(filepath.Base(absDir), layers)
 
 	// Write manifest for future cache hits.
 	if wErr := writeManifest(absDir, resolved); wErr != nil {
@@ -86,9 +82,7 @@ func loadCacheCompatible(absDir, assetsDir string) (*client.BundleResolveRespons
 }
 
 // loadBareDir handles directories without assets/ layout by creating a temp cache structure.
-//
-//nolint:gocritic // unnamedResult: internal helper, signature matches LoadFromDir
-func loadBareDir(absDir string) (*client.BundleResolveResponse, string, func(), error) {
+func loadBareDir(absDir string) (resolved *client.BundleResolveResponse, cachePath string, cleanup func(), err error) {
 	// Scan the directory for recognizable assets.
 	layers, filePaths, err := scanBareDir(absDir)
 	if err != nil {
@@ -105,7 +99,7 @@ func loadBareDir(absDir string) (*client.BundleResolveResponse, string, func(), 
 		return nil, "", nil, fmt.Errorf("create temp dir: %w", err)
 	}
 
-	cleanup := func() { _ = os.RemoveAll(tmpDir) }
+	cleanup = func() { _ = os.RemoveAll(tmpDir) }
 
 	assetsDir := filepath.Join(tmpDir, "assets")
 
@@ -123,7 +117,7 @@ func loadBareDir(absDir string) (*client.BundleResolveResponse, string, func(), 
 		}
 	}
 
-	resolved := syntheticResolveResponse(filepath.Base(absDir), layers)
+	resolved = syntheticResolveResponse(filepath.Base(absDir), layers)
 
 	if wErr := writeManifest(tmpDir, resolved); wErr != nil {
 		cleanup()
@@ -266,8 +260,8 @@ func syntheticResolveResponse(slug string, layers []client.BundleLayer) *client.
 }
 
 // decodeJSONBytes unmarshals JSON data into a value.
-func decodeJSONBytes(data []byte, v any) error {
-	if err := json.Unmarshal(data, v); err != nil { //nolint:musttag // using any
+func decodeJSONBytes[T any](data []byte, v *T) error {
+	if err := json.Unmarshal(data, v); err != nil {
 		return fmt.Errorf("json unmarshal: %w", err)
 	}
 

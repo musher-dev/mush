@@ -43,6 +43,7 @@ linters:
     - usestdlibvars   # Prefer stdlib constants/vars
     - wastedassign    # Detect wasted assignments
     - dupl            # Duplicate code blocks
+    - gocognit        # Cognitive complexity guardrail
     - godot           # Require period at end of comments
     - whitespace      # Remove unnecessary blank lines
     - wsl_v5          # Enforce whitespace style
@@ -200,6 +201,8 @@ linters:
       require-specific: true
     dupl:
       threshold: 120
+    gocognit:
+      min-complexity: 20
   exclusions:
     rules:
       # Test files can have unchecked errors
@@ -218,10 +221,41 @@ linters:
       - path: _test\.go
         linters:
           - dupl
-      # Type alias forwarding files — no individual doc comments needed
-      - path: internal/harness/executor\.go
+          - gocognit
+      # Existing command hotspots stay tracked manually until follow-up cleanup lands.
+      - path: cmd/mush/(root|bundle|bundle_install|bundle_load|history|update|worker_unix|architecture_test|conventions_test|docgen_test)\.go
         linters:
-          - revive
+          - gocognit
+      - path: cmd/mush/worker_common\.go
+        linters:
+          - dupl
+      # Existing bundle orchestration hotspots stay tracked until the bundle refactor lands.
+      - path: internal/bundle/(cache|cache_index|load_session|mapper|materialize)\.go
+        linters:
+          - gocognit
+      # Existing harness/provider hotspots — complex PTY and process orchestration.
+      - path: internal/harness/providers/(claude|codex|opencode)/executor\.go
+        linters:
+          - gocognit
+      - path: internal/harness/providers/claude/hooks\.go
+        linters:
+          - gocognit
+      - path: internal/harness/runtime_embedded_unix\.go
+        linters:
+          - gocognit
+      - path: internal/harness/ui/status/status\.go
+        linters:
+          - gocognit
+      # Existing infrastructure hotspots — logging, ANSI, transcripts, TUI, wizard.
+      - path: internal/(ansi/ansi|observability/logging|transcript/store_read|wizard/wizard)\.go
+        linters:
+          - gocognit
+      - path: internal/tui/nav/(bundle_cmds|bundle_update|model)\.go
+        linters:
+          - gocognit
+      - path: internal/update/agent\.go
+        linters:
+          - gocognit
 
 formatters:
   enable:

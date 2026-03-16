@@ -29,15 +29,13 @@ var sampleAssets = []struct {
 
 // ExtractSampleBundle creates a temporary cache directory from the embedded sample bundle.
 // Returns the synthetic resolve response, cache path, cleanup function, and any error.
-//
-//nolint:gocritic // unnamedResult: signature matches LoadFromDir pattern
-func ExtractSampleBundle() (*client.BundleResolveResponse, string, func(), error) {
+func ExtractSampleBundle() (resolved *client.BundleResolveResponse, cachePath string, cleanup func(), err error) {
 	tmpDir, err := os.MkdirTemp("", "mush-sample-bundle-*")
 	if err != nil {
 		return nil, "", nil, fmt.Errorf("create temp dir: %w", err)
 	}
 
-	cleanup := func() { _ = os.RemoveAll(tmpDir) }
+	cleanup = func() { _ = os.RemoveAll(tmpDir) }
 
 	assetsDir := filepath.Join(tmpDir, "assets")
 
@@ -72,7 +70,7 @@ func ExtractSampleBundle() (*client.BundleResolveResponse, string, func(), error
 		})
 	}
 
-	resolved := &client.BundleResolveResponse{
+	resolved = &client.BundleResolveResponse{
 		Namespace: "_local",
 		Slug:      "sample",
 		Version:   "0.0.0-sample",

@@ -192,7 +192,7 @@ func (jl *JobLoop) Run(ctx context.Context, done <-chan struct{}) {
 		}
 
 		// Poll for a job.
-		job, err := jl.client.ClaimJob(ctx, jl.habitatID, jl.queueID, int(pollInterval.Seconds()))
+		job, claimed, err := jl.client.ClaimJob(ctx, jl.habitatID, jl.queueID, int(pollInterval.Seconds()))
 		if err != nil {
 			if ctx.Err() != nil {
 				return // Context canceled
@@ -204,7 +204,7 @@ func (jl *JobLoop) Run(ctx context.Context, done <-chan struct{}) {
 			continue
 		}
 
-		if job == nil {
+		if !claimed || job == nil {
 			continue // No job, poll again
 		}
 

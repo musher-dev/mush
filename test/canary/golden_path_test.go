@@ -61,12 +61,12 @@ func TestGoldenPathCanary(t *testing.T) {
 		t.Fatalf("queue %q has no active instruction", queueID)
 	}
 
-	job, err := c.ClaimJob(ctx, habitatID, queueID, 1)
+	job, claimed, err := c.ClaimJob(ctx, habitatID, queueID, 1)
 	if err != nil {
 		t.Fatalf("claim job: %v", err)
 	}
 
-	if job != nil {
+	if claimed && job != nil {
 		t.Logf("canary claimed live job id=%s; releasing", job.ID)
 
 		if releaseErr := c.ReleaseJob(ctx, job.ID); releaseErr != nil {

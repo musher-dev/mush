@@ -2,10 +2,13 @@
 package testutil
 
 import (
+	"errors"
 	"flag"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/musher-dev/mush/internal/safeio"
 )
 
 // update is a flag to update golden files instead of comparing.
@@ -28,11 +31,11 @@ func AssertGolden(t *testing.T, got, goldenFile string) {
 
 	if shouldUpdate() {
 		// Ensure testdata directory exists
-		if err := os.MkdirAll(filepath.Dir(goldenPath), 0o755); err != nil { //nolint:gosec // G301: testdata dir
+		if err := safeio.MkdirAll(filepath.Dir(goldenPath), 0o755); err != nil {
 			t.Fatalf("failed to create testdata directory: %v", err)
 		}
 
-		if err := os.WriteFile(goldenPath, []byte(got), 0o644); err != nil { //nolint:gosec // G306: golden files are non-sensitive
+		if err := safeio.WriteFile(goldenPath, []byte(got), 0o644); err != nil {
 			t.Fatalf("failed to update golden file %s: %v", goldenPath, err)
 		}
 
@@ -41,9 +44,9 @@ func AssertGolden(t *testing.T, got, goldenFile string) {
 		return
 	}
 
-	want, err := os.ReadFile(goldenPath) //nolint:gosec // G304: path from test fixture
+	want, err := safeio.ReadFile(goldenPath)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			t.Fatalf("golden file %s does not exist; run with UPDATE_GOLDEN=1 to create it", goldenPath)
 		}
 
@@ -73,9 +76,9 @@ func ReadGolden(t *testing.T, goldenFile string) string {
 
 	goldenPath := filepath.Join("testdata", goldenFile)
 
-	data, err := os.ReadFile(goldenPath) //nolint:gosec // G304: path from test fixture
+	data, err := safeio.ReadFile(goldenPath)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return ""
 		}
 

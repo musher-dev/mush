@@ -199,7 +199,7 @@ func TestClientClaimJob(t *testing.T) {
 				return jsonResponse(tt.statusCode, tt.body), nil
 			})
 
-			job, err := c.ClaimJob(t.Context(), "habitat-123", "", 30)
+			job, claimed, err := c.ClaimJob(t.Context(), "habitat-123", "", 30)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatal("ClaimJob() error = nil, want error")
@@ -212,12 +212,12 @@ func TestClientClaimJob(t *testing.T) {
 				t.Fatalf("ClaimJob() unexpected error = %v", err)
 			}
 
-			if tt.wantJob && job == nil {
+			if tt.wantJob && (!claimed || job == nil) {
 				t.Fatal("expected job")
 			}
 
-			if !tt.wantJob && job != nil {
-				t.Fatal("expected nil job")
+			if !tt.wantJob && (claimed || job != nil) {
+				t.Fatal("expected no job")
 			}
 		})
 	}
@@ -297,7 +297,7 @@ func TestClientJobLifecycleEndpoints(t *testing.T) {
 			return jsonResponse(http.StatusOK, `{}`), nil
 		default:
 			t.Fatalf("unexpected path: %s", r.URL.Path)
-			return nil, nil //nolint:nilnil // unreachable after t.Fatalf
+			return nil, io.EOF
 		}
 	})
 
@@ -334,7 +334,7 @@ func TestClientWorkerLifecycleEndpoints(t *testing.T) {
 			return jsonResponse(http.StatusOK, `{}`), nil
 		default:
 			t.Fatalf("unexpected path: %s", r.URL.Path)
-			return nil, nil //nolint:nilnil // unreachable after t.Fatalf
+			return nil, io.EOF
 		}
 	})
 
@@ -401,7 +401,7 @@ func TestClaimJobSendsJSONBody(t *testing.T) {
 		return jsonResponse(http.StatusNoContent, ""), nil
 	})
 
-	if _, err := c.ClaimJob(t.Context(), "hab-1", "", 30); err != nil {
+	if _, _, err := c.ClaimJob(t.Context(), "hab-1", "", 30); err != nil {
 		t.Fatalf("ClaimJob() error = %v", err)
 	}
 }

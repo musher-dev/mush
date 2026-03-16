@@ -14,6 +14,8 @@ import (
 	"golang.org/x/term"
 )
 
+const escapeSequenceBufferSize = 3
+
 // Prompter handles interactive prompts.
 type Prompter struct {
 	out    *output.Writer
@@ -94,8 +96,8 @@ func (p *Prompter) Password(prompt string) (string, error) {
 			p.out.Println()
 
 			// Re-raise SIGINT so the process exits with interrupt semantics.
-			p, _ := os.FindProcess(os.Getpid())
-			_ = p.Signal(os.Interrupt)
+			proc, _ := os.FindProcess(os.Getpid())
+			_ = proc.Signal(os.Interrupt)
 
 			return "", fmt.Errorf("interrupted")
 		case b[0] == 127 || b[0] == 0x08: // Backspace / Delete
@@ -271,6 +273,16 @@ func IsCanceled(err error) bool {
 	return errors.Is(err, errCanceled)
 }
 
+type arrowSelectionAction int
+
+const (
+	arrowSelectionNone arrowSelectionAction = iota
+	arrowSelectionConfirm
+	arrowSelectionCancel
+	arrowSelectionUp
+	arrowSelectionDown
+)
+
 // selectArrowKey provides arrow-key navigation for TTY selection.
 // Up/Down moves the cursor, Enter confirms, Esc/Ctrl+C cancels.
 func selectArrowKey[T selectableSummary](title string, entries []T) (int, error) {
@@ -285,38 +297,19 @@ func selectArrowKey[T selectableSummary](title string, entries []T) (int, error)
 
 	selected := 0
 	totalItems := len(entries)
-
-	// Build display lines for each entry.
-	lines := make([]string, totalItems)
-	for i, entry := range entries {
-		lines[i] = fmt.Sprintf("%-20s %s %s", entry.GetSlug(), entry.GetName(), entry.GetStatus())
-	}
+	lines := buildArrowSelectionLines(entries)
 
 	// Write initial header + list.
 	writeStr := func(s string) { _, _ = os.Stdout.WriteString(s) }
 
-	writeStr(fmt.Sprintf("\r\nAvailable %s:\r\n\r\n", title))
-
-	drawList := func() {
-		for i := range totalItems {
-			if i == selected {
-				writeStr(fmt.Sprintf("  \x1b[1m> %s\x1b[0m\r\n", lines[i]))
-			} else {
-				writeStr(fmt.Sprintf("    %s\r\n", lines[i]))
-			}
-		}
-
-		writeStr("\r\n  Use \x1b[1m↑/↓\x1b[0m to navigate, \x1b[1mEnter\x1b[0m to confirm, \x1b[1mEsc\x1b[0m to cancel")
-	}
-
-	drawList()
+	drawArrowSelection(title, lines, selected, writeStr)
 
 	// Move cursor up to redraw position (totalItems lines + 1 hint line).
 	moveUp := func() {
 		writeStr(fmt.Sprintf("\x1b[%dA\r", totalItems+1))
 	}
 
-	buf := make([]byte, 3) //nolint:mnd // ANSI escape sequences are 3 bytes
+	buf := make([]byte, escapeSequenceBufferSize)
 
 	for {
 		n, readErr := os.Stdin.Read(buf)
@@ -324,39 +317,75 @@ func selectArrowKey[T selectableSummary](title string, entries []T) (int, error)
 			return -1, fmt.Errorf("read input: %w", readErr)
 		}
 
-		switch {
-		case n == 1 && buf[0] == '\r': // Enter
+		switch readArrowSelectionAction(buf, n) {
+		case arrowSelectionConfirm:
 			// Move past the list to avoid overwriting.
 			writeStr("\r\n\r\n")
 
 			return selected, nil
 
-		case n == 1 && buf[0] == 0x1b: // Esc
+		case arrowSelectionCancel:
 			writeStr("\r\n\r\n")
 
 			return -1, errCanceled
 
-		case n == 1 && buf[0] == 0x03: // Ctrl+C
-			writeStr("\r\n\r\n")
-
-			return -1, errCanceled
-
-		case n == 3 && buf[0] == 0x1b && buf[1] == '[' && buf[2] == 'A': // Up
+		case arrowSelectionUp:
 			if selected > 0 {
 				selected--
 
 				moveUp()
-				drawList()
+				drawArrowSelectionList(lines, selected, writeStr)
 			}
 
-		case n == 3 && buf[0] == 0x1b && buf[1] == '[' && buf[2] == 'B': // Down
+		case arrowSelectionDown:
 			if selected < totalItems-1 {
 				selected++
 
 				moveUp()
-				drawList()
+				drawArrowSelectionList(lines, selected, writeStr)
 			}
 		}
+	}
+}
+
+func buildArrowSelectionLines[T selectableSummary](entries []T) []string {
+	lines := make([]string, len(entries))
+	for i, entry := range entries {
+		lines[i] = fmt.Sprintf("%-20s %s %s", entry.GetSlug(), entry.GetName(), entry.GetStatus())
+	}
+
+	return lines
+}
+
+func drawArrowSelection(title string, lines []string, selected int, writeStr func(string)) {
+	writeStr(fmt.Sprintf("\r\nAvailable %s:\r\n\r\n", title))
+	drawArrowSelectionList(lines, selected, writeStr)
+}
+
+func drawArrowSelectionList(lines []string, selected int, writeStr func(string)) {
+	for i := range lines {
+		if i == selected {
+			writeStr(fmt.Sprintf("  \x1b[1m> %s\x1b[0m\r\n", lines[i]))
+		} else {
+			writeStr(fmt.Sprintf("    %s\r\n", lines[i]))
+		}
+	}
+
+	writeStr("\r\n  Use \x1b[1m↑/↓\x1b[0m to navigate, \x1b[1mEnter\x1b[0m to confirm, \x1b[1mEsc\x1b[0m to cancel")
+}
+
+func readArrowSelectionAction(buf []byte, n int) arrowSelectionAction {
+	switch {
+	case n == 1 && buf[0] == '\r':
+		return arrowSelectionConfirm
+	case n == 1 && (buf[0] == 0x1b || buf[0] == 0x03):
+		return arrowSelectionCancel
+	case n == 3 && buf[0] == 0x1b && buf[1] == '[' && buf[2] == 'A':
+		return arrowSelectionUp
+	case n == 3 && buf[0] == 0x1b && buf[1] == '[' && buf[2] == 'B':
+		return arrowSelectionDown
+	default:
+		return arrowSelectionNone
 	}
 }
 

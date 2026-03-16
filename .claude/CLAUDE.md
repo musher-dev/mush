@@ -93,12 +93,12 @@ task fmt          # Format code
 ## Quick Reference
 
 - **Binary**: `mush`
-- **Config dir**: `~/.config/mush/` (XDG)
-- **State dir**: `~/.local/state/mush/` (XDG)
-- **Credentials**: OS Keyring (`dev.musher.mush`), falls back to `~/.config/mush/api-key`
-- **Logs**: `~/.local/state/mush/logs/mush.log` (default sink)
-- **History**: `~/.local/state/mush/history/` (transcript sessions)
-- **Update state**: `~/.local/state/mush/update-check.json`
-- **Bundle cache**: `~/.cache/mush/bundles/{workspace_id}/{slug}/{version}/`
-- **API endpoint**: `api.url` config key or `MUSH_API_URL` env var
-- **Auth**: `MUSH_API_KEY` env var or `mush auth login`
+- **Config dir**: `~/.config/musher/` (XDG)
+- **State dir**: `~/.local/state/musher/` (XDG)
+- **Credentials**: OS Keyring (`dev.musher.musher`), falls back to `~/.config/musher/api-key`
+- **Logs**: `~/.local/state/musher/logs/musher.log` (default sink)
+- **History**: `~/.local/state/musher/history/` (transcript sessions)
+- **Update state**: `~/.local/state/musher/update-check.json`
+- **Bundle cache**: `~/.cache/musher/bundles/{workspace_id}/{slug}/{version}/`
+- **API endpoint**: `api.url` config key or `MUSHER_API_URL` env var
+- **Auth**: `MUSHER_API_KEY` env var or `mush auth login`
