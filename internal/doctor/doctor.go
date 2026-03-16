@@ -11,6 +11,7 @@ package doctor
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -142,7 +143,7 @@ func checkDirectoryStructure(context.Context) Result {
 
 		info, err := os.Stat(dir)
 		if err != nil {
-			if os.IsNotExist(err) {
+			if errors.Is(err, os.ErrNotExist) {
 				missing = append(missing, r.name)
 				continue
 			}
@@ -163,7 +164,7 @@ func checkDirectoryStructure(context.Context) Result {
 		}
 
 		// Check writable by attempting to create a unique temp file
-		f, err := os.CreateTemp(dir, ".mush-doctor-probe.*")
+		f, err := os.CreateTemp(dir, ".musher-doctor-probe.*")
 		if err != nil {
 			return Result{
 				Status:  StatusFail,
@@ -204,7 +205,7 @@ func checkConfigFile(context.Context) Result {
 
 	data, err := safeio.ReadFile(configPath)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return Result{
 				Status:  StatusPass,
 				Message: "No config file (using defaults)",
@@ -245,7 +246,7 @@ func checkCredentialsFile(context.Context) Result {
 
 	info, err := os.Stat(credPath)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return Result{
 				Status:  StatusPass,
 				Message: "Not present (using keyring or env)",

@@ -38,6 +38,7 @@ var (
 		moduleRoot + "/internal/transcript":    true,
 		moduleRoot + "/internal/testutil":      true,
 		moduleRoot + "/internal/safeio":        true,
+		moduleRoot + "/internal/executil":      true,
 		moduleRoot + "/internal/validate":      true,
 	}
 

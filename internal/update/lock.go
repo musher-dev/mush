@@ -1,6 +1,7 @@
 package update
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -59,13 +60,13 @@ func tryAcquire(path string) (bool, error) {
 		return true, nil
 	}
 
-	if !os.IsExist(err) {
+	if !errors.Is(err, os.ErrExist) {
 		return false, fmt.Errorf("create lock file: %w", err)
 	}
 
 	stat, statErr := os.Stat(path)
 	if statErr != nil {
-		if os.IsNotExist(statErr) {
+		if errors.Is(statErr, os.ErrNotExist) {
 			return tryAcquire(path)
 		}
 

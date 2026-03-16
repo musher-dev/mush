@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/musher-dev/mush/internal/safeio"
 )
 
 const eventsGzTmpPattern = "events.jsonl.gz.*.tmp"
@@ -95,11 +97,11 @@ func NewStore(opts StoreOptions) (*Store, error) {
 	}
 
 	sessionDir := filepath.Join(dir, opts.SessionID)
-	if err := os.MkdirAll(sessionDir, 0o700); err != nil {
+	if err := safeio.MkdirAll(sessionDir, 0o700); err != nil {
 		return nil, fmt.Errorf("create transcript dir: %w", err)
 	}
 
-	liveFile, err := os.OpenFile(filepath.Join(sessionDir, eventsLiveFileName), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600) //nolint:gosec // sessionDir/sessionID are validated and controlled
+	liveFile, err := safeio.OpenFile(filepath.Join(sessionDir, eventsLiveFileName), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("open live transcript events: %w", err)
 	}
@@ -133,7 +135,7 @@ func (s *Store) writeMeta(meta *Meta) error {
 		return fmt.Errorf("marshal transcript meta: %w", err)
 	}
 
-	if err := os.WriteFile(filepath.Join(s.dir, metaFileName), data, 0o600); err != nil {
+	if err := safeio.WriteFile(filepath.Join(s.dir, metaFileName), data, 0o600); err != nil {
 		return fmt.Errorf("write transcript meta: %w", err)
 	}
 
@@ -287,9 +289,9 @@ func (s *Store) Close() error {
 func (s *Store) compressLiveFile() error {
 	livePath := filepath.Join(s.dir, eventsLiveFileName)
 
-	liveData, err := os.ReadFile(livePath) //nolint:gosec // controlled path
+	liveData, err := safeio.ReadFile(livePath)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return nil
 		}
 

@@ -9,7 +9,8 @@ import (
 )
 
 // ClaimJob claims a job from a habitat or queue.
-func (c *Client) ClaimJob(ctx context.Context, habitatID, queueID string, waitTimeoutSeconds int) (*Job, error) {
+// It reports whether a job was available separately from the returned job pointer.
+func (c *Client) ClaimJob(ctx context.Context, habitatID, queueID string, waitTimeoutSeconds int) (*Job, bool, error) {
 	url := fmt.Sprintf("%s/api/v1/runner/jobs:claim?wait_timeout_seconds=%d", c.baseURL, waitTimeoutSeconds)
 
 	if queueID != "" {
@@ -17,7 +18,7 @@ func (c *Client) ClaimJob(ctx context.Context, habitatID, queueID string, waitTi
 	}
 
 	if queueID == "" && habitatID == "" {
-		return nil, fmt.Errorf("must provide either habitatID or queueID")
+		return nil, false, fmt.Errorf("must provide either habitatID or queueID")
 	}
 
 	body := JobClaimRequest{
@@ -28,39 +29,39 @@ func (c *Client) ClaimJob(ctx context.Context, habitatID, queueID string, waitTi
 
 	jsonBody, err := encodeJSON(body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
+		return nil, false, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
 	req, err := c.newRequest(ctx, "POST", url, bytes.NewReader(jsonBody))
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	resp, err := c.do(req, "/api/v1/runner/jobs:claim")
 	if err != nil {
-		return nil, fmt.Errorf("failed to claim job: %w", err)
+		return nil, false, fmt.Errorf("failed to claim job: %w", err)
 	}
 	defer resp.Body.Close()
 
 	// 204 No Content = no jobs available.
 	if resp.StatusCode == http.StatusNoContent {
-		return nil, nil //nolint:nilnil // no job available is represented as nil job + nil error
+		return nil, false, nil
 	}
 
 	if resp.StatusCode == http.StatusOK {
 		respBody, err := io.ReadAll(resp.Body)
 		if err != nil {
-			return nil, fmt.Errorf("failed to read response: %w", err)
+			return nil, false, fmt.Errorf("failed to read response: %w", err)
 		}
 
 		trimmed := bytes.TrimSpace(respBody)
 		if len(trimmed) == 0 || string(trimmed) == "null" {
-			return nil, fmt.Errorf("failed to parse job: empty or null claim response body")
+			return nil, false, fmt.Errorf("failed to parse job: empty or null claim response body")
 		}
 
 		var response JobClaimResponse
 		if err := decodeJSON(bytes.NewReader(respBody), &response, "failed to parse job"); err != nil {
-			return nil, fmt.Errorf("failed to parse job: %w", err)
+			return nil, false, fmt.Errorf("failed to parse job: %w", err)
 		}
 
 		job := response.Job
@@ -69,10 +70,10 @@ func (c *Client) ClaimJob(ctx context.Context, habitatID, queueID string, waitTi
 		job.WebhookConfig = response.WebhookConfig
 		job.ExecutionError = response.ExecutionError
 
-		return &job, nil
+		return &job, true, nil
 	}
 
-	return nil, unexpectedStatus("claim job", resp)
+	return nil, false, unexpectedStatus("claim job", resp)
 }
 
 // StartJob marks a claimed job as running.

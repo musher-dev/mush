@@ -12,14 +12,15 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/creack/pty"
 
 	"github.com/musher-dev/mush/internal/ansi"
 	"github.com/musher-dev/mush/internal/client"
+	"github.com/musher-dev/mush/internal/executil"
 	"github.com/musher-dev/mush/internal/harness/harnesstype"
+	"github.com/musher-dev/mush/internal/safeio"
 )
 
 // Executor runs jobs via Cursor Agent CLI.
@@ -37,13 +38,14 @@ type Executor struct {
 	mcpConfigContent string
 
 	interactiveConfigCleanup func() error
+	startInteractiveFunc     func(context.Context, *harnesstype.SetupOptions) error
 }
 
 // Setup stores options and starts interactive mode for bundle sessions.
 func (e *Executor) Setup(ctx context.Context, opts *harnesstype.SetupOptions) error {
 	e.opts = *opts
 
-	if _, err := exec.LookPath("cursor-agent"); err != nil {
+	if _, err := executil.LookPath("cursor-agent"); err != nil {
 		return fmt.Errorf("cursor-agent CLI not found in PATH")
 	}
 
@@ -54,7 +56,12 @@ func (e *Executor) Setup(ctx context.Context, opts *harnesstype.SetupOptions) er
 	}
 
 	if opts.BundleDir != "" {
-		if err := e.startInteractive(ctx, opts); err != nil {
+		startInteractive := e.startInteractiveFunc
+		if startInteractive == nil {
+			startInteractive = e.startInteractive
+		}
+
+		if err := startInteractive(ctx, opts); err != nil {
 			e.cleanupInteractiveConfig()
 			return err
 		}
@@ -88,7 +95,10 @@ func (e *Executor) Execute(ctx context.Context, job *client.Job) (*harnesstype.E
 		args = append([]string{"-C", workDir}, args...)
 	}
 
-	cmd := exec.CommandContext(ctx, "cursor-agent", args...) //nolint:gosec // G204: command originates from trusted job execution payload
+	cmd, err := executil.CommandContext(ctx, "cursor-agent", args...)
+	if err != nil {
+		return nil, &harnesstype.ExecError{Reason: "execution_error", Message: err.Error()}
+	}
 
 	cmd.Env = os.Environ()
 
@@ -252,7 +262,10 @@ func (e *Executor) startInteractive(ctx context.Context, opts *harnesstype.Setup
 		args = append(args, "-C", opts.BundleDir)
 	}
 
-	cmd := exec.CommandContext(ctx, "cursor-agent", args...) //nolint:gosec // G204: args from controlled input
+	cmd, err := executil.CommandContext(ctx, "cursor-agent", args...)
+	if err != nil {
+		return fmt.Errorf("resolve cursor-agent command: %w", err)
+	}
 
 	cmd.Env = append(os.Environ(), "TERM=xterm-256color", "FORCE_COLOR=1")
 
@@ -268,9 +281,12 @@ func (e *Executor) startInteractive(ctx context.Context, opts *harnesstype.Setup
 
 	cmd.Env = append(cmd.Env, env...)
 
-	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{
-		Rows: uint16(opts.TermHeight),
-		Cols: uint16(opts.TermWidth),
+	ptmx, pgid, waitDoneCh, err := harnesstype.StartInteractiveProcess(cmd, opts, func() {
+		e.cleanupInteractiveConfig()
+
+		if opts.OnExit != nil {
+			opts.OnExit()
+		}
 	})
 	if err != nil {
 		if cleanup != nil {
@@ -283,50 +299,10 @@ func (e *Executor) startInteractive(ctx context.Context, opts *harnesstype.Setup
 	e.mu.Lock()
 	e.cmd = cmd
 	e.ptmx = ptmx
-	e.pgid = 0
+	e.pgid = pgid
 	e.interactiveConfigCleanup = cleanup
-
-	if cmd.Process != nil && cmd.Process.Pid > 0 {
-		if pgid, pgErr := syscall.Getpgid(cmd.Process.Pid); pgErr == nil {
-			e.pgid = pgid
-		}
-	}
-
-	e.waitDoneCh = make(chan struct{})
-	waitDoneCh := e.waitDoneCh
+	e.waitDoneCh = waitDoneCh
 	e.mu.Unlock()
-
-	go func() {
-		buf := make([]byte, 4096)
-		for {
-			n, readErr := ptmx.Read(buf)
-			if n > 0 {
-				if opts.TermWriter != nil {
-					_, _ = opts.TermWriter.Write(buf[:n])
-				}
-
-				if opts.OnOutput != nil {
-					opts.OnOutput(buf[:n])
-				}
-			}
-
-			if readErr != nil {
-				return
-			}
-		}
-	}()
-
-	go func() {
-		_ = cmd.Wait()
-
-		close(waitDoneCh)
-
-		e.cleanupInteractiveConfig()
-
-		if opts.OnExit != nil {
-			opts.OnExit()
-		}
-	}()
 
 	return nil
 }
@@ -403,7 +379,7 @@ func mergeCursorConfig(generatedContent, projectDir string) ([]byte, error) {
 	baseConfig := map[string]any{}
 
 	if basePath := resolveCursorBaseConfigPath(projectDir); basePath != "" {
-		if data, err := os.ReadFile(filepath.Clean(basePath)); err == nil && strings.TrimSpace(string(data)) != "" {
+		if data, err := safeio.ReadFile(filepath.Clean(basePath)); err == nil && strings.TrimSpace(string(data)) != "" {
 			_ = json.Unmarshal(data, &baseConfig)
 		}
 	}

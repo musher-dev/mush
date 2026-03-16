@@ -63,7 +63,7 @@ func LoadInstalled(workDir string) ([]InstalledBundle, error) {
 
 	data, err := safeio.ReadFile(path)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil
 		}
 

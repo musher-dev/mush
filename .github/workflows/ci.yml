@@ -12,6 +12,8 @@ jobs:
   quality:
     name: Task Quality Gate
     runs-on: ubuntu-latest
+    env:
+      COVERAGE_THRESHOLD: "50.0"
     steps:
       - uses: actions/checkout@v6
 
@@ -38,9 +40,54 @@ jobs:
       - name: Run CI quality checks
         run: task check:ci
 
+      - name: Enforce Coverage Floor
+        run: |
+          total="$(go tool cover -func=coverage.out | awk '/^total:/ {print substr($3, 1, length($3)-1)}')"
+          awk -v total="$total" -v min="$COVERAGE_THRESHOLD" 'BEGIN { exit !(total + 0 >= min + 0) }' || {
+            echo "coverage ${total}% is below required ${COVERAGE_THRESHOLD}%"
+            exit 1
+          }
+
+      - name: Validate GoReleaser Config
+        uses: goreleaser/goreleaser-action@v7
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: check
+
       # Optional: Upload coverage
       - name: Upload Coverage
         uses: codecov/codecov-action@v5
         with:
           files: coverage.out
         if: github.event_name == 'push'
+
+  macos-tests:
+    name: macOS Tests
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+
+      - name: Run Tests
+        run: go test ./...
+
+  windows-build:
+    name: Windows Build Smoke
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+
+      - name: Build
+        run: go build ./cmd/mush

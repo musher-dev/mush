@@ -1,6 +1,7 @@
 package bundle
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -306,7 +307,7 @@ func InjectToolConfigsForLoad(
 		case readErr == nil:
 			existing = data
 			backups = append(backups, backup{path: targetPath, data: data})
-		case os.IsNotExist(readErr):
+		case errors.Is(readErr, os.ErrNotExist):
 			backups = append(backups, backup{path: targetPath, data: nil})
 		default:
 			return nil, makeCleanup(), fmt.Errorf("backup existing tool config %s: %w", targetPath, readErr)

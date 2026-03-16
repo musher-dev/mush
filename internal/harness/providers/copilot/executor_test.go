@@ -106,7 +106,14 @@ sleep 30
 	}
 
 	trace := string(traceData)
-	if !strings.Contains(trace, "PWD="+workDir) {
+
+	// On macOS, $PWD may resolve symlinks (e.g., /tmp → /private/tmp).
+	resolvedWorkDir := workDir
+	if resolved, err := filepath.EvalSymlinks(workDir); err == nil {
+		resolvedWorkDir = resolved
+	}
+
+	if !strings.Contains(trace, "PWD="+workDir) && !strings.Contains(trace, "PWD="+resolvedWorkDir) {
 		t.Fatalf("trace missing working directory, trace=%q", trace)
 	}
 
@@ -222,6 +229,7 @@ sleep 30
 `)
 
 	exec := &Executor{}
+	exec.startInteractiveFunc = fakeCopilotInteractiveStart(t, exec)
 
 	err := exec.Setup(t.Context(), &SetupOptions{
 		BundleDir:  t.TempDir(),
@@ -229,10 +237,6 @@ sleep 30
 		TermHeight: 30,
 	})
 	if err != nil {
-		if strings.Contains(err.Error(), "open /dev/ptmx: permission denied") {
-			t.Skip("PTY unavailable in sandbox")
-		}
-
 		t.Fatalf("Setup() error = %v", err)
 	}
 
@@ -241,6 +245,24 @@ sleep 30
 	}
 
 	exec.Teardown()
+}
+
+func fakeCopilotInteractiveStart(t *testing.T, exec *Executor) func(context.Context, *SetupOptions) error {
+	t.Helper()
+
+	return func(_ context.Context, _ *SetupOptions) error {
+		ptmx, err := os.CreateTemp(t.TempDir(), "fake-copilot-pty-*")
+		if err != nil {
+			return fmt.Errorf("create fake copilot pty: %w", err)
+		}
+
+		exec.mu.Lock()
+		exec.ptmx = ptmx
+		exec.waitDoneCh = make(chan struct{})
+		exec.mu.Unlock()
+
+		return nil
+	}
 }
 
 func installFakeCopilot(t *testing.T, script string) {

@@ -4,9 +4,12 @@ package claude
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/musher-dev/mush/internal/safeio"
 )
 
 type settingsFile struct {
@@ -88,7 +91,7 @@ func InstallStopHook(signalDir string) (func() error, error) {
 
 	settings := settingsFile{}
 
-	if data, readErr := os.ReadFile(settingsPath); readErr == nil { //nolint:gosec // G304: path from known .claude directory
+	if data, readErr := safeio.ReadFile(settingsPath); readErr == nil {
 		original = data
 		originalExists = true
 
@@ -97,7 +100,7 @@ func InstallStopHook(signalDir string) (func() error, error) {
 				return nil, fmt.Errorf("failed to parse settings: %w", unmarshalErr)
 			}
 		}
-	} else if !os.IsNotExist(readErr) {
+	} else if !errors.Is(readErr, os.ErrNotExist) {
 		return nil, fmt.Errorf("failed to read settings: %w", readErr)
 	}
 
@@ -153,7 +156,7 @@ func InstallStopHook(signalDir string) (func() error, error) {
 
 	settings.Hooks["Stop"] = normalizedStopHooks
 
-	if mkdirErr := os.MkdirAll(filepath.Dir(settingsPath), 0o755); mkdirErr != nil { //nolint:gosec // G301: .claude dir needs 0o755
+	if mkdirErr := safeio.MkdirAll(filepath.Dir(settingsPath), 0o755); mkdirErr != nil {
 		return nil, fmt.Errorf("failed to create .claude directory: %w", mkdirErr)
 	}
 
@@ -162,13 +165,13 @@ func InstallStopHook(signalDir string) (func() error, error) {
 		return nil, fmt.Errorf("failed to marshal settings: %w", err)
 	}
 
-	if err := os.WriteFile(settingsPath, updated, 0o600); err != nil {
+	if err := safeio.WriteFile(settingsPath, updated, 0o600); err != nil {
 		return nil, fmt.Errorf("failed to write settings: %w", err)
 	}
 
 	restore := func() error {
 		if originalExists {
-			if err := os.WriteFile(settingsPath, original, 0o600); err != nil {
+			if err := safeio.WriteFile(settingsPath, original, 0o600); err != nil {
 				return fmt.Errorf("restore original settings file: %w", err)
 			}
 

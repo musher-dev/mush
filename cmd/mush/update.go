@@ -4,9 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
-	selfupdate "github.com/creativeprojects/go-selfupdate"
 	"github.com/spf13/cobra"
 
 	"github.com/musher-dev/mush/internal/buildinfo"
@@ -70,14 +68,8 @@ func runUpdate(cmd *cobra.Command, out *output.Writer, targetVersion string, for
 		return clierrors.Wrap(clierrors.ExitGeneral, "Failed to initialize updater", err)
 	}
 
-	execPath, execPathErr := selfupdate.ExecutablePath()
-	source := update.InstallSourceUnknown
-
-	if execPathErr == nil {
-		source = update.DetectInstallSource(execPath)
-	}
-
-	if source == update.InstallSourceHomebrew {
+	install := update.CurrentInstallContext()
+	if install.Source == update.InstallSourceHomebrew {
 		return clierrors.New(clierrors.ExitGeneral, "Self-update is disabled for Homebrew installs").
 			WithHint("Run 'brew upgrade mush' instead")
 	}
@@ -140,11 +132,12 @@ func runUpdate(cmd *cobra.Command, out *output.Writer, targetVersion string, for
 	}
 
 	// Check write permissions and re-exec with sudo if needed
-	if execPathErr == nil && update.NeedsElevation(execPath) {
-		if sudoErr := update.ReExecWithSudo(); sudoErr != nil {
-			return clierrors.Wrap(clierrors.ExitGeneral, "Failed to re-exec updater with sudo", sudoErr)
-		}
+	reexeced, err := ensureUpdateWritable(install)
+	if err != nil {
+		return err
+	}
 
+	if reexeced {
 		return nil
 	}
 
@@ -171,13 +164,12 @@ func runUpdate(cmd *cobra.Command, out *output.Writer, targetVersion string, for
 }
 
 func updateToVersion(ctx context.Context, out *output.Writer, updater *update.Updater, version string) error {
-	// Check write permissions and re-exec with sudo if needed
-	execPath, err := selfupdate.ExecutablePath()
-	if err == nil && update.NeedsElevation(execPath) {
-		if sudoErr := update.ReExecWithSudo(); sudoErr != nil {
-			return clierrors.Wrap(clierrors.ExitGeneral, "Failed to re-exec updater with sudo", sudoErr)
-		}
+	reexeced, err := ensureUpdateWritable(update.CurrentInstallContext())
+	if err != nil {
+		return err
+	}
 
+	if reexeced {
 		return nil
 	}
 
@@ -210,23 +202,18 @@ func updateToVersion(ctx context.Context, out *output.Writer, updater *update.Up
 }
 
 func saveCheckState(current, latest, releaseURL string) {
-	execPath, err := selfupdate.ExecutablePath()
-	source := update.InstallSourceUnknown
-
-	if err == nil {
-		source = update.DetectInstallSource(execPath)
-	}
-
-	state := &update.State{
-		LastCheckedAt:  time.Now(),
-		LatestVersion:  latest,
-		CurrentVersion: current,
-		ReleaseURL:     releaseURL,
-		InstallSource:  string(source),
-	}
-	_ = update.SaveState(state)
+	_ = update.SaveCheckResult(current, latest, releaseURL)
 }
 
 func isUpdateDisabled() bool {
 	return update.IsDisabled()
+}
+
+func ensureUpdateWritable(install update.InstallContext) (bool, error) {
+	reexeced, err := update.EnsureWritable(install)
+	if err != nil {
+		return false, clierrors.Wrap(clierrors.ExitGeneral, "Failed to re-exec updater with sudo", err)
+	}
+
+	return reexeced, nil
 }

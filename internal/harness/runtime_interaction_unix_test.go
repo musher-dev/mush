@@ -25,7 +25,7 @@ type testInputExecutor struct {
 
 func (e *testInputExecutor) Setup(context.Context, *harnesstype.SetupOptions) error { return nil }
 func (e *testInputExecutor) Execute(context.Context, *client.Job) (*harnesstype.ExecResult, error) {
-	return nil, nil //nolint:nilnil // test stub intentionally returns no result
+	return &harnesstype.ExecResult{}, nil
 }
 func (e *testInputExecutor) Reset(context.Context) error { return nil }
 func (e *testInputExecutor) Teardown()                   {}

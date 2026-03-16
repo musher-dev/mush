@@ -211,6 +211,7 @@ func TestCursorSetup_InteractiveBundleMode(t *testing.T) {
 	installFakeCursorAgent(t, fakeCursorAgentScript)
 
 	exec := &Executor{}
+	exec.startInteractiveFunc = fakeCursorInteractiveStart(t, exec)
 
 	err := exec.Setup(t.Context(), &SetupOptions{
 		BundleDir:  t.TempDir(),
@@ -218,10 +219,6 @@ func TestCursorSetup_InteractiveBundleMode(t *testing.T) {
 		TermWidth:  80,
 	})
 	if err != nil {
-		if strings.Contains(err.Error(), "open /dev/ptmx: permission denied") {
-			t.Skip("PTY unavailable in sandbox")
-		}
-
 		t.Fatalf("Setup(bundle mode) error = %v", err)
 	}
 
@@ -236,6 +233,24 @@ func TestCursorSetup_InteractiveBundleMode(t *testing.T) {
 	}
 
 	exec.Teardown()
+}
+
+func fakeCursorInteractiveStart(t *testing.T, exec *Executor) func(context.Context, *SetupOptions) error {
+	t.Helper()
+
+	return func(_ context.Context, _ *SetupOptions) error {
+		ptmx, err := os.CreateTemp(t.TempDir(), "fake-cursor-pty-*")
+		if err != nil {
+			return fmt.Errorf("create fake cursor pty: %w", err)
+		}
+
+		exec.mu.Lock()
+		exec.ptmx = ptmx
+		exec.waitDoneCh = make(chan struct{})
+		exec.mu.Unlock()
+
+		return nil
+	}
 }
 
 func installFakeCursorAgent(t *testing.T, script string) {

@@ -17,7 +17,9 @@ import (
 
 	"github.com/musher-dev/mush/internal/ansi"
 	"github.com/musher-dev/mush/internal/client"
+	"github.com/musher-dev/mush/internal/executil"
 	"github.com/musher-dev/mush/internal/harness/harnesstype"
+	"github.com/musher-dev/mush/internal/safeio"
 )
 
 // Executor runs jobs via OpenAI Codex CLI.
@@ -36,7 +38,7 @@ type Executor struct {
 func (e *Executor) Setup(ctx context.Context, opts *harnesstype.SetupOptions) error {
 	e.opts = *opts
 
-	if _, err := exec.LookPath("codex"); err != nil {
+	if _, err := executil.LookPath("codex"); err != nil {
 		return fmt.Errorf("codex CLI not found in PATH")
 	}
 
@@ -90,7 +92,10 @@ func (e *Executor) Execute(ctx context.Context, job *client.Job) (*harnesstype.E
 
 	args = append(args, "-o", outputPath, prompt)
 
-	cmd := exec.CommandContext(ctx, "codex", args...) //nolint:gosec // G204: command originates from trusted job execution payload
+	cmd, err := executil.CommandContext(ctx, "codex", args...)
+	if err != nil {
+		return nil, &harnesstype.ExecError{Reason: "execution_error", Message: err.Error()}
+	}
 
 	cmd.Env = os.Environ()
 
@@ -140,7 +145,7 @@ func (e *Executor) Execute(ctx context.Context, job *client.Job) (*harnesstype.E
 	}
 
 	// Read output from the output file.
-	outputData, readErr := os.ReadFile(outputPath) //nolint:gosec // G304: path created by us via CreateTemp
+	outputData, readErr := safeio.ReadFile(outputPath)
 
 	output := ""
 	if readErr == nil {
@@ -195,7 +200,10 @@ func (e *Executor) startInteractive(ctx context.Context, opts *harnesstype.Setup
 		args = append(args, spec.BundleDir.Flag, opts.BundleDir)
 	}
 
-	cmd := exec.CommandContext(ctx, "codex", args...) //nolint:gosec // G204: args from controlled input
+	cmd, err := executil.CommandContext(ctx, "codex", args...)
+	if err != nil {
+		return fmt.Errorf("resolve codex command: %w", err)
+	}
 
 	cmd.Env = append(os.Environ(), "TERM=xterm-256color", "FORCE_COLOR=1")
 

@@ -81,6 +81,38 @@ func newHistoryListCmd() *cobra.Command {
 	}
 }
 
+func renderTranscriptEvents(
+	out *output.Writer,
+	events []transcript.Event,
+	lastSeq uint64,
+	search string,
+	raw bool,
+) uint64 {
+	searchLower := strings.ToLower(search)
+
+	for _, event := range events {
+		if event.Seq <= lastSeq {
+			continue
+		}
+
+		line := event.Text
+		if !raw {
+			line = ansi.Strip(line)
+		}
+
+		if searchLower != "" && !strings.Contains(strings.ToLower(line), searchLower) {
+			lastSeq = event.Seq
+			continue
+		}
+
+		out.Print("%s\n", strings.TrimRight(line, "\n"))
+
+		lastSeq = event.Seq
+	}
+
+	return lastSeq
+}
+
 func newHistoryViewCmd() *cobra.Command {
 	var (
 		search string
@@ -127,25 +159,7 @@ Use --search to filter output to lines matching a substring.`,
 					return clierrors.Wrap(clierrors.ExitGeneral, "Failed to read transcript events", err)
 				}
 			} else {
-				for _, event := range events {
-					if event.Seq <= lastSeq {
-						continue
-					}
-
-					line := event.Text
-					if !raw {
-						line = ansi.Strip(line)
-					}
-
-					if search != "" && !strings.Contains(strings.ToLower(line), strings.ToLower(search)) {
-						lastSeq = event.Seq
-						continue
-					}
-
-					out.Print("%s\n", strings.TrimRight(line, "\n"))
-
-					lastSeq = event.Seq
-				}
+				lastSeq = renderTranscriptEvents(out, events, lastSeq, search, raw)
 			}
 
 			if !follow {
@@ -161,25 +175,7 @@ Use --search to filter output to lines matching a substring.`,
 
 				liveOffset = nextOffset
 
-				for _, event := range liveEvents {
-					if event.Seq <= lastSeq {
-						continue
-					}
-
-					line := event.Text
-					if !raw {
-						line = ansi.Strip(line)
-					}
-
-					if search != "" && !strings.Contains(strings.ToLower(line), strings.ToLower(search)) {
-						lastSeq = event.Seq
-						continue
-					}
-
-					out.Print("%s\n", strings.TrimRight(line, "\n"))
-
-					lastSeq = event.Seq
-				}
+				lastSeq = renderTranscriptEvents(out, liveEvents, lastSeq, search, raw)
 
 				select {
 				case <-ctx.Done():

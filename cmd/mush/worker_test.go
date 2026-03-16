@@ -45,7 +45,7 @@ func workerMockClient(t *testing.T, runnerConfig string) *client.Client {
 			return workerJSONResponse(http.StatusOK, `{"queueId":"q-1","hasActiveInstruction":true}`), nil
 		default:
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
-			return nil, nil //nolint:nilnil // unreachable after t.Fatalf
+			return nil, io.EOF
 		}
 	})}
 

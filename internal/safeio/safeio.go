@@ -1,11 +1,19 @@
 package safeio
 
-import "os"
+import (
+	"fmt"
+	"os"
+)
 
 // ReadFile centralizes trusted-path reads so call sites don't need repeated
 // gosec suppressions for paths that were validated or derived by our code.
 func ReadFile(path string) ([]byte, error) {
-	return os.ReadFile(path) //nolint:gosec,wrapcheck // G304: callers pass trusted or validated paths; helper intentionally preserves original error
+	data, err := os.ReadFile(path) //nolint:gosec // G304: callers pass trusted or validated paths
+	if err != nil {
+		return nil, fmt.Errorf("read file: %w", err)
+	}
+
+	return data, nil
 }
 
 // ReadFileIfExists reads a file when present and reports whether it existed.
@@ -24,20 +32,38 @@ func ReadFileIfExists(path string) (data []byte, exists bool, err error) {
 
 // MkdirAll centralizes directory creation for known cache/config/project paths.
 func MkdirAll(path string, perm os.FileMode) error {
-	return os.MkdirAll(path, perm) //nolint:wrapcheck // helper intentionally preserves original error
+	if err := os.MkdirAll(path, perm); err != nil {
+		return fmt.Errorf("make directory: %w", err)
+	}
+
+	return nil
 }
 
 // WriteFile centralizes writes to trusted destinations and intentional file modes.
 func WriteFile(path string, data []byte, perm os.FileMode) error {
-	return os.WriteFile(path, data, perm) //nolint:wrapcheck // helper intentionally preserves original error
+	if err := os.WriteFile(path, data, perm); err != nil {
+		return fmt.Errorf("write file: %w", err)
+	}
+
+	return nil
 }
 
 // Open centralizes trusted-path opens.
 func Open(path string) (*os.File, error) {
-	return os.Open(path) //nolint:gosec,wrapcheck // G304: callers pass trusted or validated paths; helper intentionally preserves original error
+	file, err := os.Open(path) //nolint:gosec // G304: callers pass trusted or validated paths
+	if err != nil {
+		return nil, fmt.Errorf("open file: %w", err)
+	}
+
+	return file, nil
 }
 
 // OpenFile centralizes trusted-path open flags.
 func OpenFile(path string, flag int, perm os.FileMode) (*os.File, error) {
-	return os.OpenFile(path, flag, perm) //nolint:gosec,wrapcheck // G304: callers pass trusted or validated paths; helper intentionally preserves original error
+	file, err := os.OpenFile(path, flag, perm) //nolint:gosec // G304: callers pass trusted or validated paths
+	if err != nil {
+		return nil, fmt.Errorf("open file: %w", err)
+	}
+
+	return file, nil
 }

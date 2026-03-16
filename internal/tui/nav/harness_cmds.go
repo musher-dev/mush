@@ -2,11 +2,11 @@ package nav
 
 import (
 	"context"
-	"os/exec"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/musher-dev/mush/internal/executil"
 	"github.com/musher-dev/mush/internal/harness"
 	"github.com/musher-dev/mush/internal/harness/harnesstype"
 )
@@ -39,7 +39,7 @@ func cmdLoadHarnessStatuses(ctx context.Context) tea.Cmd {
 			}
 
 			// Check if binary is available.
-			if _, err := exec.LookPath(spec.Binary); err == nil {
+			if _, err := executil.LookPath(spec.Binary); err == nil {
 				status.installed = true
 				status.version = harnessQuickStatusVersion(detectVersion(ctx, spec))
 			}
@@ -60,8 +60,10 @@ func detectVersion(ctx context.Context, spec *harnesstype.ProviderSpec) string {
 	versionCtx, cancel := navStatusCtx(ctx)
 	defer cancel()
 
-	//nolint:gosec // args come from embedded YAML, not user input
-	cmd := exec.CommandContext(versionCtx, spec.Binary, spec.Status.VersionArgs...)
+	cmd, err := executil.CommandContext(versionCtx, spec.Binary, spec.Status.VersionArgs...)
+	if err != nil {
+		return ""
+	}
 
 	out, err := cmd.Output()
 	if err != nil {

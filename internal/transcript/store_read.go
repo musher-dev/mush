@@ -37,7 +37,7 @@ func ListSessions(rootDir string) ([]Session, error) {
 
 	entries, err := os.ReadDir(rootDir)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil
 		}
 
@@ -101,7 +101,7 @@ func ReadEvents(rootDir, sessionID string) (events []Event, err error) {
 
 	file, err := safeio.Open(gzPath)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			// Compressed file missing — fall back to live file (crashed session).
 			return readEventsFromLiveFile(rootDir, sessionID)
 		}
@@ -154,7 +154,7 @@ func readEventsFromLiveFile(rootDir, sessionID string) (events []Event, err erro
 
 	file, err := safeio.Open(livePath)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil
 		}
 
@@ -219,7 +219,7 @@ func ReadLiveEventsFrom(rootDir, sessionID string, offset int64) (events []Event
 
 	file, err := safeio.Open(path)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return nil, offset, nil
 		}
 

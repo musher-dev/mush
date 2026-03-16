@@ -1,6 +1,6 @@
 --- NotAuthenticated ---
 Message: Not authenticated
-Hint: Run 'mush auth login' to authenticate. See: https://github.com/musher-dev/mush/blob/main/docs/errors.md#err-auth-001-authentication-failed
+Hint: Run 'mush auth login' or set MUSH_API_KEY. See: https://github.com/musher-dev/mush/blob/main/docs/errors.md#err-auth-001-authentication-failed
 Code: 2
 
 --- AuthFailed ---

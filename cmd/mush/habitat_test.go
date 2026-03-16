@@ -25,7 +25,7 @@ func habitatMockClient(t *testing.T, habitats []client.HabitatSummary) *client.C
 
 		t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
 
-		return nil, nil //nolint:nilnil // unreachable after t.Fatalf
+		return nil, io.EOF
 	})}
 
 	return client.NewWithHTTPClient("https://api.test", "test-key", hc)

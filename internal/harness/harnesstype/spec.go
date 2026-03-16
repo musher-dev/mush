@@ -2,8 +2,8 @@ package harnesstype
 
 import (
 	"fmt"
-	"os/exec"
 
+	"github.com/musher-dev/mush/internal/executil"
 	"gopkg.in/yaml.v3"
 )
 
@@ -109,7 +109,7 @@ func AvailableFunc(spec *ProviderSpec) func() bool {
 			return true
 		}
 
-		_, err := exec.LookPath(spec.Binary)
+		_, err := executil.LookPath(spec.Binary)
 
 		return err == nil
 	}

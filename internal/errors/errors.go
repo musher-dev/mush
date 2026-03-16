@@ -120,7 +120,7 @@ func As(err error, target **CLIError) bool {
 func NotAuthenticated() *CLIError {
 	return &CLIError{
 		Message:   "Not authenticated",
-		Hint:      fmt.Sprintf("Run 'mush auth login' to authenticate. See: %s", authDocURL),
+		Hint:      fmt.Sprintf("Run 'mush auth login' or set MUSH_API_KEY. See: %s", authDocURL),
 		Code:      ExitAuth,
 		ErrorCode: "ERR-AUTH-001",
 	}

@@ -4,11 +4,11 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
 
+	"github.com/musher-dev/mush/internal/executil"
 	"github.com/musher-dev/mush/internal/harness/harnesstype"
 )
 
@@ -39,6 +39,8 @@ type HealthReport struct {
 	InstallHint  string
 	Results      []HealthResult
 }
+
+const firstLineSplitParts = 2
 
 // CheckHealth runs all applicable health checks for the named provider.
 func CheckHealth(ctx context.Context, name string) (*HealthReport, error) {
@@ -119,7 +121,7 @@ func CheckAllHealth(ctx context.Context) []*HealthReport {
 }
 
 func checkBinary(spec *harnesstype.ProviderSpec) HealthResult {
-	path, err := exec.LookPath(spec.Binary)
+	path, err := executil.LookPath(spec.Binary)
 	if err != nil {
 		result := HealthResult{
 			Check:   "Binary",
@@ -142,8 +144,14 @@ func checkBinary(spec *harnesstype.ProviderSpec) HealthResult {
 }
 
 func checkVersion(ctx context.Context, spec *harnesstype.ProviderSpec) HealthResult {
-	//nolint:gosec // args come from embedded YAML, not user input
-	cmd := exec.CommandContext(ctx, spec.Binary, spec.Status.VersionArgs...)
+	cmd, err := executil.CommandContext(ctx, spec.Binary, spec.Status.VersionArgs...)
+	if err != nil {
+		return HealthResult{
+			Check:   "Version",
+			Message: fmt.Sprintf("failed to resolve version command: %v", err),
+			Status:  HealthWarn,
+		}
+	}
 
 	out, err := cmd.Output()
 	if err != nil {
@@ -155,7 +163,7 @@ func checkVersion(ctx context.Context, spec *harnesstype.ProviderSpec) HealthRes
 	}
 
 	// Extract first line of output.
-	version := strings.TrimSpace(strings.SplitN(string(out), "\n", 2)[0]) //nolint:mnd // split into at most 2 parts
+	version := strings.TrimSpace(strings.SplitN(string(out), "\n", firstLineSplitParts)[0])
 
 	return HealthResult{
 		Check:   "Version",
