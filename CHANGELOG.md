@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.17.0](https://github.com/musher-dev/mush/compare/v3.16.1...v3.17.0) (2026-03-17)
+
+
+### Features
+
+* **harness:** add configurable keybindings and decompose runtime ([#119](https://github.com/musher-dev/mush/issues/119)) ([203bd3a](https://github.com/musher-dev/mush/commit/203bd3aab986d5659d4be703b73ce1d66b32a970))
+
 ## [3.16.1](https://github.com/musher-dev/mush/compare/v3.16.0...v3.16.1) (2026-03-15)
 
 
