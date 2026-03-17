@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.17.1](https://github.com/musher-dev/mush/compare/v3.17.0...v3.17.1) (2026-03-17)
+
+
+### Bug Fixes
+
+* **client:** remove /api prefix and update bundle resolution endpoints ([#125](https://github.com/musher-dev/mush/issues/125)) ([d7290cf](https://github.com/musher-dev/mush/commit/d7290cfb8643703193f28d34ee4dd2a6f16de819))
+
 ## [3.17.0](https://github.com/musher-dev/mush/compare/v3.16.1...v3.17.0) (2026-03-17)
 
 
