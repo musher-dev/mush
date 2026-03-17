@@ -20,7 +20,7 @@ commit-msg:
       run: go run ./cmd/mush-hook commit-msg {1}
 
 pre-push:
-  piped: true
-  commands:
-    quality-gate:
-      run: task hooks:pre-push -- {1} {2}
+  scripts:
+    "quality-gate.sh":
+      runner: bash
+      use_stdin: true
