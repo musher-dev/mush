@@ -11,8 +11,8 @@ func TestSearchHubBundlesHappyPath(t *testing.T) {
 
 	clientHTTP := &http.Client{
 		Transport: bundleRoundTripFunc(func(r *http.Request) (*http.Response, error) {
-			if r.URL.Path != "/api/v1/hub/bundles" {
-				t.Fatalf("path = %q, want /api/v1/hub/bundles", r.URL.Path)
+			if r.URL.Path != "/v1/hub/bundles" {
+				t.Fatalf("path = %q, want /v1/hub/bundles", r.URL.Path)
 			}
 
 			if got := r.URL.Query().Get("q"); got != "deploy" {
@@ -102,8 +102,8 @@ func TestGetHubBundleDetailHappyPath(t *testing.T) {
 
 	clientHTTP := &http.Client{
 		Transport: bundleRoundTripFunc(func(r *http.Request) (*http.Response, error) {
-			if r.URL.Path != "/api/v1/hub/bundles/acme/deploy-tool" {
-				t.Fatalf("path = %q, want /api/v1/hub/bundles/acme/deploy-tool", r.URL.Path)
+			if r.URL.Path != "/v1/hub/bundles/acme/deploy-tool" {
+				t.Fatalf("path = %q, want /v1/hub/bundles/acme/deploy-tool", r.URL.Path)
 			}
 
 			return bundleJSONResponse(http.StatusOK, `{
@@ -182,8 +182,8 @@ func TestListHubCategoriesHappyPath(t *testing.T) {
 
 	clientHTTP := &http.Client{
 		Transport: bundleRoundTripFunc(func(r *http.Request) (*http.Response, error) {
-			if r.URL.Path != "/api/v1/hub/categories" {
-				t.Fatalf("path = %q, want /api/v1/hub/categories", r.URL.Path)
+			if r.URL.Path != "/v1/hub/categories" {
+				t.Fatalf("path = %q, want /v1/hub/categories", r.URL.Path)
 			}
 
 			return bundleJSONResponse(http.StatusOK, `{"data":[

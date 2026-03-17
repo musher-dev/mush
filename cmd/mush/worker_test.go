@@ -33,15 +33,15 @@ func workerMockClient(t *testing.T, runnerConfig string) *client.Client {
 
 	hc := &http.Client{Transport: workerRoundTripFunc(func(r *http.Request) (*http.Response, error) {
 		switch {
-		case r.URL.Path == "/api/v1/runner/me" && r.Method == http.MethodGet:
+		case r.URL.Path == "/v1/runner/me" && r.Method == http.MethodGet:
 			return workerJSONResponse(http.StatusOK, `{"credentialType":"api_key","credentialId":"cred-1","credentialName":"test-key","runnerId":"mut_xxx","organizationId":"org-1","organizationName":"Test Organization"}`), nil
-		case r.URL.Path == "/api/v1/runner/config" && r.Method == http.MethodGet:
+		case r.URL.Path == "/v1/runner/config" && r.Method == http.MethodGet:
 			return workerJSONResponse(http.StatusOK, runnerConfig), nil
-		case r.URL.Path == "/api/v1/runner/habitats" && r.Method == http.MethodGet:
-			return workerJSONResponse(http.StatusOK, `[{"id":"hab-1","slug":"local","name":"Local","status":"online","habitatType":"local"}]`), nil
-		case r.URL.Path == "/api/v1/queues" && r.Method == http.MethodGet:
+		case r.URL.Path == "/v1/runner/habitats" && r.Method == http.MethodGet:
+			return workerJSONResponse(http.StatusOK, `{"data":[{"id":"hab-1","slug":"local","name":"Local","status":"online","habitatType":"local"}]}`), nil
+		case r.URL.Path == "/v1/queues" && r.Method == http.MethodGet:
 			return workerJSONResponse(http.StatusOK, `{"data":[{"id":"q-1","slug":"default","name":"Default","status":"active","habitatId":"hab-1"}]}`), nil
-		case strings.HasPrefix(r.URL.Path, "/api/v1/runner/queues/") && strings.HasSuffix(r.URL.Path, "/instruction-availability"):
+		case strings.HasPrefix(r.URL.Path, "/v1/runner/queues/") && strings.HasSuffix(r.URL.Path, "/instruction-availability"):
 			return workerJSONResponse(http.StatusOK, `{"queueId":"q-1","hasActiveInstruction":true}`), nil
 		default:
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)

@@ -9,14 +9,14 @@ import (
 
 // ListHabitats lists habitats available to the authenticated runner API key.
 func (c *Client) ListHabitats(ctx context.Context) ([]HabitatSummary, error) {
-	url := c.baseURL + "/api/v1/runner/habitats"
+	url := c.baseURL + "/v1/runner/habitats"
 
 	req, err := c.newRequest(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	resp, err := c.do(req, "/api/v1/runner/habitats")
+	resp, err := c.do(req, "/v1/runner/habitats")
 	if err != nil {
 		return nil, fmt.Errorf("failed to list habitats: %w", err)
 	}
@@ -26,17 +26,19 @@ func (c *Client) ListHabitats(ctx context.Context) ([]HabitatSummary, error) {
 		return nil, unexpectedStatus("list habitats", resp)
 	}
 
-	var habitats []HabitatSummary
-	if err := decodeJSON(resp.Body, &habitats, "failed to parse habitats response"); err != nil {
+	var response struct {
+		Data []HabitatSummary `json:"data"`
+	}
+	if err := decodeJSON(resp.Body, &response, "failed to parse habitats response"); err != nil {
 		return nil, err
 	}
 
-	return habitats, nil
+	return response.Data, nil
 }
 
 // ListQueues lists queues for a habitat.
 func (c *Client) ListQueues(ctx context.Context, habitatID string) ([]QueueSummary, error) {
-	endpoint, err := neturl.Parse(c.baseURL + "/api/v1/queues")
+	endpoint, err := neturl.Parse(c.baseURL + "/v1/queues")
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse queue endpoint: %w", err)
 	}
@@ -56,7 +58,7 @@ func (c *Client) ListQueues(ctx context.Context, habitatID string) ([]QueueSumma
 		return nil, err
 	}
 
-	resp, err := c.do(req, "/api/v1/queues")
+	resp, err := c.do(req, "/v1/queues")
 	if err != nil {
 		return nil, fmt.Errorf("failed to list queues: %w", err)
 	}
@@ -80,14 +82,14 @@ func (c *Client) GetQueueInstructionAvailability(ctx context.Context, queueID st
 		return nil, fmt.Errorf("queueID is required")
 	}
 
-	endpointURL := fmt.Sprintf("%s/api/v1/runner/queues/%s/instruction-availability", c.baseURL, neturl.PathEscape(queueID))
+	endpointURL := fmt.Sprintf("%s/v1/runner/queues/%s/instruction-availability", c.baseURL, neturl.PathEscape(queueID))
 
 	req, err := c.newRequest(ctx, "GET", endpointURL, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	resp, err := c.do(req, "/api/v1/runner/queues/{queue_id}/instruction-availability")
+	resp, err := c.do(req, "/v1/runner/queues/{queue_id}/instruction-availability")
 	if err != nil {
 		return nil, fmt.Errorf("failed to get instruction availability: %w", err)
 	}

@@ -11,7 +11,7 @@ import (
 // ClaimJob claims a job from a habitat or queue.
 // It reports whether a job was available separately from the returned job pointer.
 func (c *Client) ClaimJob(ctx context.Context, habitatID, queueID string, waitTimeoutSeconds int) (*Job, bool, error) {
-	url := fmt.Sprintf("%s/api/v1/runner/jobs:claim?wait_timeout_seconds=%d", c.baseURL, waitTimeoutSeconds)
+	url := fmt.Sprintf("%s/v1/runner/jobs:claim?wait_timeout_seconds=%d", c.baseURL, waitTimeoutSeconds)
 
 	if queueID != "" {
 		habitatID = ""
@@ -37,7 +37,7 @@ func (c *Client) ClaimJob(ctx context.Context, habitatID, queueID string, waitTi
 		return nil, false, err
 	}
 
-	resp, err := c.do(req, "/api/v1/runner/jobs:claim")
+	resp, err := c.do(req, "/v1/runner/jobs:claim")
 	if err != nil {
 		return nil, false, fmt.Errorf("failed to claim job: %w", err)
 	}
@@ -88,7 +88,7 @@ func (c *Client) HeartbeatJob(ctx context.Context, jobID string) (*Job, error) {
 
 // CompleteJob marks a job as successfully completed.
 func (c *Client) CompleteJob(ctx context.Context, jobID string, output map[string]any) error {
-	url := fmt.Sprintf("%s/api/v1/runner/jobs/%s:complete", c.baseURL, jobID)
+	url := fmt.Sprintf("%s/v1/runner/jobs/%s:complete", c.baseURL, jobID)
 
 	body := JobCompleteRequest{
 		OutputData: output,
@@ -104,7 +104,7 @@ func (c *Client) CompleteJob(ctx context.Context, jobID string, output map[strin
 		return err
 	}
 
-	resp, err := c.do(req, "/api/v1/runner/jobs/{job_id}:complete")
+	resp, err := c.do(req, "/v1/runner/jobs/{job_id}:complete")
 	if err != nil {
 		return fmt.Errorf("failed to complete job: %w", err)
 	}
@@ -119,7 +119,7 @@ func (c *Client) CompleteJob(ctx context.Context, jobID string, output map[strin
 
 // FailJob marks a job as failed.
 func (c *Client) FailJob(ctx context.Context, jobID, errorCode, errorMsg string, shouldRetry bool) error {
-	url := fmt.Sprintf("%s/api/v1/runner/jobs/%s:fail", c.baseURL, jobID)
+	url := fmt.Sprintf("%s/v1/runner/jobs/%s:fail", c.baseURL, jobID)
 
 	body := JobFailRequest{
 		ErrorCode:    errorCode,
@@ -137,7 +137,7 @@ func (c *Client) FailJob(ctx context.Context, jobID, errorCode, errorMsg string,
 		return err
 	}
 
-	resp, err := c.do(req, "/api/v1/runner/jobs/{job_id}:fail")
+	resp, err := c.do(req, "/v1/runner/jobs/{job_id}:fail")
 	if err != nil {
 		return fmt.Errorf("failed to fail job: %w", err)
 	}
@@ -152,14 +152,14 @@ func (c *Client) FailJob(ctx context.Context, jobID, errorCode, errorMsg string,
 
 // ReleaseJob releases a job back to the queue without completing.
 func (c *Client) ReleaseJob(ctx context.Context, jobID string) error {
-	url := fmt.Sprintf("%s/api/v1/runner/jobs/%s:release", c.baseURL, jobID)
+	url := fmt.Sprintf("%s/v1/runner/jobs/%s:release", c.baseURL, jobID)
 
 	req, err := c.newRequest(ctx, "POST", url, emptyJSONBody())
 	if err != nil {
 		return err
 	}
 
-	resp, err := c.do(req, "/api/v1/runner/jobs/{job_id}:release")
+	resp, err := c.do(req, "/v1/runner/jobs/{job_id}:release")
 	if err != nil {
 		return fmt.Errorf("failed to release job: %w", err)
 	}
@@ -173,14 +173,14 @@ func (c *Client) ReleaseJob(ctx context.Context, jobID string) error {
 }
 
 func (c *Client) updateJobStatus(ctx context.Context, jobID, endpointAction, operation string) (*Job, error) {
-	endpointURL := fmt.Sprintf("%s/api/v1/runner/jobs/%s:%s", c.baseURL, jobID, endpointAction)
+	endpointURL := fmt.Sprintf("%s/v1/runner/jobs/%s:%s", c.baseURL, jobID, endpointAction)
 
 	req, err := c.newRequest(ctx, "POST", endpointURL, emptyJSONBody())
 	if err != nil {
 		return nil, err
 	}
 
-	resp, err := c.do(req, "/api/v1/runner/jobs/{job_id}:"+endpointAction)
+	resp, err := c.do(req, "/v1/runner/jobs/{job_id}:"+endpointAction)
 	if err != nil {
 		return nil, fmt.Errorf("failed to %s: %w", operation, err)
 	}

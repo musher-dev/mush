@@ -67,8 +67,8 @@ func TestClientValidateKey(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := newMockClient(t, func(r *http.Request) (*http.Response, error) {
-				if r.URL.Path != "/api/v1/runner/me" {
-					t.Fatalf("path = %q, want %q", r.URL.Path, "/api/v1/runner/me")
+				if r.URL.Path != "/v1/runner/me" {
+					t.Fatalf("path = %q, want %q", r.URL.Path, "/v1/runner/me")
 				}
 
 				if got := r.Header.Get("Authorization"); got != "Bearer test-key" {
@@ -140,8 +140,8 @@ func TestClientGetCurrentUserProfile(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := newMockClient(t, func(r *http.Request) (*http.Response, error) {
-				if r.URL.Path != "/api/v1/users/me" {
-					t.Fatalf("path = %q, want %q", r.URL.Path, "/api/v1/users/me")
+				if r.URL.Path != "/v1/users/me" {
+					t.Fatalf("path = %q, want %q", r.URL.Path, "/v1/users/me")
 				}
 
 				return jsonResponse(tt.statusCode, tt.body), nil
@@ -188,8 +188,8 @@ func TestClientClaimJob(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := newMockClient(t, func(r *http.Request) (*http.Response, error) {
-				if r.URL.Path != "/api/v1/runner/jobs:claim" {
-					t.Fatalf("path = %q, want %q", r.URL.Path, "/api/v1/runner/jobs:claim")
+				if r.URL.Path != "/v1/runner/jobs:claim" {
+					t.Fatalf("path = %q, want %q", r.URL.Path, "/v1/runner/jobs:claim")
 				}
 
 				if r.URL.Query().Get("wait_timeout_seconds") != "30" {
@@ -225,8 +225,8 @@ func TestClientClaimJob(t *testing.T) {
 
 func TestClientListQueues(t *testing.T) {
 	c := newMockClient(t, func(r *http.Request) (*http.Response, error) {
-		if r.URL.Path != "/api/v1/queues" {
-			t.Fatalf("path = %q, want /api/v1/queues", r.URL.Path)
+		if r.URL.Path != "/v1/queues" {
+			t.Fatalf("path = %q, want /v1/queues", r.URL.Path)
 		}
 
 		if got := r.URL.Query().Get("status"); got != "active" {
@@ -252,8 +252,8 @@ func TestClientListQueues(t *testing.T) {
 
 func TestClientGetRunnerConfig(t *testing.T) {
 	c := newMockClient(t, func(r *http.Request) (*http.Response, error) {
-		if r.URL.Path != "/api/v1/runner/config" {
-			t.Fatalf("path = %q, want /api/v1/runner/config", r.URL.Path)
+		if r.URL.Path != "/v1/runner/config" {
+			t.Fatalf("path = %q, want /v1/runner/config", r.URL.Path)
 		}
 
 		return jsonResponse(http.StatusOK, `{"configVersion":"1","organizationId":"org-123","generatedAt":"2026-02-13T12:00:00Z","refreshAfterSeconds":300,"providers":{"linear":{"status":"active","credential":{"accessToken":"tok_123"},"flags":{"mcp":true}}}}`), nil
@@ -276,13 +276,13 @@ func TestClientGetRunnerConfig(t *testing.T) {
 func TestClientJobLifecycleEndpoints(t *testing.T) {
 	c := newMockClient(t, func(r *http.Request) (*http.Response, error) {
 		switch r.URL.Path {
-		case "/api/v1/runner/jobs/job-123:start":
+		case "/v1/runner/jobs/job-123:start":
 			return jsonResponse(http.StatusOK, `{"id":"job-123"}`), nil
-		case "/api/v1/runner/jobs/job-123:heartbeat":
+		case "/v1/runner/jobs/job-123:heartbeat":
 			return jsonResponse(http.StatusOK, `{"id":"job-123"}`), nil
-		case "/api/v1/runner/jobs/job-123:complete":
+		case "/v1/runner/jobs/job-123:complete":
 			return jsonResponse(http.StatusOK, `{}`), nil
-		case "/api/v1/runner/jobs/job-123:fail":
+		case "/v1/runner/jobs/job-123:fail":
 			var req JobFailRequest
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 				t.Fatalf("decode fail request: %v", err)
@@ -293,7 +293,7 @@ func TestClientJobLifecycleEndpoints(t *testing.T) {
 			}
 
 			return jsonResponse(http.StatusOK, `{}`), nil
-		case "/api/v1/runner/jobs/job-123:release":
+		case "/v1/runner/jobs/job-123:release":
 			return jsonResponse(http.StatusOK, `{}`), nil
 		default:
 			t.Fatalf("unexpected path: %s", r.URL.Path)
@@ -326,11 +326,11 @@ func TestClientWorkerLifecycleEndpoints(t *testing.T) {
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	c := newMockClient(t, func(r *http.Request) (*http.Response, error) {
 		switch r.URL.Path {
-		case "/api/v1/runner/workers:register":
+		case "/v1/runner/workers:register":
 			return jsonResponse(http.StatusCreated, `{"workerId":"worker-123","runnerId":"runner-456","heartbeatDeadlineAt":"`+now+`","heartbeatIntervalMs":30000}`), nil
-		case "/api/v1/runner/workers/worker-123:heartbeat":
+		case "/v1/runner/workers/worker-123:heartbeat":
 			return jsonResponse(http.StatusOK, `{"status":"active","heartbeatDeadlineAt":"`+now+`"}`), nil
-		case "/api/v1/runner/workers/worker-123:deregister":
+		case "/v1/runner/workers/worker-123:deregister":
 			return jsonResponse(http.StatusOK, `{}`), nil
 		default:
 			t.Fatalf("unexpected path: %s", r.URL.Path)
@@ -385,7 +385,7 @@ func TestJobFieldsAndHelpers(t *testing.T) {
 
 func TestClaimJobSendsJSONBody(t *testing.T) {
 	c := newMockClient(t, func(r *http.Request) (*http.Response, error) {
-		if r.URL.Path != "/api/v1/runner/jobs:claim" {
+		if r.URL.Path != "/v1/runner/jobs:claim" {
 			t.Fatalf("unexpected path: %s", r.URL.Path)
 		}
 
