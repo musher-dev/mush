@@ -30,6 +30,33 @@ func bundleRawResponse(status int, body string) *http.Response {
 	}
 }
 
+// bundleResolveMock returns a transport that serves hub detail and assets endpoints
+// for ResolveBundle tests. If wantVersion is non-empty, the mock asserts that the
+// assets request includes a matching version query parameter.
+func bundleResolveMock(t *testing.T, detailJSON, assetsJSON, wantVersion string) *http.Client {
+	t.Helper()
+
+	return &http.Client{
+		Transport: bundleRoundTripFunc(func(r *http.Request) (*http.Response, error) {
+			switch {
+			case strings.Contains(r.URL.Path, "/assets"):
+				if wantVersion != "" {
+					if got := r.URL.Query().Get("version"); got != wantVersion {
+						t.Fatalf("assets version query param = %q, want %q", got, wantVersion)
+					}
+				}
+
+				return bundleJSONResponse(http.StatusOK, assetsJSON), nil
+			case strings.HasPrefix(r.URL.Path, "/v1/hub/bundles/"):
+				return bundleJSONResponse(http.StatusOK, detailJSON), nil
+			default:
+				t.Fatalf("unexpected path: %s", r.URL.Path)
+				return nil, nil
+			}
+		}),
+	}
+}
+
 func TestAnonymousClientSkipsAuthHeader(t *testing.T) {
 	t.Parallel()
 
@@ -39,7 +66,16 @@ func TestAnonymousClientSkipsAuthHeader(t *testing.T) {
 				t.Fatalf("Authorization header = %q, want empty for anonymous client", got)
 			}
 
-			return bundleJSONResponse(http.StatusOK, `{"bundleId":"b1","versionId":"v1","version":"1.0.0","state":"published","ociRef":"r/b:1","ociDigest":"sha256:abc"}`), nil
+			switch {
+			case strings.Contains(r.URL.Path, "/assets"):
+				if got := r.URL.Query().Get("version"); got != "1.0.0" {
+					t.Fatalf("assets version query param = %q, want 1.0.0", got)
+				}
+
+				return bundleJSONResponse(http.StatusOK, `{"data":[{"id":"a1","assetType":"skill","logicalPath":"skill.md","contentSha256":"abc","sizeBytes":10}]}`), nil
+			default:
+				return bundleJSONResponse(http.StatusOK, `{"id":"b1","slug":"public-bundle","latestVersion":"1.0.0","publisher":{"handle":"pub"}}`), nil
+			}
 		}),
 	}
 
@@ -62,13 +98,19 @@ func TestAnonymousClientSkipsAuthHeader(t *testing.T) {
 func TestAuthenticatedClientSendsAuthHeader(t *testing.T) {
 	t.Parallel()
 
+	// ResolveBundle uses public (no-auth) hub endpoints, so auth header should NOT be sent.
 	clientHTTP := &http.Client{
 		Transport: bundleRoundTripFunc(func(r *http.Request) (*http.Response, error) {
-			if got := r.Header.Get("Authorization"); got != "Bearer my-key" {
-				t.Fatalf("Authorization header = %q, want %q", got, "Bearer my-key")
-			}
+			switch {
+			case strings.Contains(r.URL.Path, "/assets"):
+				if got := r.URL.Query().Get("version"); got != "2.0.0" {
+					t.Fatalf("assets version query param = %q, want 2.0.0", got)
+				}
 
-			return bundleJSONResponse(http.StatusOK, `{"bundleId":"b2","versionId":"v2","version":"2.0.0","state":"published","ociRef":"r/b:2","ociDigest":"sha256:def"}`), nil
+				return bundleJSONResponse(http.StatusOK, `{"data":[{"id":"a1","assetType":"skill","logicalPath":"skill.md","contentSha256":"abc","sizeBytes":10}]}`), nil
+			default:
+				return bundleJSONResponse(http.StatusOK, `{"id":"b2","slug":"private-bundle","latestVersion":"2.0.0","publisher":{"handle":"priv"}}`), nil
+			}
 		}),
 	}
 
@@ -88,30 +130,14 @@ func TestAuthenticatedClientSendsAuthHeader(t *testing.T) {
 	}
 }
 
-func TestResolveBundleUsesBundlesResolveEndpoint(t *testing.T) {
+func TestResolveBundleUsesHubEndpoints(t *testing.T) {
 	t.Parallel()
 
-	clientHTTP := &http.Client{
-		Transport: bundleRoundTripFunc(func(r *http.Request) (*http.Response, error) {
-			if r.URL.Path != "/api/v1/bundles:resolve" {
-				t.Fatalf("path = %q, want /api/v1/bundles:resolve", r.URL.Path)
-			}
-
-			if got := r.URL.Query().Get("namespace"); got != "acme" {
-				t.Fatalf("namespace = %q, want acme", got)
-			}
-
-			if got := r.URL.Query().Get("bundle_slug"); got != "my-bundle" {
-				t.Fatalf("bundle_slug = %q, want my-bundle", got)
-			}
-
-			if got := r.URL.Query().Get("version"); got != "1.2.3" {
-				t.Fatalf("version = %q, want 1.2.3", got)
-			}
-
-			return bundleJSONResponse(http.StatusOK, `{"bundleId":"b1","versionId":"v1","version":"1.2.3","namespace":"acme","slug":"my-bundle","ref":"acme/my-bundle:1.2.3","state":"published","ociRef":"registry.example/acme/my-bundle:1.2.3","ociDigest":"sha256:abc"}`), nil
-		}),
-	}
+	clientHTTP := bundleResolveMock(t,
+		`{"id":"b1","slug":"my-bundle","latestVersion":"1.2.3","publisher":{"handle":"acme"}}`,
+		`{"data":[{"id":"a1","assetType":"skill","logicalPath":"skill.md","contentSha256":"abc123","sizeBytes":100}]}`,
+		"1.2.3",
+	)
 
 	c := NewWithHTTPClient("https://example.test", "test-key", clientHTTP)
 
@@ -120,39 +146,23 @@ func TestResolveBundleUsesBundlesResolveEndpoint(t *testing.T) {
 		t.Fatalf("ResolveBundle() error = %v", err)
 	}
 
-	if resolved.BundleID != "b1" || resolved.VersionID != "v1" {
-		t.Fatalf("ResolveBundle() IDs = (%q,%q), want (b1,v1)", resolved.BundleID, resolved.VersionID)
+	if resolved.BundleID != "b1" {
+		t.Fatalf("ResolveBundle() BundleID = %q, want b1", resolved.BundleID)
 	}
 
-	if resolved.OCIRef == "" || resolved.OCIDigest == "" {
-		t.Fatalf("ResolveBundle() missing OCI fields: %#v", resolved)
+	if len(resolved.Manifest.Layers) != 1 || resolved.Manifest.Layers[0].AssetID != "a1" {
+		t.Fatalf("ResolveBundle() manifest layers = %#v, want 1 layer with assetId=a1", resolved.Manifest.Layers)
 	}
 }
 
 func TestResolveBundleWithoutVersionUsesLatest(t *testing.T) {
 	t.Parallel()
 
-	clientHTTP := &http.Client{
-		Transport: bundleRoundTripFunc(func(r *http.Request) (*http.Response, error) {
-			if r.URL.Path != "/api/v1/bundles:resolve" {
-				t.Fatalf("path = %q, want /api/v1/bundles:resolve", r.URL.Path)
-			}
-
-			if got := r.URL.Query().Get("namespace"); got != "acme" {
-				t.Fatalf("namespace = %q, want acme", got)
-			}
-
-			if got := r.URL.Query().Get("bundle_slug"); got != "my-bundle" {
-				t.Fatalf("bundle_slug = %q, want my-bundle", got)
-			}
-
-			if got := r.URL.Query().Get("version"); got != "" {
-				t.Fatalf("version = %q, want empty", got)
-			}
-
-			return bundleJSONResponse(http.StatusOK, `{"bundleId":"b3","versionId":"v3","version":"9.9.9","state":"published","ociRef":"registry.example/acme/my-bundle:9.9.9","ociDigest":"sha256:def"}`), nil
-		}),
-	}
+	clientHTTP := bundleResolveMock(t,
+		`{"id":"b3","slug":"my-bundle","latestVersion":"9.9.9","publisher":{"handle":"acme"}}`,
+		`{"data":[{"id":"a1","assetType":"skill","logicalPath":"skill.md","contentSha256":"def456","sizeBytes":50}]}`,
+		"9.9.9",
+	)
 
 	c := NewWithHTTPClient("https://example.test", "test-key", clientHTTP)
 
@@ -166,12 +176,12 @@ func TestResolveBundleWithoutVersionUsesLatest(t *testing.T) {
 	}
 }
 
-func TestResolveBundleReturnsBadRequestError(t *testing.T) {
+func TestResolveBundleReturnsErrorOnNotFound(t *testing.T) {
 	t.Parallel()
 
 	clientHTTP := &http.Client{
 		Transport: bundleRoundTripFunc(func(_ *http.Request) (*http.Response, error) {
-			return bundleJSONResponse(http.StatusBadRequest, `{"detail":"invalid request"}`), nil
+			return bundleJSONResponse(http.StatusNotFound, `{"error":"not found"}`), nil
 		}),
 	}
 
@@ -182,8 +192,8 @@ func TestResolveBundleReturnsBadRequestError(t *testing.T) {
 		t.Fatal("ResolveBundle() expected error, got nil")
 	}
 
-	if !strings.Contains(err.Error(), "status 400") {
-		t.Fatalf("ResolveBundle() error = %v, want status 400", err)
+	if !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("ResolveBundle() error = %v, want not found", err)
 	}
 }
 
@@ -192,8 +202,8 @@ func TestFetchBundleAssetParsesJSONContentText(t *testing.T) {
 
 	clientHTTP := &http.Client{
 		Transport: bundleRoundTripFunc(func(r *http.Request) (*http.Response, error) {
-			if r.URL.Path != "/api/v1/runner/assets/asset-1" {
-				t.Fatalf("path = %q, want /api/v1/runner/assets/asset-1", r.URL.Path)
+			if r.URL.Path != "/v1/runner/assets/asset-1" {
+				t.Fatalf("path = %q, want /v1/runner/assets/asset-1", r.URL.Path)
 			}
 
 			return bundleJSONResponse(http.StatusOK, `{"id":"asset-1","contentText":"hello world"}`), nil
@@ -217,8 +227,8 @@ func TestFetchBundleAssetSupportsRawAssetPayload(t *testing.T) {
 
 	clientHTTP := &http.Client{
 		Transport: bundleRoundTripFunc(func(r *http.Request) (*http.Response, error) {
-			if r.URL.Path != "/api/v1/runner/assets/asset-2" {
-				t.Fatalf("path = %q, want /api/v1/runner/assets/asset-2", r.URL.Path)
+			if r.URL.Path != "/v1/runner/assets/asset-2" {
+				t.Fatalf("path = %q, want /v1/runner/assets/asset-2", r.URL.Path)
 			}
 
 			return bundleRawResponse(http.StatusOK, "raw content"), nil

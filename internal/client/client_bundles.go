@@ -40,62 +40,81 @@ type BundleLayer struct {
 	SizeBytes     int64  `json:"sizeBytes"`
 }
 
-// ResolveBundle resolves a bundle slug (and optional version) to a concrete version with manifest.
+// ResolveBundle resolves a bundle slug (and optional version) to a concrete
+// version with manifest by querying hub endpoints.
 func (c *Client) ResolveBundle(ctx context.Context, namespace, slug, version string) (*BundleResolveResponse, error) {
-	params := map[string]string{
-		"namespace":   namespace,
-		"bundle_slug": slug,
-	}
-
-	if version != "" {
-		params["version"] = version
-	}
-
-	return c.resolveBundleAttempt(ctx, "/api/v1/bundles:resolve", params)
-}
-
-func (c *Client) resolveBundleAttempt(
-	ctx context.Context,
-	path string,
-	params map[string]string,
-) (*BundleResolveResponse, error) {
-	endpoint, err := neturl.Parse(c.baseURL + path)
+	// 1. Get bundle detail from hub (public, no auth required).
+	detail, err := c.GetHubBundleDetail(ctx, namespace, slug)
 	if err != nil {
-		return nil, fmt.Errorf("parse endpoint %s: %w", path, err)
+		return nil, fmt.Errorf("resolve bundle: %w", err)
 	}
 
-	query := endpoint.Query()
-	for key, value := range params {
-		query.Set(key, value)
+	resolvedVersion := version
+	if resolvedVersion == "" {
+		resolvedVersion = detail.LatestVersion
 	}
 
-	endpoint.RawQuery = query.Encode()
+	if resolvedVersion == "" {
+		return nil, fmt.Errorf("resolve bundle: no published version available for %s/%s", namespace, slug)
+	}
 
-	req, err := c.newRequest(ctx, "GET", endpoint.String(), http.NoBody)
+	// 2. Get assets list from hub (public, no auth required).
+	assetsPath := fmt.Sprintf("/v1/hub/bundles/%s/%s/assets?version=%s",
+		neturl.PathEscape(namespace),
+		neturl.PathEscape(slug),
+		neturl.QueryEscape(resolvedVersion),
+	)
+
+	req, err := c.newPublicRequest(ctx, "GET", c.baseURL+assetsPath, http.NoBody)
 	if err != nil {
 		return nil, err
 	}
 
-	resp, err := c.do(req, path)
+	resp, err := c.do(req, assetsPath)
 	if err != nil {
-		return nil, fmt.Errorf("resolve bundle (%s): %w", path, err)
+		return nil, fmt.Errorf("resolve bundle assets: %w", err)
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusForbidden {
-		return nil, fmt.Errorf("resolve bundle (%s): status %d", path, resp.StatusCode)
-	}
-
 	if resp.StatusCode != http.StatusOK {
-		return nil, unexpectedStatus("resolve bundle", resp)
+		return nil, unexpectedStatus("resolve bundle assets", resp)
 	}
 
-	var result BundleResolveResponse
-	if err := decodeJSON(resp.Body, &result, "failed to parse bundle resolve response"); err != nil {
+	var assetsResp struct {
+		Data []struct {
+			ID            string `json:"id"`
+			AssetType     string `json:"assetType"`
+			LogicalPath   string `json:"logicalPath"`
+			ContentSHA256 string `json:"contentSha256"`
+			SizeBytes     int64  `json:"sizeBytes"`
+		} `json:"data"`
+	}
+
+	if err := decodeJSON(resp.Body, &assetsResp, "failed to parse bundle assets"); err != nil {
 		return nil, err
 	}
 
-	return &result, nil
+	// 3. Build resolve response from hub data.
+	layers := make([]BundleLayer, len(assetsResp.Data))
+	for i, asset := range assetsResp.Data {
+		layers[i] = BundleLayer{
+			AssetID:       asset.ID,
+			LogicalPath:   asset.LogicalPath,
+			AssetType:     asset.AssetType,
+			ContentSHA256: asset.ContentSHA256,
+			SizeBytes:     asset.SizeBytes,
+		}
+	}
+
+	return &BundleResolveResponse{
+		BundleID:  detail.ID,
+		Version:   resolvedVersion,
+		Namespace: namespace,
+		Slug:      slug,
+		Ref:       namespace + "/" + slug,
+		State:     "published",
+		Manifest:  BundleManifest{Layers: layers},
+	}, nil
 }
 
 // ErrNullContent indicates the server returned a null contentText for an asset.
@@ -107,7 +126,7 @@ var ErrNullContent = errors.New("asset content unavailable from server")
 // When version is non-empty, it is sent as a query parameter to enable
 // server-side caching (Cache-Control: immutable).
 func (c *Client) FetchBundleAsset(ctx context.Context, assetID, version string) ([]byte, error) {
-	path := fmt.Sprintf("/api/v1/runner/assets/%s", neturl.PathEscape(assetID))
+	path := fmt.Sprintf("/v1/runner/assets/%s", neturl.PathEscape(assetID))
 	if version != "" {
 		path += "?version=" + neturl.QueryEscape(version)
 	}

@@ -25,17 +25,24 @@ func TestPullFailsWhenResolveLacksDownloadMetadata(t *testing.T) {
 
 	clientHTTP := &http.Client{
 		Transport: cacheRoundTripFunc(func(r *http.Request) (*http.Response, error) {
-			if r.URL.Path != "/api/v1/bundles:resolve" {
-				t.Fatalf("path = %q, want /api/v1/bundles:resolve", r.URL.Path)
+			switch {
+			case strings.Contains(r.URL.Path, "/assets"):
+				// Return empty assets list — no layers in manifest.
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     http.Header{"Content-Type": []string{"application/json"}},
+					Body:       io.NopCloser(strings.NewReader(`{"data":[]}`)),
+				}, nil
+			default:
+				// Hub detail response.
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     http.Header{"Content-Type": []string{"application/json"}},
+					Body: io.NopCloser(strings.NewReader(
+						`{"id":"b1","slug":"my-bundle","latestVersion":"1.2.3","publisher":{"handle":"acme"}}`,
+					)),
+				}, nil
 			}
-
-			return &http.Response{
-				StatusCode: http.StatusOK,
-				Header:     http.Header{"Content-Type": []string{"application/json"}},
-				Body: io.NopCloser(strings.NewReader(
-					`{"bundleId":"b1","versionId":"v1","version":"1.2.3","state":"published"}`,
-				)),
-			}, nil
 		}),
 	}
 
@@ -103,22 +110,29 @@ func TestPullCleanupOnFailure(t *testing.T) {
 	// Simulate a resolve that returns assets but the asset fetch will fail.
 	clientHTTP := &http.Client{
 		Transport: cacheRoundTripFunc(func(r *http.Request) (*http.Response, error) {
-			if r.URL.Path == "/api/v1/bundles:resolve" {
+			switch {
+			case strings.Contains(r.URL.Path, "/assets"):
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     http.Header{"Content-Type": []string{"application/json"}},
+					Body:       io.NopCloser(strings.NewReader(`{"data":[{"id":"a1","assetType":"skill","logicalPath":"skill.md","contentSha256":"abc123","sizeBytes":10}]}`)),
+				}, nil
+			case strings.HasPrefix(r.URL.Path, "/v1/hub/bundles/"):
 				return &http.Response{
 					StatusCode: http.StatusOK,
 					Header:     http.Header{"Content-Type": []string{"application/json"}},
 					Body: io.NopCloser(strings.NewReader(
-						`{"bundleId":"b1","versionId":"v1","version":"1.2.3","state":"published","manifest":{"layers":[{"assetId":"a1","logicalPath":"skill.md","contentSha256":"abc123","sizeBytes":10}]}}`,
+						`{"id":"b1","slug":"my-bundle","latestVersion":"1.2.3","publisher":{"handle":"acme"}}`,
 					)),
 				}, nil
+			default:
+				// Asset fetch via runner endpoint fails.
+				return &http.Response{
+					StatusCode: http.StatusInternalServerError,
+					Header:     http.Header{"Content-Type": []string{"application/json"}},
+					Body:       io.NopCloser(strings.NewReader(`{"error":"server error"}`)),
+				}, nil
 			}
-
-			// Asset fetch fails.
-			return &http.Response{
-				StatusCode: http.StatusInternalServerError,
-				Header:     http.Header{"Content-Type": []string{"application/json"}},
-				Body:       io.NopCloser(strings.NewReader(`{"error":"server error"}`)),
-			}, nil
 		}),
 	}
 
