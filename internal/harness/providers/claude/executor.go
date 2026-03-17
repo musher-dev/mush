@@ -447,6 +447,7 @@ func (e *Executor) startPTY(ctx context.Context) error {
 			e.pgid = pgid
 		}
 	}
+
 	e.mu.Unlock()
 
 	// Drain stale handles before delivering the new one.
@@ -586,6 +587,7 @@ func (e *Executor) readPTYOutput(ptmx *os.File) {
 		// --dangerously-skip-permissions triggers a trust dialog).
 		if !e.opts.BundleLoadMode {
 			e.captureMu.Lock()
+
 			if !e.bypassAccepted {
 				dialogBuf.Write(buf[:bytesRead])
 
@@ -615,11 +617,13 @@ func (e *Executor) readPTYOutput(ptmx *os.File) {
 
 		// Capture output if we're processing a job.
 		e.captureMu.Lock()
+
 		if e.capturing {
 			e.outputBuffer.Write(buf[:bytesRead])
 		}
 
 		e.promptConfirmed = false
+
 		e.captureMu.Unlock()
 
 		// Detect prompt pattern.

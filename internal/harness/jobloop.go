@@ -82,12 +82,15 @@ func (jl *JobLoop) Snapshot() JobLoopSnapshot {
 		LastError:     jl.lastError,
 		LastErrorTime: jl.lastErrorTime,
 	}
+
 	jl.statusMu.Unlock()
 
 	jl.jobMu.Lock()
+
 	if jl.currentJob != nil {
 		snap.JobID = jl.currentJob.ID
 	}
+
 	jl.jobMu.Unlock()
 
 	return snap
@@ -433,6 +436,7 @@ func (jl *JobLoop) RunnerConfigRefreshLoop(ctx context.Context, done <-chan stru
 			}
 
 			jl.refreshMu.Lock()
+
 			interval = normalizeRefreshInterval(cfg.RefreshAfterSeconds)
 			jl.refreshInterval = interval
 
