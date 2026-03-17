@@ -59,9 +59,10 @@ func (c *Client) ResolveBundle(ctx context.Context, namespace, slug, version str
 	}
 
 	// 2. Get assets list from hub (public, no auth required).
-	assetsPath := fmt.Sprintf("/v1/hub/bundles/%s/%s/assets",
+	assetsPath := fmt.Sprintf("/v1/hub/bundles/%s/%s/assets?version=%s",
 		neturl.PathEscape(namespace),
 		neturl.PathEscape(slug),
+		neturl.QueryEscape(resolvedVersion),
 	)
 
 	req, err := c.newPublicRequest(ctx, "GET", c.baseURL+assetsPath, http.NoBody)

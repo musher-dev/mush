@@ -31,14 +31,21 @@ func bundleRawResponse(status int, body string) *http.Response {
 }
 
 // bundleResolveMock returns a transport that serves hub detail and assets endpoints
-// for ResolveBundle tests.
-func bundleResolveMock(t *testing.T, detailJSON, assetsJSON string) *http.Client {
+// for ResolveBundle tests. If wantVersion is non-empty, the mock asserts that the
+// assets request includes a matching version query parameter.
+func bundleResolveMock(t *testing.T, detailJSON, assetsJSON, wantVersion string) *http.Client {
 	t.Helper()
 
 	return &http.Client{
 		Transport: bundleRoundTripFunc(func(r *http.Request) (*http.Response, error) {
 			switch {
 			case strings.Contains(r.URL.Path, "/assets"):
+				if wantVersion != "" {
+					if got := r.URL.Query().Get("version"); got != wantVersion {
+						t.Fatalf("assets version query param = %q, want %q", got, wantVersion)
+					}
+				}
+
 				return bundleJSONResponse(http.StatusOK, assetsJSON), nil
 			case strings.HasPrefix(r.URL.Path, "/v1/hub/bundles/"):
 				return bundleJSONResponse(http.StatusOK, detailJSON), nil
@@ -61,6 +68,10 @@ func TestAnonymousClientSkipsAuthHeader(t *testing.T) {
 
 			switch {
 			case strings.Contains(r.URL.Path, "/assets"):
+				if got := r.URL.Query().Get("version"); got != "1.0.0" {
+					t.Fatalf("assets version query param = %q, want 1.0.0", got)
+				}
+
 				return bundleJSONResponse(http.StatusOK, `{"data":[{"id":"a1","assetType":"skill","logicalPath":"skill.md","contentSha256":"abc","sizeBytes":10}]}`), nil
 			default:
 				return bundleJSONResponse(http.StatusOK, `{"id":"b1","slug":"public-bundle","latestVersion":"1.0.0","publisher":{"handle":"pub"}}`), nil
@@ -92,6 +103,10 @@ func TestAuthenticatedClientSendsAuthHeader(t *testing.T) {
 		Transport: bundleRoundTripFunc(func(r *http.Request) (*http.Response, error) {
 			switch {
 			case strings.Contains(r.URL.Path, "/assets"):
+				if got := r.URL.Query().Get("version"); got != "2.0.0" {
+					t.Fatalf("assets version query param = %q, want 2.0.0", got)
+				}
+
 				return bundleJSONResponse(http.StatusOK, `{"data":[{"id":"a1","assetType":"skill","logicalPath":"skill.md","contentSha256":"abc","sizeBytes":10}]}`), nil
 			default:
 				return bundleJSONResponse(http.StatusOK, `{"id":"b2","slug":"private-bundle","latestVersion":"2.0.0","publisher":{"handle":"priv"}}`), nil
@@ -121,6 +136,7 @@ func TestResolveBundleUsesHubEndpoints(t *testing.T) {
 	clientHTTP := bundleResolveMock(t,
 		`{"id":"b1","slug":"my-bundle","latestVersion":"1.2.3","publisher":{"handle":"acme"}}`,
 		`{"data":[{"id":"a1","assetType":"skill","logicalPath":"skill.md","contentSha256":"abc123","sizeBytes":100}]}`,
+		"1.2.3",
 	)
 
 	c := NewWithHTTPClient("https://example.test", "test-key", clientHTTP)
@@ -145,6 +161,7 @@ func TestResolveBundleWithoutVersionUsesLatest(t *testing.T) {
 	clientHTTP := bundleResolveMock(t,
 		`{"id":"b3","slug":"my-bundle","latestVersion":"9.9.9","publisher":{"handle":"acme"}}`,
 		`{"data":[{"id":"a1","assetType":"skill","logicalPath":"skill.md","contentSha256":"def456","sizeBytes":50}]}`,
+		"9.9.9",
 	)
 
 	c := NewWithHTTPClient("https://example.test", "test-key", clientHTTP)
