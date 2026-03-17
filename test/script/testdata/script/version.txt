@@ -1,0 +1,5 @@
+# version output stays human-readable in a real subprocess
+exec $MUSH_BIN version
+stdout 'mush dev'
+stdout 'commit: none'
+stdout 'built:  unknown'

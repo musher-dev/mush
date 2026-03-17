@@ -1,6 +1,7 @@
 package client
 
 import (
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -201,7 +202,7 @@ func TestFetchBundleAssetParsesJSONContentText(t *testing.T) {
 
 	c := NewWithHTTPClient("https://example.test", "test-key", clientHTTP)
 
-	data, err := c.FetchBundleAsset(t.Context(), "asset-1")
+	data, err := c.FetchBundleAsset(t.Context(), "asset-1", "")
 	if err != nil {
 		t.Fatalf("FetchBundleAsset() error = %v", err)
 	}
@@ -226,12 +227,58 @@ func TestFetchBundleAssetSupportsRawAssetPayload(t *testing.T) {
 
 	c := NewWithHTTPClient("https://example.test", "test-key", clientHTTP)
 
-	data, err := c.FetchBundleAsset(t.Context(), "asset-2")
+	data, err := c.FetchBundleAsset(t.Context(), "asset-2", "")
 	if err != nil {
 		t.Fatalf("FetchBundleAsset() error = %v", err)
 	}
 
 	if string(data) != "raw content" {
 		t.Fatalf("FetchBundleAsset() data = %q, want %q", string(data), "raw content")
+	}
+}
+
+func TestFetchBundleAssetSendsVersionQueryParam(t *testing.T) {
+	t.Parallel()
+
+	clientHTTP := &http.Client{
+		Transport: bundleRoundTripFunc(func(r *http.Request) (*http.Response, error) {
+			if got := r.URL.Query().Get("version"); got != "2.0.0" {
+				t.Fatalf("version query param = %q, want 2.0.0", got)
+			}
+
+			return bundleJSONResponse(http.StatusOK, `{"id":"asset-3","contentText":"versioned"}`), nil
+		}),
+	}
+
+	c := NewWithHTTPClient("https://example.test", "test-key", clientHTTP)
+
+	data, err := c.FetchBundleAsset(t.Context(), "asset-3", "2.0.0")
+	if err != nil {
+		t.Fatalf("FetchBundleAsset() error = %v", err)
+	}
+
+	if string(data) != "versioned" {
+		t.Fatalf("FetchBundleAsset() data = %q, want %q", string(data), "versioned")
+	}
+}
+
+func TestFetchBundleAssetNullContentTextReturnsError(t *testing.T) {
+	t.Parallel()
+
+	clientHTTP := &http.Client{
+		Transport: bundleRoundTripFunc(func(_ *http.Request) (*http.Response, error) {
+			return bundleJSONResponse(http.StatusOK, `{"id":"asset-4","contentText":null}`), nil
+		}),
+	}
+
+	c := NewWithHTTPClient("https://example.test", "test-key", clientHTTP)
+
+	_, err := c.FetchBundleAsset(t.Context(), "asset-4", "")
+	if err == nil {
+		t.Fatal("FetchBundleAsset() expected error for null contentText, got nil")
+	}
+
+	if !errors.Is(err, ErrNullContent) {
+		t.Fatalf("FetchBundleAsset() error = %v, want ErrNullContent", err)
 	}
 }

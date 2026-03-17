@@ -1,6 +1,11 @@
-package main
+package policy_test
 
 import (
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -9,9 +14,6 @@ import (
 
 const moduleRoot = "github.com/musher-dev/mush"
 
-// Layer assignments for every internal package. When a new package is added
-// under internal/, it must be classified here — otherwise
-// TestAllInternalPackagesClassified will fail with a helpful message.
 var (
 	featureOrchestration = map[string]bool{
 		moduleRoot + "/internal/harness": true,
@@ -39,6 +41,8 @@ var (
 		moduleRoot + "/internal/testutil":      true,
 		moduleRoot + "/internal/safeio":        true,
 		moduleRoot + "/internal/executil":      true,
+		moduleRoot + "/internal/devhooks":      true,
+		moduleRoot + "/internal/policy":        true,
 		moduleRoot + "/internal/validate":      true,
 	}
 
@@ -48,11 +52,122 @@ var (
 	}
 )
 
-// loadAllPackages loads all packages under the module root with import information.
+func repoRoot(t *testing.T) string {
+	t.Helper()
+
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("resolve caller path")
+	}
+
+	return filepath.Clean(filepath.Join(filepath.Dir(filename), "..", ".."))
+}
+
+func parseCmdMushFiles(t *testing.T) map[string]*ast.File {
+	t.Helper()
+
+	paths, err := filepath.Glob(filepath.Join(repoRoot(t), "cmd", "mush", "*.go"))
+	if err != nil {
+		t.Fatalf("glob cmd/mush: %v", err)
+	}
+
+	files := make(map[string]*ast.File, len(paths))
+	fset := token.NewFileSet()
+
+	for _, path := range paths {
+		file, parseErr := parser.ParseFile(fset, path, nil, 0)
+		if parseErr != nil {
+			t.Fatalf("parse %s: %v", path, parseErr)
+		}
+
+		files[path] = file
+	}
+
+	return files
+}
+
+func parsePromptFiles(t *testing.T) map[string]*ast.File {
+	t.Helper()
+
+	paths, err := filepath.Glob(filepath.Join(repoRoot(t), "internal", "prompt", "*.go"))
+	if err != nil {
+		t.Fatalf("glob prompt files: %v", err)
+	}
+
+	files := make(map[string]*ast.File, len(paths))
+	fset := token.NewFileSet()
+
+	for _, path := range paths {
+		if strings.HasSuffix(path, "_test.go") {
+			continue
+		}
+
+		file, parseErr := parser.ParseFile(fset, path, nil, 0)
+		if parseErr != nil {
+			t.Fatalf("parse %s: %v", path, parseErr)
+		}
+
+		files[path] = file
+	}
+
+	return files
+}
+
+func selectorMatches(expr ast.Expr, pkgName, member string) bool {
+	sel, ok := expr.(*ast.SelectorExpr)
+	if !ok {
+		return false
+	}
+
+	ident, ok := sel.X.(*ast.Ident)
+	if !ok {
+		return false
+	}
+
+	return ident.Name == pkgName && sel.Sel.Name == member
+}
+
+func containsSelectorCall(file *ast.File, pkgName, member string) bool {
+	found := false
+
+	ast.Inspect(file, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+
+		if selectorMatches(call.Fun, pkgName, member) {
+			found = true
+			return false
+		}
+
+		return true
+	})
+
+	return found
+}
+
+func fileContainsIdentifier(file *ast.File, identName string) bool {
+	found := false
+
+	ast.Inspect(file, func(n ast.Node) bool {
+		ident, ok := n.(*ast.Ident)
+		if ok && ident.Name == identName {
+			found = true
+			return false
+		}
+
+		return true
+	})
+
+	return found
+}
+
 func loadAllPackages(t *testing.T) []*packages.Package {
 	t.Helper()
 
 	cfg := &packages.Config{
+		Dir:   repoRoot(t),
 		Mode:  packages.NeedName | packages.NeedImports | packages.NeedDeps,
 		Tests: true,
 	}
@@ -65,41 +180,139 @@ func loadAllPackages(t *testing.T) []*packages.Package {
 	return pkgs
 }
 
-// isInternal returns true if the package path is under internal/.
 func isInternal(path string) bool {
 	return strings.HasPrefix(path, moduleRoot+"/internal/")
 }
 
-// internalBase returns the base internal package path (e.g.
-// "github.com/musher-dev/mush/internal/auth" from a deeper subpackage).
-// It strips any ".test" suffix added by the go/packages test loader.
 func internalBase(path string) string {
 	suffix := strings.TrimPrefix(path, moduleRoot+"/internal/")
 	parts := strings.SplitN(suffix, "/", 2)
 
 	base := parts[0]
-
-	// Strip ".test" suffix from test package IDs and "_test" from external test packages.
 	base = strings.TrimSuffix(base, ".test")
 	base = strings.TrimSuffix(base, "_test")
 
 	return moduleRoot + "/internal/" + base
 }
 
-// isTestPackage returns true if the package is a test-only variant
-// (has a _test suffix in the package name loaded by go/packages).
 func isTestPackage(pkg *packages.Package) bool {
 	return strings.HasSuffix(pkg.ID, ".test") ||
 		strings.HasSuffix(pkg.ID, ".test]") ||
-		strings.Contains(pkg.ID, " [") // test variant like "pkg [pkg.test]"
+		strings.Contains(pkg.ID, " [")
 }
 
-// TestAllInternalPackagesClassified ensures every internal/ package is
-// explicitly assigned to a layer. When a developer adds a new package, this
-// test fails with instructions to classify it.
+func TestCmdPackageDoesNotUseFmtErrorf(t *testing.T) {
+	for path, file := range parseCmdMushFiles(t) {
+		if strings.HasSuffix(path, "_test.go") {
+			continue
+		}
+
+		ast.Inspect(file, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+
+			if selectorMatches(call.Fun, "fmt", "Errorf") {
+				t.Errorf("%s uses fmt.Errorf; use clierrors.Wrap or clierrors.New instead", path)
+				return false
+			}
+
+			return true
+		})
+	}
+}
+
+func TestCmdPackageDoesNotUseOsExitOutsideMain(t *testing.T) {
+	for path, file := range parseCmdMushFiles(t) {
+		if strings.HasSuffix(path, "_test.go") || strings.HasSuffix(path, string(filepath.Separator)+"main.go") {
+			continue
+		}
+
+		if containsSelectorCall(file, "os", "Exit") {
+			t.Errorf("%s uses os.Exit; return CLIError instead", path)
+		}
+	}
+}
+
+func TestCmdPackageDoesNotUseOutputDefaultOutsideMain(t *testing.T) {
+	for path, file := range parseCmdMushFiles(t) {
+		if strings.HasSuffix(path, "_test.go") || strings.HasSuffix(path, string(filepath.Separator)+"main.go") {
+			continue
+		}
+
+		if containsSelectorCall(file, "output", "Default") {
+			t.Errorf("%s uses output.Default(); use output.FromContext(cmd.Context()) instead", path)
+		}
+	}
+}
+
+func TestConfirmCallersCheckNoInput(t *testing.T) {
+	for path, file := range parseCmdMushFiles(t) {
+		if strings.HasSuffix(path, "_test.go") {
+			continue
+		}
+
+		if !containsSelectorCall(file, "prompter", "Confirm") && !containsSelectorCall(file, "p", "Confirm") {
+			hasConfirm := false
+
+			ast.Inspect(file, func(n ast.Node) bool {
+				call, ok := n.(*ast.CallExpr)
+				if !ok {
+					return true
+				}
+
+				sel, ok := call.Fun.(*ast.SelectorExpr)
+				if ok && sel.Sel.Name == "Confirm" {
+					hasConfirm = true
+					return false
+				}
+
+				return true
+			})
+
+			if !hasConfirm {
+				continue
+			}
+		}
+
+		if !fileContainsIdentifier(file, "NoInput") {
+			t.Errorf("%s uses Confirm() but does not reference NoInput", path)
+		}
+	}
+}
+
+func TestPromptPackageUsesStdinFDForTTYChecks(t *testing.T) {
+	for path, file := range parsePromptFiles(t) {
+		ast.Inspect(file, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+
+			sel, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok || sel.Sel.Name != "Fd" {
+				return true
+			}
+
+			outer, ok := sel.X.(*ast.SelectorExpr)
+			if !ok {
+				return true
+			}
+
+			pkg, ok := outer.X.(*ast.Ident)
+			if ok && pkg.Name == "os" && outer.Sel.Name == "Stdout" {
+				t.Errorf("%s uses os.Stdout.Fd(); use os.Stdin.Fd() for TTY checks", path)
+				return false
+			}
+
+			return true
+		})
+	}
+}
+
 func TestAllInternalPackagesClassified(t *testing.T) {
 	pkgs := loadAllPackages(t)
-
 	seen := map[string]bool{}
 
 	for _, pkg := range pkgs {
@@ -121,8 +334,6 @@ func TestAllInternalPackagesClassified(t *testing.T) {
 	}
 }
 
-// TestPlatformPackagesDoNotImportPresentation verifies that platform/core
-// packages do not import output or prompt.
 func TestPlatformPackagesDoNotImportPresentation(t *testing.T) {
 	pkgs := loadAllPackages(t)
 
@@ -132,12 +343,7 @@ func TestPlatformPackagesDoNotImportPresentation(t *testing.T) {
 		}
 
 		base := internalBase(pkg.PkgPath)
-		if !platformCore[base] {
-			continue
-		}
-
-		// Skip test-only package variants.
-		if isTestPackage(pkg) {
+		if !platformCore[base] || isTestPackage(pkg) {
 			continue
 		}
 
@@ -150,18 +356,12 @@ func TestPlatformPackagesDoNotImportPresentation(t *testing.T) {
 	}
 }
 
-// TestInternalPackagesDoNotImportCmd verifies no internal/ package imports cmd/mush.
 func TestInternalPackagesDoNotImportCmd(t *testing.T) {
 	pkgs := loadAllPackages(t)
-
 	cmdPrefix := moduleRoot + "/cmd/"
 
 	for _, pkg := range pkgs {
-		if !isInternal(pkg.PkgPath) {
-			continue
-		}
-
-		if isTestPackage(pkg) {
+		if !isInternal(pkg.PkgPath) || isTestPackage(pkg) {
 			continue
 		}
 
@@ -174,8 +374,6 @@ func TestInternalPackagesDoNotImportCmd(t *testing.T) {
 	}
 }
 
-// TestDoctorDoesNotImportOutput verifies that internal/doctor does not import
-// internal/output, keeping diagnostics output-agnostic.
 func TestDoctorDoesNotImportOutput(t *testing.T) {
 	pkgs := loadAllPackages(t)
 
@@ -183,11 +381,7 @@ func TestDoctorDoesNotImportOutput(t *testing.T) {
 	outputPkg := moduleRoot + "/internal/output"
 
 	for _, pkg := range pkgs {
-		if pkg.PkgPath != doctorPkg {
-			continue
-		}
-
-		if isTestPackage(pkg) {
+		if pkg.PkgPath != doctorPkg || isTestPackage(pkg) {
 			continue
 		}
 
@@ -199,11 +393,8 @@ func TestDoctorDoesNotImportOutput(t *testing.T) {
 	}
 }
 
-// TestTestutilNotImportedByProductionCode verifies that internal/testutil is
-// only imported by test package variants.
 func TestTestutilNotImportedByProductionCode(t *testing.T) {
 	pkgs := loadAllPackages(t)
-
 	testutilPkg := moduleRoot + "/internal/testutil"
 
 	for _, pkg := range pkgs {
@@ -220,32 +411,22 @@ func TestTestutilNotImportedByProductionCode(t *testing.T) {
 	}
 }
 
-// TestNoCrossLayerFeatureImports verifies that feature/orchestration packages
-// do not import each other laterally. Each feature package should depend only
-// on platform/core packages, not on sibling features.
 func TestNoCrossLayerFeatureImports(t *testing.T) {
-	// Allowed lateral imports — explicitly blessed cross-feature dependencies.
-	// Add entries here only when a lateral dependency is architecturally justified.
 	allowed := map[string]map[string]bool{
-		// harness depends on output for the watch UI.
 		moduleRoot + "/internal/harness": {
 			moduleRoot + "/internal/output": true,
 		},
-		// wizard depends on prompt and output for interactive onboarding.
 		moduleRoot + "/internal/wizard": {
 			moduleRoot + "/internal/prompt": true,
 			moduleRoot + "/internal/output": true,
 		},
-		// bundle depends on output for install progress and harness for provider types.
 		moduleRoot + "/internal/bundle": {
 			moduleRoot + "/internal/output":  true,
 			moduleRoot + "/internal/harness": true,
 		},
-		// doctor depends on harness for provider availability checks.
 		moduleRoot + "/internal/doctor": {
 			moduleRoot + "/internal/harness": true,
 		},
-		// prompt depends on output for styled user interaction.
 		moduleRoot + "/internal/prompt": {
 			moduleRoot + "/internal/output": true,
 		},
@@ -259,11 +440,7 @@ func TestNoCrossLayerFeatureImports(t *testing.T) {
 		}
 
 		base := internalBase(pkg.PkgPath)
-		if !featureOrchestration[base] {
-			continue
-		}
-
-		if isTestPackage(pkg) {
+		if !featureOrchestration[base] || isTestPackage(pkg) {
 			continue
 		}
 
@@ -273,15 +450,7 @@ func TestNoCrossLayerFeatureImports(t *testing.T) {
 			}
 
 			impBase := internalBase(imp)
-			if !featureOrchestration[impBase] {
-				continue // importing platform/core is fine
-			}
-
-			if impBase == base {
-				continue // importing self (subpackage) is fine
-			}
-
-			if allowed[base][impBase] {
+			if !featureOrchestration[impBase] || impBase == base || allowed[base][impBase] {
 				continue
 			}
 

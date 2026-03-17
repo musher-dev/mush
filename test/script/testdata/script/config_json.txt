@@ -1,0 +1,8 @@
+# config list renders machine-readable state after a persisted write
+exec $MUSH_BIN config set keybindings.status '["g"]'
+stderr 'Set keybindings.status = \[g\]'
+
+exec $MUSH_BIN config list --json
+stdout '"keybindings"'
+stdout '"status"'
+stdout '"g"'

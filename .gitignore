@@ -1,6 +1,6 @@
 # Binary
 /mush
-mush-*
+/mush-*
 *.exe
 *.exe~
 *.dll

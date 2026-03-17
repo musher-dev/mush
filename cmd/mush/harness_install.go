@@ -32,7 +32,7 @@ func handleHarnessInstall(ctx context.Context, out *output.Writer, result *nav.R
 	out.Print("\n")
 
 	p := prompt.New(out)
-	if !p.CanPrompt() {
+	if out.NoInput || !p.CanPrompt() {
 		out.Muted("Non-interactive mode — run the commands above manually to install.")
 		return nil
 	}

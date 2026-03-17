@@ -10,6 +10,12 @@ version: '3'
 vars:
   BINARY: mush
   MODULE: github.com/musher-dev/mush
+  LEFTHOOK_VERSION: v1.13.6
+  GOVULNCHECK_VERSION: v1.1.4
+  GOLANGCI_LINT_VERSION: v2.5.0
+  SHFMT_VERSION: v3.12.0
+  ACTIONLINT_VERSION: v1.7.8
+  OAPI_CODEGEN_VERSION: v2.5.0
 
 tasks:
   # ===========================================================================
@@ -25,11 +31,12 @@ tasks:
   setup:tools:
     desc: Install required tooling
     cmds:
-      - go install golang.org/x/vuln/cmd/govulncheck
-      - go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint
-      - go install mvdan.cc/sh/v3/cmd/shfmt
-      - go install github.com/rhysd/actionlint/cmd/actionlint
-      - go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen
+      - go install github.com/evilmartians/lefthook@{{.LEFTHOOK_VERSION}}
+      - go install golang.org/x/vuln/cmd/govulncheck@{{.GOVULNCHECK_VERSION}}
+      - go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@{{.GOLANGCI_LINT_VERSION}}
+      - go install mvdan.cc/sh/v3/cmd/shfmt@{{.SHFMT_VERSION}}
+      - go install github.com/rhysd/actionlint/cmd/actionlint@{{.ACTIONLINT_VERSION}}
+      - go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@{{.OAPI_CODEGEN_VERSION}}
       - 'command -v shellcheck >/dev/null 2>&1 || echo "Note: shellcheck is not installed. Install it via your OS package manager."'
       - 'command -v vhs >/dev/null 2>&1 || echo "Note: vhs is optional and only required for demo GIF generation."'
 
@@ -88,7 +95,7 @@ tasks:
   # ===========================================================================
 
   check:
-    desc: Run all checks (fmt + mod + lint + vuln + shell + workflows + errorf + prompt-fd + no-exit + output-context + force-noinput + testutil-prod + contracts + docs snippets + test + install)
+    desc: Run all checks (fmt + mod + lint + vuln + shell + workflows + policy + contracts + docs snippets + test + install)
     cmds:
       - task: check:fmt
       - task: check:mod
@@ -96,12 +103,7 @@ tasks:
       - task: check:vuln
       - task: check:shell
       - task: check:workflow
-      - task: check:errorf
-      - task: check:prompt-fd
-      - task: check:no-exit
-      - task: check:output-context
-      - task: check:force-noinput
-      - task: check:testutil-prod
+      - task: check:policy
       - task: check:contracts
       - task: check:docs-snippets
       - task: check:test
@@ -116,12 +118,7 @@ tasks:
       - task: check:vuln
       - task: check:shell
       - task: check:workflow
-      - task: check:errorf
-      - task: check:prompt-fd
-      - task: check:no-exit
-      - task: check:output-context
-      - task: check:force-noinput
-      - task: check:testutil-prod
+      - task: check:policy
       - task: check:contracts
       - task: check:docs-snippets
       - task: check:test-cover
@@ -155,8 +152,8 @@ tasks:
       - sh: command -v shfmt >/dev/null 2>&1
         msg: "shfmt is required. Run 'task setup:tools' first."
     cmds:
-      - shellcheck install.sh .devcontainer/scripts/*.sh scripts/*.sh .githooks/* .githooks/*.sh
-      - shfmt -d -i 2 -ci install.sh .devcontainer/scripts/*.sh scripts/*.sh .githooks/* .githooks/*.sh
+      - bash -c 'shopt -s nullglob; files=(install.sh .devcontainer/scripts/*.sh scripts/*.sh .lefthook/*/*.sh); [[ ${#files[@]} -gt 0 ]] && shellcheck "${files[@]}"'
+      - bash -c 'shopt -s nullglob; files=(install.sh .devcontainer/scripts/*.sh scripts/*.sh .lefthook/*/*.sh); [[ ${#files[@]} -gt 0 ]] && shfmt -d -i 2 -ci "${files[@]}"'
 
   check:workflow:
     desc: Lint GitHub Actions workflows with actionlint
@@ -238,40 +235,20 @@ tasks:
     cmds:
       - govulncheck ./...
 
-  check:errorf:
-    desc: Ensure no raw fmt.Errorf in cmd/mush (use CLIError instead)
+  check:policy:
+    desc: Run repository policy and architecture guardrails
     cmds:
-      - go test ./cmd/mush -run '^TestCmdPackageDoesNotUseFmtErrorf$'
-
-  check:prompt-fd:
-    desc: Ensure prompt package checks stdin fd, not stdout fd
-    cmds:
-      - go test ./internal/prompt -run '^TestPromptPackageUsesStdinFDForTTYChecks$'
-
-  check:no-exit:
-    desc: Ensure no os.Exit() in cmd/mush/ except main.go
-    cmds:
-      - go test ./cmd/mush -run '^TestCmdPackageDoesNotUseOsExitOutsideMain$'
-
-  check:output-context:
-    desc: Ensure no output.Default() in cmd/mush/ except main.go
-    cmds:
-      - go test ./cmd/mush -run '^TestCmdPackageDoesNotUseOutputDefaultOutsideMain$'
-
-  check:force-noinput:
-    desc: Ensure files using Confirm() also reference NoInput
-    cmds:
-      - go test ./cmd/mush -run '^TestConfirmCallersCheckNoInput$'
-
-  check:testutil-prod:
-    desc: Ensure testutil is not imported by production code
-    cmds:
-      - go test ./cmd/mush -run '^TestTestutilNotImportedByProductionCode$'
+      - go test ./internal/policy
 
   check:test:
     desc: Run tests with race detection
     cmds:
       - go test -v -race ./...
+
+  check:testscript:
+    desc: Run filesystem-driven CLI scenario tests
+    cmds:
+      - go test -v ./test/script
 
   check:contracts:
     desc: Run CLI/API contract tests
@@ -281,7 +258,15 @@ tasks:
   check:docs-snippets:
     desc: Validate documented snippet commands
     cmds:
-      - ./scripts/check-doc-snippets.sh
+      - go test -v ./test/script -run '^TestDocSnippets$'
+
+  check:release:
+    desc: Validate the checked-in GoReleaser configuration
+    preconditions:
+      - sh: command -v goreleaser >/dev/null 2>&1
+        msg: "goreleaser is required to run release config checks."
+    cmds:
+      - goreleaser check
 
   check:canary:
     desc: Run synthetic canary golden-path checks (requires canary env vars)
@@ -301,6 +286,21 @@ tasks:
     cmds:
       - go test -v -race -coverprofile=coverage.out ./...
       - go tool cover -html=coverage.out -o coverage.html
+
+  check:coverage:floor:
+    desc: Enforce the minimum total coverage percentage from coverage.out
+    preconditions:
+      - sh: test -f coverage.out
+        msg: "coverage.out is required. Run 'task check:test-cover' first."
+      - sh: test -n "${COVERAGE_THRESHOLD:-}"
+        msg: "COVERAGE_THRESHOLD is required"
+    cmds:
+      - |
+        total="$(go tool cover -func=coverage.out | awk '/^total:/ {print substr($3, 1, length($3)-1)}')"
+        awk -v total="$total" -v min="$COVERAGE_THRESHOLD" 'BEGIN { exit !(total + 0 >= min + 0) }' || {
+          echo "coverage ${total}% is below required ${COVERAGE_THRESHOLD}%"
+          exit 1
+        }
 
   check:shell:files:
     desc: Lint specific shell files with shellcheck and shfmt
@@ -366,58 +366,69 @@ tasks:
   # ===========================================================================
 
   hooks:install:
-    desc: Install repository git hooks via core.hooksPath
-    cmds:
-      - test -d .githooks || (echo ".githooks directory not found" && exit 1)
-      - chmod +x .githooks/*
-      - git config core.hooksPath .githooks
-      - task: hooks:doctor
-
-  hooks:doctor:
-    desc: Verify git hook installation and required tools
-    cmds:
-      - |
-        test "$(git config --get core.hooksPath || true)" = ".githooks" || \
-          (echo "core.hooksPath is not set to .githooks (run: task hooks:install)" && exit 1)
-      - test -x .githooks/pre-commit || (echo "missing executable .githooks/pre-commit" && exit 1)
-      - test -x .githooks/commit-msg || (echo "missing executable .githooks/commit-msg" && exit 1)
-      - test -x .githooks/pre-push || (echo "missing executable .githooks/pre-push" && exit 1)
-      - test -x .githooks/run-pre-commit.sh || (echo "missing executable .githooks/run-pre-commit.sh" && exit 1)
-      - test -x .githooks/run-commit-msg.sh || (echo "missing executable .githooks/run-commit-msg.sh" && exit 1)
-      - test -x .githooks/run-pre-push.sh || (echo "missing executable .githooks/run-pre-push.sh" && exit 1)
-      - 'command -v task >/dev/null 2>&1 || (echo "task is required" && exit 1)'
-      - 'command -v git >/dev/null 2>&1 || (echo "git is required" && exit 1)'
-      - 'command -v golangci-lint >/dev/null 2>&1 || (echo "golangci-lint is required (run: task setup:tools)" && exit 1)'
-      - 'command -v govulncheck >/dev/null 2>&1 || (echo "govulncheck is required (run: task setup:tools)" && exit 1)'
-      - 'command -v shfmt >/dev/null 2>&1 || (echo "shfmt is required (run: task setup:tools)" && exit 1)'
-      - 'command -v actionlint >/dev/null 2>&1 || (echo "actionlint is required (run: task setup:tools)" && exit 1)'
-      - 'command -v shellcheck >/dev/null 2>&1 || (echo "shellcheck is required (install via OS package manager)" && exit 1)'
-
-  hooks:uninstall:
-    desc: Remove repository hook path override
+    desc: Install repository git hooks via Lefthook
+    preconditions:
+      - sh: command -v lefthook >/dev/null 2>&1
+        msg: "lefthook is required. Run 'task setup:tools' first."
     cmds:
       - git config --unset core.hooksPath || true
+      - lefthook install
+      - task: hooks:doctor
 
-  hooks:pre-commit:
-    desc: Run pre-commit hook checks
+  hooks:doctor:config:
+    desc: Verify Lefthook config and required hook entrypoints are present
     cmds:
-      - .githooks/run-pre-commit.sh
+      - test -f lefthook.yml || (echo "lefthook.yml not found" && exit 1)
+      - test -f cmd/mush-hook/main.go || (echo "missing cmd/mush-hook/main.go" && exit 1)
+      - 'command -v lefthook >/dev/null 2>&1 || (echo "lefthook is required (run: task setup:tools)" && exit 1)'
+      - 'command -v task >/dev/null 2>&1 || (echo "task is required" && exit 1)'
+      - 'command -v git >/dev/null 2>&1 || (echo "git is required" && exit 1)'
 
-  hooks:commit-msg:
-    desc: Run commit-msg hook checks
+  hooks:doctor:
+    desc: Verify Lefthook installation in .git/hooks
+    cmds:
+      - task: hooks:doctor:config
+      - test -z "$(git config --get core.hooksPath || true)" || (echo "core.hooksPath must be unset for Lefthook-managed .git/hooks" && exit 1)
+      - test -x .git/hooks/pre-commit || (echo "missing executable .git/hooks/pre-commit" && exit 1)
+      - test -x .git/hooks/commit-msg || (echo "missing executable .git/hooks/commit-msg" && exit 1)
+      - test -x .git/hooks/pre-push || (echo "missing executable .git/hooks/pre-push" && exit 1)
+
+  hooks:pre-commit:go:
+    desc: Run staged Go formatting, lint, and policy checks
     preconditions:
-      - sh: test -n "${COMMIT_MSG_FILE:-}"
-        msg: "COMMIT_MSG_FILE is required"
+      - sh: test -n "{{.CLI_ARGS}}"
+        msg: "Provide staged Go files via: task hooks:pre-commit:go -- <files...>"
     cmds:
-      - .githooks/run-commit-msg.sh "${COMMIT_MSG_FILE}"
+      - task check:fmt:files -- {{.CLI_ARGS}}
+      - |
+        bash -lc '
+          set -euo pipefail
+          declare -A package_set=()
+
+          for file in "$@"; do
+            dir="$(dirname "$file")"
+            if [[ "$dir" == "." ]]; then
+              package_set["./"]=1
+            else
+              package_set["./$dir/..."]=1
+            fi
+          done
+
+          packages=()
+          for pkg in "${!package_set[@]}"; do
+            packages+=("$pkg")
+          done
+
+          if [[ ${#packages[@]} -gt 0 ]]; then
+            task check:lint:files -- "${packages[@]}"
+          fi
+        ' _ {{.CLI_ARGS}}
+      - task check:policy
 
   hooks:pre-push:
-    desc: Run pre-push hook checks
-    preconditions:
-      - sh: test -n "${PRE_PUSH_STDIN_FILE:-}"
-        msg: "PRE_PUSH_STDIN_FILE is required"
+    desc: Run targeted pre-push checks from git's ref update stream
     cmds:
-      - .githooks/run-pre-push.sh "${PRE_PUSH_REMOTE_NAME:-}" "${PRE_PUSH_REMOTE_URL:-}" "${PRE_PUSH_STDIN_FILE}"
+      - go run ./cmd/mush-hook pre-push {{.CLI_ARGS}}
 
   # ===========================================================================
   # Utilities

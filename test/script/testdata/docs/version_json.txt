@@ -1,0 +1,2 @@
+# documented version json command stays valid
+exec $MUSH_BIN version --json

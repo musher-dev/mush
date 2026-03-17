@@ -16,6 +16,8 @@ var (
 	date    = "unknown"
 )
 
+var rootOutputFactory = output.Default
+
 func main() {
 	os.Exit(run())
 }
@@ -32,7 +34,7 @@ func run() (exitCode int) {
 	buildinfo.Version = version
 	buildinfo.Commit = commit
 
-	out := output.Default()
+	out := rootOutputFactory()
 
 	rootCmd := newRootCmd()
 	if err := rootCmd.Execute(); err != nil {

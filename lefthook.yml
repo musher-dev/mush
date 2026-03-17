@@ -1,0 +1,26 @@
+pre-commit:
+  parallel: true
+  commands:
+    go-checks:
+      glob: "*.go"
+      run: task hooks:pre-commit:go -- {staged_files}
+    mod-check:
+      glob: "{go.mod,go.sum}"
+      run: task check:mod
+    shell-checks:
+      glob: "*.sh"
+      run: task check:shell:files -- {staged_files}
+    workflow-checks:
+      glob: ".github/workflows/*.{yml,yaml}"
+      run: task check:workflow:files -- {staged_files}
+
+commit-msg:
+  commands:
+    conventional-commits:
+      run: go run ./cmd/mush-hook commit-msg {1}
+
+pre-push:
+  scripts:
+    "quality-gate.sh":
+      runner: bash
+      use_stdin: true

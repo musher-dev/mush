@@ -6,6 +6,8 @@ Thanks for your interest in contributing to Mush! This guide will help you get s
 
 - **Go 1.26+** — [install](https://go.dev/dl/)
 - **Task** — [install](https://taskfile.dev/installation/) (build automation)
+- **Lefthook** — [install](https://lefthook.dev/installation/index.html) (git hooks)
+- **GoReleaser** — [install](https://goreleaser.com/install/) (local release-config validation, optional unless running `task check:release`)
 
 ## Setup
 
@@ -81,7 +83,10 @@ task run -- link --dry-run
 - `Taskfile.yml` is the source of truth for local and CI quality checks.
 - CI invokes `task` targets instead of duplicating check commands inline.
 - Go-based dev tools are pinned in `go.mod` via the Go `tool` directive.
-- Git hooks are repo-managed via `.githooks` and executed through Task targets.
+- Git hooks are repo-managed via `lefthook.yml`, with commit-msg and pre-push orchestration implemented in Go under `cmd/mush-hook`.
+- Lefthook pre-commit runs repo tasks directly for formatting, linting, and policy checks.
+- Run `task check:release` to execute the same `goreleaser check` validation that CI enforces.
+- Run `task hooks:doctor:config` to validate the checked-in hook configuration.
 - Run `task hooks:doctor` to validate hook setup.
 - Hooks are local pre-flight checks; CI remains the final authoritative gate.
 
@@ -106,6 +111,7 @@ go test ./... -v
 - Use `output.NewWriter()` with buffers for testing CLI output
 - Golden-path contract fixtures live under `test/contracts/` and are verified by `task check:contracts`
 - Synthetic canary checks live under `test/canary/` and run via `task check:canary` when canary env vars are set
+- Filesystem-driven CLI scenarios live under `test/script/` and run via `task check:testscript`
 
 ## Commit Messages
 

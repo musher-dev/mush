@@ -15,7 +15,7 @@ import (
 type AssetMapper interface {
 	// MapAsset returns the target path for a bundle asset in the harness's native structure.
 	// workDir is the project directory (e.g., current working directory).
-	MapAsset(workDir string, layer client.BundleLayer) (string, error)
+	MapAsset(workDir string, layer *client.BundleLayer) (string, error)
 
 	// PrepareLoad creates a temp directory with assets in native structure for `bundle load`.
 	// Returns the temp dir path and a cleanup function.
@@ -54,7 +54,7 @@ func prepareLoadCommon(mapper AssetMapper, cachePath string, manifest *client.Bu
 		}
 
 		// Get target path via mapper.
-		targetPath, mapErr := mapper.MapAsset(tmpDir, layer)
+		targetPath, mapErr := mapper.MapAsset(tmpDir, &layer)
 		if mapErr != nil {
 			cleanup()
 			return "", nil, fmt.Errorf("map asset %s: %w", layer.LogicalPath, mapErr)
@@ -78,19 +78,19 @@ func prepareLoadCommon(mapper AssetMapper, cachePath string, manifest *client.Bu
 
 	toolConfigs := map[string][][]byte{}
 
-	for _, asset := range assets {
-		switch asset.layer.AssetType {
+	for i := range assets {
+		switch assets[i].layer.AssetType {
 		case "tool_config":
-			toolConfigs[asset.targetPath] = append(toolConfigs[asset.targetPath], asset.data)
+			toolConfigs[assets[i].targetPath] = append(toolConfigs[assets[i].targetPath], assets[i].data)
 		default:
-			if mkErr := safeio.MkdirAll(filepath.Dir(asset.targetPath), 0o755); mkErr != nil {
+			if mkErr := safeio.MkdirAll(filepath.Dir(assets[i].targetPath), 0o755); mkErr != nil {
 				cleanup()
-				return "", nil, fmt.Errorf("create dir for %s: %w", asset.targetPath, mkErr)
+				return "", nil, fmt.Errorf("create dir for %s: %w", assets[i].targetPath, mkErr)
 			}
 
-			if writeErr := safeio.WriteFile(asset.targetPath, asset.data, 0o644); writeErr != nil {
+			if writeErr := safeio.WriteFile(assets[i].targetPath, assets[i].data, 0o644); writeErr != nil {
 				cleanup()
-				return "", nil, fmt.Errorf("write %s: %w", asset.targetPath, writeErr)
+				return "", nil, fmt.Errorf("write %s: %w", assets[i].targetPath, writeErr)
 			}
 		}
 	}

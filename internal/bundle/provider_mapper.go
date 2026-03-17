@@ -21,7 +21,7 @@ func NewProviderMapper(spec *harnesstype.ProviderSpec) AssetMapper {
 }
 
 // MapAsset maps a bundle asset to the provider's native directory structure.
-func (m *providerMapper) MapAsset(workDir string, layer client.BundleLayer) (string, error) {
+func (m *providerMapper) MapAsset(workDir string, layer *client.BundleLayer) (string, error) {
 	if err := ValidateLogicalPath(layer.LogicalPath); err != nil {
 		return "", err
 	}
