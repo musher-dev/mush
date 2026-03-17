@@ -37,16 +37,15 @@ jobs:
         run: |
           task setup:tools
 
+      - name: Verify hook bootstrap
+        run: |
+          task hooks:install
+
       - name: Run CI quality checks
         run: task check:ci
 
       - name: Enforce Coverage Floor
-        run: |
-          total="$(go tool cover -func=coverage.out | awk '/^total:/ {print substr($3, 1, length($3)-1)}')"
-          awk -v total="$total" -v min="$COVERAGE_THRESHOLD" 'BEGIN { exit !(total + 0 >= min + 0) }' || {
-            echo "coverage ${total}% is below required ${COVERAGE_THRESHOLD}%"
-            exit 1
-          }
+        run: task check:coverage:floor
 
       - name: Validate GoReleaser Config
         uses: goreleaser/goreleaser-action@v7
@@ -63,7 +62,7 @@ jobs:
         if: github.event_name == 'push'
 
   macos-tests:
-    name: macOS Tests
+    name: macOS Smoke
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v6
@@ -74,11 +73,14 @@ jobs:
           go-version-file: 'go.mod'
           cache: true
 
-      - name: Run Tests
-        run: go test ./...
+      - name: Run CLI smoke tests
+        run: |
+          go test ./cmd/mush -run '^(TestHelpSnapshots|TestValidateAPIURL|TestResolveQueueAndHabitatNoInputSelection)$'
+          go test ./test/script -run '^TestCLI$'
+          go test ./internal/policy
 
   windows-build:
-    name: Windows Build Smoke
+    name: Windows Smoke
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v6
@@ -89,5 +91,8 @@ jobs:
           go-version-file: 'go.mod'
           cache: true
 
-      - name: Build
-        run: go build ./cmd/mush
+      - name: Build and run CLI smoke tests
+        run: |
+          go build ./cmd/mush
+          go test ./cmd/mush -run '^(TestHelpSnapshots|TestValidateAPIURL|TestUnknownFlagReturnsCLIError)$'
+          go test ./internal/policy

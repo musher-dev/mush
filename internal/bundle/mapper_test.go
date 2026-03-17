@@ -52,7 +52,7 @@ func TestProviderMapper_Claude_MapAsset(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := mapper.MapAsset(workDir, tc.layer)
+			got, err := mapper.MapAsset(workDir, &tc.layer)
 			if tc.wantErr {
 				if err == nil {
 					t.Fatalf("MapAsset() expected error, got %q", got)
@@ -111,7 +111,7 @@ func TestProviderMapper_Codex_MapAsset(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := mapper.MapAsset(workDir, tc.layer)
+			got, err := mapper.MapAsset(workDir, &tc.layer)
 			if tc.wantErr {
 				if err == nil {
 					t.Fatalf("MapAsset() expected error, got %q", got)

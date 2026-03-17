@@ -195,7 +195,7 @@ func cmdCheckInstallConflicts(cachePath, harnessName, workDir string) tea.Cmd {
 		var conflicts []string
 
 		for _, layer := range manifest.Manifest.Layers {
-			targetPath, mapErr := mapper.MapAsset(workDir, layer)
+			targetPath, mapErr := mapper.MapAsset(workDir, &layer)
 			if mapErr != nil || targetPath == "" {
 				continue
 			}
@@ -270,7 +270,7 @@ func downloadBundle(ctx context.Context, c *client.Client, resolved *client.Bund
 			return fmt.Errorf("asset %s is missing asset ID", layer.LogicalPath)
 		}
 
-		data, fetchErr := c.FetchBundleAsset(ctx, layer.AssetID)
+		data, fetchErr := c.FetchBundleAsset(ctx, layer.AssetID, resolved.Version)
 		if fetchErr != nil {
 			return fmt.Errorf("fetch asset %s: %w", layer.AssetID, fetchErr)
 		}

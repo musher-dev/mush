@@ -1,0 +1,2 @@
+# documented root help command stays valid
+exec $MUSH_BIN --help

@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,16 +12,17 @@ import (
 
 // BundleResolveResponse is the response from resolving a bundle version.
 type BundleResolveResponse struct {
-	BundleID  string         `json:"bundleId"`
-	VersionID string         `json:"versionId"`
-	Version   string         `json:"version"`
-	Namespace string         `json:"namespace"`
-	Slug      string         `json:"slug"`
-	Ref       string         `json:"ref"`
-	State     string         `json:"state"`
-	OCIRef    string         `json:"ociRef"`
-	OCIDigest string         `json:"ociDigest"`
-	Manifest  BundleManifest `json:"manifest"`
+	BundleID   string         `json:"bundleId"`
+	VersionID  string         `json:"versionId"`
+	Version    string         `json:"version"`
+	Namespace  string         `json:"namespace"`
+	Slug       string         `json:"slug"`
+	Ref        string         `json:"ref"`
+	State      string         `json:"state"`
+	SourceType string         `json:"sourceType"`
+	OCIRef     string         `json:"ociRef"`
+	OCIDigest  string         `json:"ociDigest"`
+	Manifest   BundleManifest `json:"manifest"`
 }
 
 // BundleManifest describes the layers (assets) in a bundle version.
@@ -33,6 +35,7 @@ type BundleLayer struct {
 	AssetID       string `json:"assetId"`
 	LogicalPath   string `json:"logicalPath"`
 	AssetType     string `json:"assetType"` // "skill", "agent_definition", "tool_config"
+	MediaType     string `json:"mediaType,omitempty"`
 	ContentSHA256 string `json:"contentSha256"`
 	SizeBytes     int64  `json:"sizeBytes"`
 }
@@ -95,9 +98,20 @@ func (c *Client) resolveBundleAttempt(
 	return &result, nil
 }
 
+// ErrNullContent indicates the server returned a null contentText for an asset.
+// This typically means the server could not resolve the asset content (e.g. OCI
+// registry unavailable for a registry-sourced bundle).
+var ErrNullContent = errors.New("asset content unavailable from server")
+
 // FetchBundleAsset downloads a single asset by ID and returns its raw content.
-func (c *Client) FetchBundleAsset(ctx context.Context, assetID string) ([]byte, error) {
+// When version is non-empty, it is sent as a query parameter to enable
+// server-side caching (Cache-Control: immutable).
+func (c *Client) FetchBundleAsset(ctx context.Context, assetID, version string) ([]byte, error) {
 	path := fmt.Sprintf("/api/v1/runner/assets/%s", neturl.PathEscape(assetID))
+	if version != "" {
+		path += "?version=" + neturl.QueryEscape(version)
+	}
+
 	return c.fetchBundleAssetAttempt(ctx, path)
 }
 
@@ -128,23 +142,37 @@ func (c *Client) fetchBundleAssetAttempt(ctx context.Context, path string) ([]by
 		return nil, fmt.Errorf("read bundle asset (%s): %w", path, err)
 	}
 
-	if content, ok := extractAssetContent(data); ok {
+	content, ok, extractErr := extractAssetContent(data)
+	if extractErr != nil {
+		return nil, fmt.Errorf("fetch bundle asset (%s): %w", path, extractErr)
+	}
+
+	if ok {
 		return []byte(content), nil
 	}
 
 	return data, nil
 }
 
-func extractAssetContent(data []byte) (string, bool) {
+func extractAssetContent(data []byte) (content string, found bool, err error) {
 	var payload map[string]any
 
-	if err := json.Unmarshal(data, &payload); err != nil {
-		return "", false
+	if jsonErr := json.Unmarshal(data, &payload); jsonErr != nil {
+		return "", false, nil //nolint:nilerr // not JSON — caller falls back to raw bytes
 	}
 
-	if content, ok := payload["contentText"].(string); ok {
-		return content, true
+	val, exists := payload["contentText"]
+	if !exists {
+		return "", false, nil
 	}
 
-	return "", false
+	if val == nil {
+		return "", false, ErrNullContent
+	}
+
+	if s, ok := val.(string); ok {
+		return s, true, nil
+	}
+
+	return "", false, nil
 }

@@ -47,7 +47,7 @@ func TestPullFailsWhenResolveLacksDownloadMetadata(t *testing.T) {
 		t.Fatal("Pull() expected error, got nil")
 	}
 
-	if !strings.Contains(err.Error(), "did not include OCI reference or asset manifest metadata") {
+	if !strings.Contains(err.Error(), "did not include asset manifest metadata") {
 		t.Fatalf("Pull() error = %v, want contract-gap message", err)
 	}
 }

@@ -28,7 +28,7 @@ func newRootCmd() *cobra.Command {
 		apiKey     string
 	)
 
-	out := output.Default()
+	out := rootOutputFactory()
 
 	rootCmd := &cobra.Command{
 		Use:   "mush",

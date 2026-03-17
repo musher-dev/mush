@@ -1,0 +1,8 @@
+# config commands persist and read user settings through the real binary
+exec $MUSH_BIN config set keybindings.status '["g"]'
+stderr 'Set keybindings.status = \[g\]'
+
+exec $MUSH_BIN config get keybindings.status
+stdout 'keybindings.status = \[g\]'
+
+exists $XDG_CONFIG_HOME/mush/config.yaml

@@ -1,0 +1,2 @@
+# documented paths json command stays valid
+exec $MUSH_BIN paths --json

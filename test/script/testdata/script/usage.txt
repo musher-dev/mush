@@ -1,0 +1,4 @@
+# flag parsing failures keep the CLIError hint shape in subprocess mode
+! exec $MUSH_BIN version --bogus
+stderr 'unknown flag: --bogus'
+stderr 'Run ''mush version --help'' for available flags'

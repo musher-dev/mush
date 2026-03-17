@@ -1,0 +1,5 @@
+# root help stays stable and readable in a real process
+exec $MUSH_BIN --help
+stdout 'Load, install, and manage agent bundles from the Musher Hub.'
+stdout 'Bundle Commands:'
+stdout 'Get started:  mush bundle load'

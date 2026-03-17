@@ -64,7 +64,7 @@ func cleanStalePartials(cachePath string) {
 }
 
 // Pull resolves, downloads, and caches a bundle version.
-// It tries OCI pull first (if oci_ref present), falling back to per-asset API download.
+// Assets are downloaded via the per-asset API (the server proxies OCI content).
 // Returns the resolve response, the cache path, and any error.
 func Pull(ctx context.Context, c *client.Client, namespace, slug, version string, out *output.Writer) (*client.BundleResolveResponse, string, error) {
 	logger := observability.FromContext(ctx).With(
@@ -135,102 +135,69 @@ func Pull(ctx context.Context, c *client.Client, namespace, slug, version string
 		return nil, "", fmt.Errorf("create staging assets directory: %w", err)
 	}
 
-	// Try OCI pull first if oci_ref is present.
-	ociOK := false
-
-	if resolved.OCIRef != "" {
-		logger.Info("starting OCI pull", slog.String("event.type", "bundle.pull.oci.start"))
-
-		spin = out.Spinner("Pulling from OCI registry")
-		spin.Start()
-
-		ociManifest, ociErr := PullOCI(
-			ctx,
-			resolved.OCIRef,
-			resolved.OCIDigest,
-			assetsDir,
+	if len(resolved.Manifest.Layers) == 0 {
+		return nil, "", fmt.Errorf(
+			"bundle resolution did not include asset manifest metadata; unable to download bundle contents",
 		)
-		if ociErr == nil {
-			if len(resolved.Manifest.Layers) == 0 && ociManifest != nil {
-				resolved.Manifest = *ociManifest
-			}
-
-			spin.StopWithSuccess("Pulled from OCI registry")
-			logger.Info("OCI pull completed", slog.String("event.type", "bundle.pull.oci.ok"))
-
-			ociOK = true
-		} else {
-			// OCI pull failed, fall back to API.
-			spin.StopWithFailure("OCI pull failed, falling back to API")
-			logger.Warn("OCI pull failed, using API fallback", slog.String("event.type", "bundle.pull.oci.fallback"), slog.String("error", ociErr.Error()))
-		}
 	}
 
-	if !ociOK {
-		if len(resolved.Manifest.Layers) == 0 {
-			return nil, "", fmt.Errorf(
-				"bundle resolution did not include OCI reference or asset manifest metadata; unable to download bundle contents",
+	// Per-asset API download (server proxies OCI content for registry bundles).
+	spin = out.Spinner(fmt.Sprintf("Downloading %d assets", len(resolved.Manifest.Layers)))
+	spin.Start()
+	logger.Info("bundle asset download started", slog.String("event.type", "bundle.download.start"), slog.Int("bundle.asset_count", len(resolved.Manifest.Layers)))
+
+	for _, layer := range resolved.Manifest.Layers {
+		if err := ValidateLogicalPath(layer.LogicalPath); err != nil {
+			spin.StopWithFailure("Path validation failed")
+			logger.Error("bundle asset path validation failed", slog.String("event.type", "bundle.download.asset.error"), slog.String("bundle.asset.logical_path", layer.LogicalPath), slog.String("error", err.Error()))
+
+			return nil, "", fmt.Errorf("invalid logical path: %w", err)
+		}
+
+		if layer.AssetID == "" {
+			spin.StopWithFailure("Asset metadata missing")
+			logger.Error("bundle asset metadata missing", slog.String("event.type", "bundle.download.asset.error"), slog.String("bundle.asset.logical_path", layer.LogicalPath))
+
+			return nil, "", fmt.Errorf("asset %s is missing asset ID for API download", layer.LogicalPath)
+		}
+
+		data, fetchErr := c.FetchBundleAsset(ctx, layer.AssetID, resolved.Version)
+		if fetchErr != nil {
+			spin.StopWithFailure("Asset download failed")
+			logger.Error("bundle asset download failed", slog.String("event.type", "bundle.download.asset.error"), slog.String("bundle.asset.logical_path", layer.LogicalPath), slog.String("error", fetchErr.Error()))
+
+			return nil, "", fmt.Errorf("fetch asset %s: %w", layer.AssetID, fetchErr)
+		}
+
+		// Verify SHA256 (may recover trailing newline stripped by server).
+		verified, verifyErr := verifySHA256(data, layer.ContentSHA256)
+		if verifyErr != nil {
+			spin.StopWithFailure("Integrity check failed")
+			logger.Error("bundle asset integrity check failed",
+				slog.String("event.type", "bundle.download.asset.error"),
+				slog.String("bundle.asset.logical_path", layer.LogicalPath),
+				slog.String("error", verifyErr.Error()),
+				slog.Int("bundle.asset.size_got", len(data)),
 			)
+
+			return nil, "", fmt.Errorf("asset %s: %w", layer.LogicalPath, verifyErr)
 		}
 
-		// Per-asset API download.
-		spin = out.Spinner(fmt.Sprintf("Downloading %d assets", len(resolved.Manifest.Layers)))
-		spin.Start()
-		logger.Info("bundle asset download started", slog.String("event.type", "bundle.download.start"), slog.Int("bundle.asset_count", len(resolved.Manifest.Layers)))
+		data = verified
 
-		for _, layer := range resolved.Manifest.Layers {
-			if err := ValidateLogicalPath(layer.LogicalPath); err != nil {
-				spin.StopWithFailure("Path validation failed")
-				logger.Error("bundle asset path validation failed", slog.String("event.type", "bundle.download.asset.error"), slog.String("bundle.asset.logical_path", layer.LogicalPath), slog.String("error", err.Error()))
-
-				return nil, "", fmt.Errorf("invalid logical path: %w", err)
-			}
-
-			if layer.AssetID == "" {
-				spin.StopWithFailure("Asset metadata missing")
-				logger.Error("bundle asset metadata missing", slog.String("event.type", "bundle.download.asset.error"), slog.String("bundle.asset.logical_path", layer.LogicalPath))
-
-				return nil, "", fmt.Errorf("asset %s is missing asset ID for API download", layer.LogicalPath)
-			}
-
-			data, fetchErr := c.FetchBundleAsset(ctx, layer.AssetID)
-			if fetchErr != nil {
-				spin.StopWithFailure("Asset download failed")
-				logger.Error("bundle asset download failed", slog.String("event.type", "bundle.download.asset.error"), slog.String("bundle.asset.logical_path", layer.LogicalPath), slog.String("error", fetchErr.Error()))
-
-				return nil, "", fmt.Errorf("fetch asset %s: %w", layer.AssetID, fetchErr)
-			}
-
-			// Verify SHA256 (may recover trailing newline stripped by server).
-			verified, verifyErr := verifySHA256(data, layer.ContentSHA256)
-			if verifyErr != nil {
-				spin.StopWithFailure("Integrity check failed")
-				logger.Error("bundle asset integrity check failed",
-					slog.String("event.type", "bundle.download.asset.error"),
-					slog.String("bundle.asset.logical_path", layer.LogicalPath),
-					slog.String("error", verifyErr.Error()),
-					slog.Int("bundle.asset.size_got", len(data)),
-				)
-
-				return nil, "", fmt.Errorf("asset %s: %w", layer.LogicalPath, verifyErr)
-			}
-
-			data = verified
-
-			// Write to staging cache.
-			destPath := filepath.Join(assetsDir, layer.LogicalPath)
-			if err := safeio.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
-				return nil, "", fmt.Errorf("create asset directory: %w", err)
-			}
-
-			if err := safeio.WriteFile(destPath, data, 0o644); err != nil {
-				return nil, "", fmt.Errorf("write asset %s: %w", layer.LogicalPath, err)
-			}
+		// Write to staging cache.
+		destPath := filepath.Join(assetsDir, layer.LogicalPath)
+		if err := safeio.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
+			return nil, "", fmt.Errorf("create asset directory: %w", err)
 		}
 
-		spin.StopWithSuccess(fmt.Sprintf("Downloaded %d assets", len(resolved.Manifest.Layers)))
-		logger.Info("bundle asset download completed", slog.String("event.type", "bundle.download.complete"), slog.Int("bundle.asset_count", len(resolved.Manifest.Layers)))
+		if err := safeio.WriteFile(destPath, data, 0o644); err != nil {
+			return nil, "", fmt.Errorf("write asset %s: %w", layer.LogicalPath, err)
+		}
 	}
+
+	spin.StopWithSuccess(fmt.Sprintf("Downloaded %d assets", len(resolved.Manifest.Layers)))
+	logger.Info("bundle asset download completed", slog.String("event.type", "bundle.download.complete"), slog.Int("bundle.asset_count", len(resolved.Manifest.Layers)))
 
 	// Write manifest into staging dir (written last — serves as cache-hit marker).
 	if err := writeManifest(stagingDir, resolved); err != nil {

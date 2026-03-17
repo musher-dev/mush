@@ -29,7 +29,7 @@ func InstallFromCache(
 	assets := make([]mappedAsset, 0, len(manifest.Layers))
 
 	for _, layer := range manifest.Layers {
-		targetPath, mapErr := mapper.MapAsset(workDir, layer)
+		targetPath, mapErr := mapper.MapAsset(workDir, &layer)
 		if mapErr != nil {
 			return nil, fmt.Errorf("map asset %s: %w", layer.LogicalPath, mapErr)
 		}
@@ -51,28 +51,28 @@ func InstallFromCache(
 	toolConfigs := map[string][][]byte{}
 	installed := map[string]struct{}{}
 
-	for _, asset := range assets {
-		switch asset.layer.AssetType {
+	for i := range assets {
+		switch assets[i].layer.AssetType {
 		case "tool_config":
-			toolConfigs[asset.targetPath] = append(toolConfigs[asset.targetPath], asset.data)
+			toolConfigs[assets[i].targetPath] = append(toolConfigs[assets[i].targetPath], assets[i].data)
 		default:
 			if !force {
-				if _, statErr := os.Stat(asset.targetPath); statErr == nil {
-					return nil, &InstallConflictError{Path: asset.targetPath}
+				if _, statErr := os.Stat(assets[i].targetPath); statErr == nil {
+					return nil, &InstallConflictError{Path: assets[i].targetPath}
 				}
 			}
 
-			if mkErr := safeio.MkdirAll(filepath.Dir(asset.targetPath), 0o755); mkErr != nil {
-				return nil, fmt.Errorf("create directory for %s: %w", asset.targetPath, mkErr)
+			if mkErr := safeio.MkdirAll(filepath.Dir(assets[i].targetPath), 0o755); mkErr != nil {
+				return nil, fmt.Errorf("create directory for %s: %w", assets[i].targetPath, mkErr)
 			}
 
-			if writeErr := safeio.WriteFile(asset.targetPath, asset.data, 0o644); writeErr != nil {
-				return nil, fmt.Errorf("write %s: %w", asset.targetPath, writeErr)
+			if writeErr := safeio.WriteFile(assets[i].targetPath, assets[i].data, 0o644); writeErr != nil {
+				return nil, fmt.Errorf("write %s: %w", assets[i].targetPath, writeErr)
 			}
 
-			relPath, _ := filepath.Rel(workDir, asset.targetPath)
+			relPath, _ := filepath.Rel(workDir, assets[i].targetPath)
 			if relPath == "" {
-				relPath = asset.targetPath
+				relPath = assets[i].targetPath
 			}
 
 			installed[relPath] = struct{}{}
@@ -159,7 +159,7 @@ func InjectAssetsForLoad(
 			continue
 		}
 
-		targetPath, mapErr := mapper.MapAsset(projectDir, layer)
+		targetPath, mapErr := mapper.MapAsset(projectDir, &layer)
 		if mapErr != nil {
 			return nil, nil, makeCleanup(), fmt.Errorf("map asset %s: %w", layer.LogicalPath, mapErr)
 		}
@@ -282,7 +282,7 @@ func InjectToolConfigsForLoad(
 			continue
 		}
 
-		targetPath, mapErr := mapper.MapAsset(projectDir, layer)
+		targetPath, mapErr := mapper.MapAsset(projectDir, &layer)
 		if mapErr != nil {
 			return nil, makeCleanup(), fmt.Errorf("map asset %s: %w", layer.LogicalPath, mapErr)
 		}
