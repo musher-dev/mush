@@ -29,7 +29,7 @@
 ## Installation
 
 ```bash
-curl -fsSL https://get.musher.dev | sh
+curl -fsSL https://mush.musher.dev | sh
 ```
 
 <details>
@@ -37,10 +37,10 @@ curl -fsSL https://get.musher.dev | sh
 
 ```bash
 # Install a specific version
-curl -fsSL https://get.musher.dev | sh -s -- --version <version>
+curl -fsSL https://mush.musher.dev | sh -s -- --version <version>
 
 # Install and also install tmux if missing
-curl -fsSL https://get.musher.dev | sh -s -- --install-tmux
+curl -fsSL https://mush.musher.dev | sh -s -- --install-tmux
 
 # From source
 go install github.com/musher-dev/mush/cmd/mush@latest

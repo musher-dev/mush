@@ -14,7 +14,7 @@ resolve queue configuration, and start the worker on the hardened path.
 1. Install:
 
 ```bash
-curl -fsSL https://get.musher.dev | sh
+curl -fsSL https://mush.musher.dev | sh
 ```
 
 2. Verify binary:
