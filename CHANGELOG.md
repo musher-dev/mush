@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.17.2](https://github.com/musher-dev/mush/compare/v3.17.1...v3.17.2) (2026-03-18)
+
+
+### Documentation
+
+* update mush install URL ([#128](https://github.com/musher-dev/mush/issues/128)) ([c0e27e5](https://github.com/musher-dev/mush/commit/c0e27e5ee59b330025c4a46827a70ed4300ca360))
+
 ## [3.17.1](https://github.com/musher-dev/mush/compare/v3.17.0...v3.17.1) (2026-03-17)
 
 
