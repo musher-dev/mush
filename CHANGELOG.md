@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.17.3](https://github.com/musher-dev/mush/compare/v3.17.2...v3.17.3) (2026-03-20)
+
+
+### Bug Fixes
+
+* **client:** update queue endpoint and remove asset version param ([#130](https://github.com/musher-dev/mush/issues/130)) ([0545422](https://github.com/musher-dev/mush/commit/0545422ab4b63d40870c0ad4e20ac115f53836ce))
+
 ## [3.17.2](https://github.com/musher-dev/mush/compare/v3.17.1...v3.17.2) (2026-03-18)
 
 
