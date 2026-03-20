@@ -123,14 +123,9 @@ func (c *Client) ResolveBundle(ctx context.Context, namespace, slug, version str
 var ErrNullContent = errors.New("asset content unavailable from server")
 
 // FetchBundleAsset downloads a single asset by ID and returns its raw content.
-// When version is non-empty, it is sent as a query parameter to enable
-// server-side caching (Cache-Control: immutable).
-func (c *Client) FetchBundleAsset(ctx context.Context, assetID, version string) ([]byte, error) {
+// The asset ID is already version-specific, so no version query param is needed.
+func (c *Client) FetchBundleAsset(ctx context.Context, assetID string) ([]byte, error) {
 	path := fmt.Sprintf("/v1/runner/assets/%s", neturl.PathEscape(assetID))
-	if version != "" {
-		path += "?version=" + neturl.QueryEscape(version)
-	}
-
 	return c.fetchBundleAssetAttempt(ctx, path)
 }
 

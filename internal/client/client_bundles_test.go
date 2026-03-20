@@ -212,7 +212,7 @@ func TestFetchBundleAssetParsesJSONContentText(t *testing.T) {
 
 	c := NewWithHTTPClient("https://example.test", "test-key", clientHTTP)
 
-	data, err := c.FetchBundleAsset(t.Context(), "asset-1", "")
+	data, err := c.FetchBundleAsset(t.Context(), "asset-1")
 	if err != nil {
 		t.Fatalf("FetchBundleAsset() error = %v", err)
 	}
@@ -237,7 +237,7 @@ func TestFetchBundleAssetSupportsRawAssetPayload(t *testing.T) {
 
 	c := NewWithHTTPClient("https://example.test", "test-key", clientHTTP)
 
-	data, err := c.FetchBundleAsset(t.Context(), "asset-2", "")
+	data, err := c.FetchBundleAsset(t.Context(), "asset-2")
 	if err != nil {
 		t.Fatalf("FetchBundleAsset() error = %v", err)
 	}
@@ -247,13 +247,13 @@ func TestFetchBundleAssetSupportsRawAssetPayload(t *testing.T) {
 	}
 }
 
-func TestFetchBundleAssetSendsVersionQueryParam(t *testing.T) {
+func TestFetchBundleAssetDoesNotSendVersionQueryParam(t *testing.T) {
 	t.Parallel()
 
 	clientHTTP := &http.Client{
 		Transport: bundleRoundTripFunc(func(r *http.Request) (*http.Response, error) {
-			if got := r.URL.Query().Get("version"); got != "2.0.0" {
-				t.Fatalf("version query param = %q, want 2.0.0", got)
+			if got := r.URL.Query().Get("version"); got != "" {
+				t.Fatalf("version query param = %q, want empty (no version param)", got)
 			}
 
 			return bundleJSONResponse(http.StatusOK, `{"id":"asset-3","contentText":"versioned"}`), nil
@@ -262,7 +262,7 @@ func TestFetchBundleAssetSendsVersionQueryParam(t *testing.T) {
 
 	c := NewWithHTTPClient("https://example.test", "test-key", clientHTTP)
 
-	data, err := c.FetchBundleAsset(t.Context(), "asset-3", "2.0.0")
+	data, err := c.FetchBundleAsset(t.Context(), "asset-3")
 	if err != nil {
 		t.Fatalf("FetchBundleAsset() error = %v", err)
 	}
@@ -283,7 +283,7 @@ func TestFetchBundleAssetNullContentTextReturnsError(t *testing.T) {
 
 	c := NewWithHTTPClient("https://example.test", "test-key", clientHTTP)
 
-	_, err := c.FetchBundleAsset(t.Context(), "asset-4", "")
+	_, err := c.FetchBundleAsset(t.Context(), "asset-4")
 	if err == nil {
 		t.Fatal("FetchBundleAsset() expected error for null contentText, got nil")
 	}

@@ -225,8 +225,8 @@ func TestClientClaimJob(t *testing.T) {
 
 func TestClientListQueues(t *testing.T) {
 	c := newMockClient(t, func(r *http.Request) (*http.Response, error) {
-		if r.URL.Path != "/v1/queues" {
-			t.Fatalf("path = %q, want /v1/queues", r.URL.Path)
+		if r.URL.Path != "/v1/runner/queues" {
+			t.Fatalf("path = %q, want /v1/runner/queues", r.URL.Path)
 		}
 
 		if got := r.URL.Query().Get("status"); got != "active" {
