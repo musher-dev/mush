@@ -161,7 +161,7 @@ func Pull(ctx context.Context, c *client.Client, namespace, slug, version string
 			return nil, "", fmt.Errorf("asset %s is missing asset ID for API download", layer.LogicalPath)
 		}
 
-		data, fetchErr := c.FetchBundleAsset(ctx, layer.AssetID, "")
+		data, fetchErr := c.FetchBundleAsset(ctx, layer.AssetID)
 		if fetchErr != nil {
 			spin.StopWithFailure("Asset download failed")
 			logger.Error("bundle asset download failed", slog.String("event.type", "bundle.download.asset.error"), slog.String("bundle.asset.logical_path", layer.LogicalPath), slog.String("error", fetchErr.Error()))

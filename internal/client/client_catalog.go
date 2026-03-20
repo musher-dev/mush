@@ -38,7 +38,7 @@ func (c *Client) ListHabitats(ctx context.Context) ([]HabitatSummary, error) {
 
 // ListQueues lists queues for a habitat.
 func (c *Client) ListQueues(ctx context.Context, habitatID string) ([]QueueSummary, error) {
-	endpoint, err := neturl.Parse(c.baseURL + "/v1/queues")
+	endpoint, err := neturl.Parse(c.baseURL + "/v1/runner/queues")
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse queue endpoint: %w", err)
 	}
@@ -58,7 +58,7 @@ func (c *Client) ListQueues(ctx context.Context, habitatID string) ([]QueueSumma
 		return nil, err
 	}
 
-	resp, err := c.do(req, "/v1/queues")
+	resp, err := c.do(req, "/v1/runner/queues")
 	if err != nil {
 		return nil, fmt.Errorf("failed to list queues: %w", err)
 	}
