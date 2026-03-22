@@ -23,7 +23,7 @@ disk space.
 ### Options inherited from parent commands
 
 ```
-      --api-key string   API key override (prefer MUSH_API_KEY env var)
+      --api-key string   API key override (prefer MUSHER_API_KEY env var)
       --api-url string   Override Musher API URL for this command
       --json             Output in JSON format
       --no-color         Disable colored output

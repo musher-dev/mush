@@ -6,7 +6,7 @@ Stable error IDs for common remediation paths.
 
 - Symptom: `mush auth login` / `mush auth status` fails.
 - Checks:
-  - Validate `MUSH_API_KEY` value.
+  - Validate `MUSHER_API_KEY` value.
   - Re-run `mush auth login`.
   - Run `mush doctor` for connectivity and clock-skew checks.
 
@@ -15,7 +15,7 @@ Stable error IDs for common remediation paths.
 - Symptom: x509/certificate/TLS verification failures.
 - Cause: often corporate proxy interception.
 - Fix:
-  - Configure `MUSH_NETWORK_CA_CERT_FILE=/path/to/ca-bundle.pem`.
+  - Configure `MUSHER_NETWORK_CA_CERT_FILE=/path/to/ca-bundle.pem`.
   - Re-run `mush doctor` and `mush auth status`.
 
 ## `ERR-NET-002` Clock Skew

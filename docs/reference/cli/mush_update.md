@@ -14,7 +14,7 @@ Update mush to the latest version from GitHub Releases.
 Downloads the new binary, verifies its checksum, and replaces the current
 executable. If the binary is not writable, sudo is requested automatically.
 
-Set MUSH_UPDATE_DISABLED=1 to disable update checks.
+Set MUSHER_UPDATE_DISABLED=1 to disable update checks.
 
 ```
 mush update [flags]
@@ -39,7 +39,7 @@ mush update [flags]
 ### Options inherited from parent commands
 
 ```
-      --api-key string   API key override (prefer MUSH_API_KEY env var)
+      --api-key string   API key override (prefer MUSHER_API_KEY env var)
       --api-url string   Override Musher API URL for this command
       --json             Output in JSON format
       --no-color         Disable colored output

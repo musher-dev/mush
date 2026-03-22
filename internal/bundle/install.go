@@ -26,7 +26,7 @@ type InstalledBundle struct {
 
 const installedFileName = "installed.json"
 
-// TrackInstall records a bundle installation in .mush/installed.json.
+// TrackInstall records a bundle installation in .musher/installed.json.
 func TrackInstall(workDir string, bundle *InstalledBundle) error {
 	if bundle.Namespace == "" || bundle.Slug == "" {
 		return fmt.Errorf("installed bundle must include namespace and slug")
@@ -57,11 +57,20 @@ func TrackInstall(workDir string, bundle *InstalledBundle) error {
 	return saveInstalled(workDir, installed)
 }
 
-// LoadInstalled reads the list of installed bundles from .mush/installed.json.
+// LoadInstalled reads the list of installed bundles from .musher/installed.json.
+// Falls back to reading legacy .mush/installed.json for projects that installed
+// bundles before the storage directory rename.
 func LoadInstalled(workDir string) ([]InstalledBundle, error) {
-	path := filepath.Join(workDir, ".mush", installedFileName)
+	path := filepath.Join(workDir, ".musher", installedFileName)
 
 	data, err := safeio.ReadFile(path)
+	if err != nil && errors.Is(err, os.ErrNotExist) {
+		// Try legacy path before giving up.
+		legacyPath := filepath.Join(workDir, ".mush", installedFileName)
+
+		data, err = safeio.ReadFile(legacyPath)
+	}
+
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil
@@ -185,9 +194,9 @@ func Uninstall(workDir string, ref Ref, harness string) ([]string, error) {
 }
 
 func saveInstalled(workDir string, installed []InstalledBundle) error {
-	mushDir := filepath.Join(workDir, ".mush")
+	mushDir := filepath.Join(workDir, ".musher")
 	if err := safeio.MkdirAll(mushDir, 0o755); err != nil {
-		return fmt.Errorf("create .mush directory: %w", err)
+		return fmt.Errorf("create .musher directory: %w", err)
 	}
 
 	data, err := json.MarshalIndent(installed, "", "  ")

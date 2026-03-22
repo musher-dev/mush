@@ -12,7 +12,7 @@ import (
 )
 
 func TestUpdateCmd_DisabledByEnv(t *testing.T) {
-	t.Setenv("MUSH_UPDATE_DISABLED", "1")
+	t.Setenv("MUSHER_UPDATE_DISABLED", "1")
 
 	var stdout, stderr bytes.Buffer
 
@@ -36,7 +36,7 @@ func TestUpdateCmd_DisabledByEnv(t *testing.T) {
 }
 
 func TestUpdateCmd_DevBuild(t *testing.T) {
-	t.Setenv("MUSH_UPDATE_DISABLED", "")
+	t.Setenv("MUSHER_UPDATE_DISABLED", "")
 
 	oldVersion := buildinfo.Version
 	buildinfo.Version = "dev"
@@ -70,7 +70,7 @@ func TestUpdateCmd_VersionTrimPrefix(t *testing.T) {
 	// This test verifies trimming happens by running with a version that will
 	// fail to find on the network — we just want to make sure it doesn't panic
 	// and that it reaches the updater (returns an error, not a dev build warning).
-	t.Setenv("MUSH_UPDATE_DISABLED", "")
+	t.Setenv("MUSHER_UPDATE_DISABLED", "")
 
 	oldVersion := buildinfo.Version
 	buildinfo.Version = "1.0.0"

@@ -61,7 +61,7 @@ mush worker start --dry-run
 For CI/bootstrap scripts:
 
 ```bash
-mush init --force --api-key "$MUSH_API_KEY" --habitat "<slug-or-id>"
+mush init --force --api-key "$MUSHER_API_KEY" --habitat "<slug-or-id>"
 ```
 
 ## Corporate Proxy / TLS Interception
@@ -69,6 +69,6 @@ mush init --force --api-key "$MUSH_API_KEY" --habitat "<slug-or-id>"
 If you see TLS/x509 failures, configure a trusted CA bundle:
 
 ```bash
-export MUSH_NETWORK_CA_CERT_FILE=/path/to/corporate-ca.pem
+export MUSHER_NETWORK_CA_CERT_FILE=/path/to/corporate-ca.pem
 mush doctor
 ```

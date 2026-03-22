@@ -27,7 +27,7 @@ jobs:
           MUSH_CANARY_API_KEY: ${{ secrets.MUSH_CANARY_API_KEY }}
           MUSH_CANARY_HABITAT_ID: ${{ secrets.MUSH_CANARY_HABITAT_ID }}
           MUSH_CANARY_QUEUE_ID: ${{ secrets.MUSH_CANARY_QUEUE_ID }}
-          MUSH_NETWORK_CA_CERT_FILE: ${{ secrets.MUSH_CANARY_CA_CERT_FILE }}
+          MUSHER_NETWORK_CA_CERT_FILE: ${{ secrets.MUSH_CANARY_CA_CERT_FILE }}
         run: |
           if [ -z "${MUSH_CANARY_API_URL:-}" ] || [ -z "${MUSH_CANARY_API_KEY:-}" ] || [ -z "${MUSH_CANARY_HABITAT_ID:-}" ] || [ -z "${MUSH_CANARY_QUEUE_ID:-}" ]; then
             echo "Canary secrets not configured; skipping."

@@ -22,7 +22,7 @@ directory structure.
 ### Options inherited from parent commands
 
 ```
-      --api-key string   API key override (prefer MUSH_API_KEY env var)
+      --api-key string   API key override (prefer MUSHER_API_KEY env var)
       --api-url string   Override Musher API URL for this command
       --json             Output in JSON format
       --no-color         Disable colored output
@@ -38,5 +38,6 @@ directory structure.
 * [mush bundle install](mush_bundle_install.md)	 - Install bundle assets into the current project
 * [mush bundle list](mush_bundle_list.md)	 - List local bundle cache and installed bundles
 * [mush bundle load](mush_bundle_load.md)	 - Load a bundle into an ephemeral session
+* [mush bundle run](mush_bundle_run.md)	 - Run a bundle directly with a harness
 * [mush bundle uninstall](mush_bundle_uninstall.md)	 - Remove installed bundle assets from the current project
 

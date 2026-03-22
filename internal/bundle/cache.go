@@ -22,10 +22,10 @@ func CacheDir() string {
 	if err != nil {
 		home, homeErr := os.UserHomeDir()
 		if homeErr != nil {
-			return filepath.Join(os.TempDir(), "mush", "bundles")
+			return filepath.Join(os.TempDir(), "musher", "bundles")
 		}
 
-		return filepath.Join(home, ".cache", "mush", "bundles")
+		return filepath.Join(home, ".cache", "musher", "bundles")
 	}
 
 	return cacheDir
@@ -96,6 +96,9 @@ func Pull(ctx context.Context, c *client.Client, namespace, slug, version string
 	)
 
 	spin.StopWithSuccess(fmt.Sprintf("Resolved %s v%s", slug, resolved.Version))
+
+	// Ensure CACHEDIR.TAG exists in the cache root.
+	EnsureCacheDirTag()
 
 	// 2. Check cache hit.
 	cachePath := CachePath(namespace, slug, resolved.Version)
@@ -185,7 +188,12 @@ func Pull(ctx context.Context, c *client.Client, namespace, slug, version string
 
 		data = verified
 
-		// Write to staging cache.
+		// Store in content-addressable blob store.
+		if _, blobErr := StoreBlob(data); blobErr != nil {
+			logger.Warn("blob store write failed", slog.String("error", blobErr.Error()))
+		}
+
+		// Write to staging cache (materialized view).
 		destPath := filepath.Join(assetsDir, layer.LogicalPath)
 		if err := safeio.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
 			return nil, "", fmt.Errorf("create asset directory: %w", err)
@@ -218,6 +226,16 @@ func Pull(ctx context.Context, c *client.Client, namespace, slug, version string
 	}
 
 	stagingFailed = false
+
+	// Store manifest and ref in content-addressable store (best-effort).
+	hostID := paths.HostIDFromURL(c.BaseURL())
+	if storeErr := StoreManifest(hostID, namespace, slug, resolved.Version, resolved); storeErr != nil {
+		logger.Warn("manifest store write failed", slog.String("error", storeErr.Error()))
+	}
+
+	if refErr := UpdateRef(hostID, namespace, slug, resolved.Version); refErr != nil {
+		logger.Warn("ref update failed", slog.String("error", refErr.Error()))
+	}
 
 	return resolved, cachePath, nil
 }

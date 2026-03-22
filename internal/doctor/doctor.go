@@ -236,7 +236,10 @@ func checkConfigFile(context.Context) Result {
 
 // checkCredentialsFile checks permissions on the credentials fallback file.
 func checkCredentialsFile(context.Context) Result {
-	credPath, err := paths.CredentialsFile()
+	cfg := config.Load()
+	hostID := paths.HostIDFromURL(cfg.APIURL())
+
+	credPath, err := paths.CredentialFilePath(hostID)
 	if err != nil {
 		return Result{
 			Status:  StatusPass,
@@ -305,7 +308,8 @@ func checkAPIConnectivity(ctx context.Context) Result {
 
 // checkAuthentication validates stored credentials.
 func checkAuthentication(ctx context.Context) Result {
-	source, apiKey := auth.GetCredentials()
+	cfg := config.Load()
+	source, apiKey := auth.GetCredentials(cfg.APIURL())
 
 	if apiKey == "" {
 		return Result{
@@ -316,8 +320,6 @@ func checkAuthentication(ctx context.Context) Result {
 	}
 
 	// Validate the key
-	cfg := config.Load()
-
 	httpClient, clientErr := client.NewInstrumentedHTTPClient(cfg.CACertFile())
 	if clientErr != nil {
 		return Result{

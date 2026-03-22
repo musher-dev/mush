@@ -9,7 +9,7 @@ Clear stored credentials
 
 ### Synopsis
 
-Remove stored API credentials from the system keyring. Does not affect the MUSH_API_KEY environment variable.
+Remove stored API credentials from the system keyring. Does not affect the MUSHER_API_KEY environment variable.
 
 ```
 mush auth logout [flags]
@@ -30,7 +30,7 @@ mush auth logout [flags]
 ### Options inherited from parent commands
 
 ```
-      --api-key string   API key override (prefer MUSH_API_KEY env var)
+      --api-key string   API key override (prefer MUSHER_API_KEY env var)
       --api-url string   Override Musher API URL for this command
       --json             Output in JSON format
       --no-color         Disable colored output

@@ -15,7 +15,7 @@ Code: 2
 
 --- CannotPrompt ---
 Message: Cannot prompt in non-interactive mode
-Hint: Set MUSH_API_KEY environment variable instead
+Hint: Set MUSHER_API_KEY environment variable instead
 Code: 64
 
 --- HabitatNotFound ---

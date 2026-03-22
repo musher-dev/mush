@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/musher-dev/mush/internal/auth"
+	"github.com/musher-dev/mush/internal/config"
 	clierrors "github.com/musher-dev/mush/internal/errors"
 	"github.com/musher-dev/mush/internal/output"
 	"github.com/musher-dev/mush/internal/prompt"
@@ -35,7 +36,7 @@ func newAuthLoginCmd() *cobra.Command {
 Your API key will be stored securely in your system's keyring
 (macOS Keychain, Windows Credential Manager, or Linux Secret Service).
 
-You can also set the MUSH_API_KEY environment variable.`,
+You can also set the MUSHER_API_KEY environment variable.`,
 		Example: `  mush auth login
   mush --api-key sk-... auth login`,
 		Args: noArgs,
@@ -44,7 +45,7 @@ You can also set the MUSH_API_KEY environment variable.`,
 			prompter := prompt.New(out)
 
 			// Check for API key provided via global --api-key flag (injected as env var)
-			envKey := os.Getenv("MUSH_API_KEY")
+			envKey := os.Getenv("MUSHER_API_KEY")
 
 			var apiKey string
 			if envKey != "" {
@@ -52,7 +53,7 @@ You can also set the MUSH_API_KEY environment variable.`,
 			} else {
 				// Interactive flow: prompt for API key
 				if !prompter.CanPrompt() {
-					return clierrors.CannotPrompt("MUSH_API_KEY")
+					return clierrors.CannotPrompt("MUSHER_API_KEY")
 				}
 
 				var err error
@@ -86,7 +87,8 @@ You can also set the MUSH_API_KEY environment variable.`,
 			spin.Stop()
 
 			// Store in keyring
-			if err := auth.StoreAPIKey(apiKey); err != nil {
+			cfg := config.Load()
+			if err := auth.StoreAPIKey(cfg.APIURL(), apiKey); err != nil {
 				return clierrors.ConfigFailed("store credentials", err)
 			}
 
@@ -179,13 +181,14 @@ func newAuthLogoutCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:     "logout",
 		Short:   "Clear stored credentials",
-		Long:    `Remove stored API credentials from the system keyring. Does not affect the MUSH_API_KEY environment variable.`,
+		Long:    `Remove stored API credentials from the system keyring. Does not affect the MUSHER_API_KEY environment variable.`,
 		Example: `  mush auth logout`,
 		Args:    noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := output.FromContext(cmd.Context())
 
-			if err := auth.DeleteAPIKey(); err != nil {
+			cfg := config.Load()
+			if err := auth.DeleteAPIKey(cfg.APIURL()); err != nil {
 				// If key doesn't exist, that's fine
 				if strings.Contains(err.Error(), "not found") {
 					out.Muted("No stored credentials found")
@@ -197,9 +200,9 @@ func newAuthLogoutCmd() *cobra.Command {
 
 			out.Success("Logged out successfully")
 
-			if os.Getenv("MUSH_API_KEY") != "" {
+			if os.Getenv("MUSHER_API_KEY") != "" {
 				out.Println()
-				out.Warning("MUSH_API_KEY environment variable is still set")
+				out.Warning("MUSHER_API_KEY environment variable is still set")
 			}
 
 			return nil

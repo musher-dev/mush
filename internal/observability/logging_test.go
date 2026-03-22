@@ -35,7 +35,7 @@ func TestNewLogger_DefaultFileFallbackForInteractiveAuto(t *testing.T) {
 		}
 	}
 
-	logPath := filepath.Join(stateRoot, "mush", "logs", "mush.log")
+	logPath := filepath.Join(stateRoot, "musher", "logs", "mush.log")
 
 	data, err := os.ReadFile(logPath)
 	if err != nil {

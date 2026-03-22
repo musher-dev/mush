@@ -87,7 +87,7 @@ Get started:  mush bundle load`,
 					}
 				}
 
-				if setErr := os.Setenv("MUSH_API_URL", validatedURL); setErr != nil {
+				if setErr := os.Setenv("MUSHER_API_URL", validatedURL); setErr != nil {
 					return &clierrors.CLIError{
 						Message: fmt.Sprintf("Failed to apply API URL override: %v", setErr),
 						Hint:    "Check your shell environment and try again",
@@ -97,7 +97,7 @@ Get started:  mush bundle load`,
 			}
 
 			if strings.TrimSpace(apiKey) != "" {
-				if setErr := os.Setenv("MUSH_API_KEY", apiKey); setErr != nil {
+				if setErr := os.Setenv("MUSHER_API_KEY", apiKey); setErr != nil {
 					return &clierrors.CLIError{
 						Message: fmt.Sprintf("Failed to apply API key override: %v", setErr),
 						Hint:    "Check your shell environment and try again",
@@ -139,7 +139,7 @@ Get started:  mush bundle load`,
 	rootCmd.PersistentFlags().StringVar(&logFile, "log-file", "", "Optional structured log file path")
 	rootCmd.PersistentFlags().StringVar(&logStderr, "log-stderr", "", "Structured logging to stderr: auto, on, off")
 	rootCmd.PersistentFlags().StringVar(&apiURL, "api-url", "", "Override Musher API URL for this command")
-	rootCmd.PersistentFlags().StringVar(&apiKey, "api-key", "", "API key override (prefer MUSH_API_KEY env var)")
+	rootCmd.PersistentFlags().StringVar(&apiKey, "api-key", "", "API key override (prefer MUSHER_API_KEY env var)")
 
 	_ = rootCmd.PersistentFlags().MarkHidden("log-level")
 	_ = rootCmd.PersistentFlags().MarkHidden("log-format")

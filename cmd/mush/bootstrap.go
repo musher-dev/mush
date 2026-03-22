@@ -173,7 +173,8 @@ func hasExperimentalFlag() bool {
 
 func isInteractiveCommand(path string) bool {
 	return path == "mush worker start" || strings.HasPrefix(path, "mush worker start ") ||
-		path == "mush bundle load" || strings.HasPrefix(path, "mush bundle load ")
+		path == "mush bundle load" || strings.HasPrefix(path, "mush bundle load ") ||
+		path == "mush bundle run" || strings.HasPrefix(path, "mush bundle run ")
 }
 
 // buildTUIDeps creates the Dependencies struct for the TUI from available auth/config.
@@ -184,7 +185,7 @@ func buildTUIDeps() *nav.Dependencies {
 		Experimental: experimentalOn() || hasExperimentalFlag(),
 	}
 
-	source, apiKey := auth.GetCredentials()
+	source, apiKey := auth.GetCredentials(cfg.APIURL())
 	if source == auth.SourceNone || apiKey == "" {
 		apiKey = ""
 	}
