@@ -23,11 +23,11 @@ func TestLoad_Defaults(t *testing.T) {
 	t.Setenv("HOME", tmpDir)
 
 	// Clear any environment variables that might interfere
-	unsetEnvForTest(t, "MUSH_API_URL")
-	unsetEnvForTest(t, "MUSH_WORKER_POLL_INTERVAL")
-	unsetEnvForTest(t, "MUSH_WORKER_HEARTBEAT_INTERVAL")
-	unsetEnvForTest(t, "MUSH_UPDATE_AUTO_APPLY")
-	unsetEnvForTest(t, "MUSH_UPDATE_CHECK_INTERVAL")
+	unsetEnvForTest(t, "MUSHER_API_URL")
+	unsetEnvForTest(t, "MUSHER_WORKER_POLL_INTERVAL")
+	unsetEnvForTest(t, "MUSHER_WORKER_HEARTBEAT_INTERVAL")
+	unsetEnvForTest(t, "MUSHER_UPDATE_AUTO_APPLY")
+	unsetEnvForTest(t, "MUSHER_UPDATE_CHECK_INTERVAL")
 
 	cfg := Load()
 
@@ -95,28 +95,28 @@ func TestLoad_FromEnv(t *testing.T) {
 	}{
 		{
 			name:    "API URL from env",
-			envVar:  "MUSH_API_URL",
+			envVar:  "MUSHER_API_URL",
 			envVal:  "https://custom.api.com",
 			key:     "api.url",
 			wantStr: "https://custom.api.com",
 		},
 		{
 			name:    "poll interval from env",
-			envVar:  "MUSH_WORKER_POLL_INTERVAL",
+			envVar:  "MUSHER_WORKER_POLL_INTERVAL",
 			envVal:  "60",
 			key:     "worker.poll_interval",
 			wantInt: 60,
 		},
 		{
 			name:    "heartbeat interval from env",
-			envVar:  "MUSH_WORKER_HEARTBEAT_INTERVAL",
+			envVar:  "MUSHER_WORKER_HEARTBEAT_INTERVAL",
 			envVal:  "15",
 			key:     "worker.heartbeat_interval",
 			wantInt: 15,
 		},
 		{
 			name:    "custom CA cert from env",
-			envVar:  "MUSH_NETWORK_CA_CERT_FILE",
+			envVar:  "MUSHER_NETWORK_CA_CERT_FILE",
 			envVal:  "/tmp/corp-ca.pem",
 			key:     "network.ca_cert_file",
 			wantStr: "/tmp/corp-ca.pem",
@@ -150,9 +150,9 @@ func TestConfig_All(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("HOME", tmpDir)
 
-	unsetEnvForTest(t, "MUSH_API_URL")
-	unsetEnvForTest(t, "MUSH_WORKER_POLL_INTERVAL")
-	unsetEnvForTest(t, "MUSH_WORKER_HEARTBEAT_INTERVAL")
+	unsetEnvForTest(t, "MUSHER_API_URL")
+	unsetEnvForTest(t, "MUSHER_WORKER_POLL_INTERVAL")
+	unsetEnvForTest(t, "MUSHER_WORKER_HEARTBEAT_INTERVAL")
 
 	cfg := Load()
 	all := cfg.All()
@@ -174,7 +174,7 @@ func TestConfig_All(t *testing.T) {
 func TestConfig_Get(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("HOME", tmpDir)
-	unsetEnvForTest(t, "MUSH_API_URL")
+	unsetEnvForTest(t, "MUSHER_API_URL")
 
 	cfg := Load()
 
@@ -218,9 +218,9 @@ func TestConfig_APIURL(t *testing.T) {
 			t.Setenv("HOME", tmpDir)
 
 			if tt.envVal != "" {
-				t.Setenv("MUSH_API_URL", tt.envVal)
+				t.Setenv("MUSHER_API_URL", tt.envVal)
 			} else {
-				unsetEnvForTest(t, "MUSH_API_URL")
+				unsetEnvForTest(t, "MUSHER_API_URL")
 			}
 
 			cfg := Load()
@@ -236,7 +236,7 @@ func TestConfig_APIURL(t *testing.T) {
 func TestConfig_CACertFile(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("HOME", tmpDir)
-	t.Setenv("MUSH_NETWORK_CA_CERT_FILE", "/etc/ssl/certs/custom.pem")
+	t.Setenv("MUSHER_NETWORK_CA_CERT_FILE", "/etc/ssl/certs/custom.pem")
 
 	cfg := Load()
 
@@ -282,7 +282,7 @@ func TestConfig_PollInterval(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := runDurationConfigCase(t, "MUSH_WORKER_POLL_INTERVAL", tt.envVal, func(cfg *Config) time.Duration {
+			got := runDurationConfigCase(t, "MUSHER_WORKER_POLL_INTERVAL", tt.envVal, func(cfg *Config) time.Duration {
 				return cfg.PollInterval()
 			})
 
@@ -313,7 +313,7 @@ func TestConfig_HeartbeatInterval(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := runDurationConfigCase(t, "MUSH_WORKER_HEARTBEAT_INTERVAL", tt.envVal, func(cfg *Config) time.Duration {
+			got := runDurationConfigCase(t, "MUSHER_WORKER_HEARTBEAT_INTERVAL", tt.envVal, func(cfg *Config) time.Duration {
 				return cfg.HeartbeatInterval()
 			})
 
@@ -341,9 +341,9 @@ func TestConfig_UpdateAutoApply(t *testing.T) {
 			t.Setenv("HOME", tmpDir)
 
 			if tt.envVal == "" {
-				unsetEnvForTest(t, "MUSH_UPDATE_AUTO_APPLY")
+				unsetEnvForTest(t, "MUSHER_UPDATE_AUTO_APPLY")
 			} else {
-				t.Setenv("MUSH_UPDATE_AUTO_APPLY", tt.envVal)
+				t.Setenv("MUSHER_UPDATE_AUTO_APPLY", tt.envVal)
 			}
 
 			cfg := Load()
@@ -366,7 +366,7 @@ func TestConfig_UpdateCheckInterval(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := runDurationConfigCase(t, "MUSH_UPDATE_CHECK_INTERVAL", tt.envVal, func(cfg *Config) time.Duration {
+			got := runDurationConfigCase(t, "MUSHER_UPDATE_CHECK_INTERVAL", tt.envVal, func(cfg *Config) time.Duration {
 				return cfg.UpdateCheckInterval()
 			})
 			if got != tt.want {
@@ -417,11 +417,11 @@ func TestConfig_KeybindingsInvalidValueFallsBack(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(tmpDir, ".config"))
 
-	if err := os.MkdirAll(filepath.Join(tmpDir, ".config", "mush"), 0o700); err != nil {
+	if err := os.MkdirAll(filepath.Join(tmpDir, ".config", "musher"), 0o700); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}
 
-	configPath := filepath.Join(tmpDir, ".config", "mush", "config.yaml")
+	configPath := filepath.Join(tmpDir, ".config", "musher", "config.yaml")
 	if err := os.WriteFile(configPath, []byte("keybindings:\n  up: [w, w]\n"), 0o600); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}

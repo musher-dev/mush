@@ -51,7 +51,9 @@ func (w *Wizard) Run(ctx context.Context) error {
 	w.out.Println()
 
 	// Check for existing credentials
-	source, existingKey := auth.GetCredentials()
+	cfg := config.Load()
+
+	source, existingKey := auth.GetCredentials(cfg.APIURL())
 	if existingKey != "" && !w.force {
 		w.out.Warning("Existing credentials found (via %s)", source)
 
@@ -99,7 +101,7 @@ func (w *Wizard) Run(ctx context.Context) error {
 			w.out.Println()
 			w.out.Info("Either:")
 			w.out.Print("  1. Run without --no-input flag\n")
-			w.out.Print("  2. Set MUSH_API_KEY environment variable\n")
+			w.out.Print("  2. Set MUSHER_API_KEY environment variable\n")
 			w.out.Print("  3. Pass --api-key or run 'mush auth login' interactively\n")
 
 			return nil
@@ -122,8 +124,6 @@ func (w *Wizard) Run(ctx context.Context) error {
 	w.out.Println()
 	spin := w.out.Spinner("Validating API key")
 	spin.Start()
-
-	cfg := config.Load()
 
 	httpClient, clientErr := client.NewInstrumentedHTTPClient(cfg.CACertFile())
 	if clientErr != nil {
@@ -152,7 +152,7 @@ func (w *Wizard) Run(ctx context.Context) error {
 	spin = w.out.Spinner("Storing credentials")
 	spin.Start()
 
-	if storeErr := auth.StoreAPIKey(apiKey); storeErr != nil {
+	if storeErr := auth.StoreAPIKey(cfg.APIURL(), apiKey); storeErr != nil {
 		spin.StopWithFailure("Failed to store credentials")
 		w.out.Muted("%s", storeErr.Error())
 

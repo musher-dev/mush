@@ -109,9 +109,9 @@ func (e *Executor) Execute(ctx context.Context, job *client.Job) (*harnesstype.E
 	}
 
 	cmd.Env = append(cmd.Env,
-		fmt.Sprintf("MUSH_JOB_ID=%s", job.ID),
-		fmt.Sprintf("MUSH_JOB_NAME=%s", job.GetDisplayName()),
-		fmt.Sprintf("MUSH_JOB_QUEUE=%s", job.QueueID),
+		fmt.Sprintf("MUSHER_JOB_ID=%s", job.ID),
+		fmt.Sprintf("MUSHER_JOB_NAME=%s", job.GetDisplayName()),
+		fmt.Sprintf("MUSHER_JOB_QUEUE=%s", job.QueueID),
 	)
 
 	var output bytes.Buffer

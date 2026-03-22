@@ -14,8 +14,10 @@ import (
 // PathsInfo holds all resolved paths for JSON output.
 type PathsInfo struct {
 	ConfigRoot  string `json:"config_root"`
+	DataRoot    string `json:"data_root"`
 	StateRoot   string `json:"state_root"`
 	CacheRoot   string `json:"cache_root"`
+	RuntimeRoot string `json:"runtime_root"`
 	ConfigFile  string `json:"config_file"`
 	Credentials string `json:"credentials"`
 	LogFile     string `json:"log_file"`
@@ -48,8 +50,10 @@ state, cache, and credential files are stored on this system.`,
 			}
 
 			out.Print("Config root:    %s\n", info.ConfigRoot)
+			out.Print("Data root:      %s\n", info.DataRoot)
 			out.Print("State root:     %s\n", info.StateRoot)
 			out.Print("Cache root:     %s\n", info.CacheRoot)
+			out.Print("Runtime root:   %s\n", info.RuntimeRoot)
 			out.Print("\n")
 			out.Print("Config file:    %s\n", info.ConfigFile)
 			out.Print("Credentials:    %s\n", info.Credentials)
@@ -71,13 +75,14 @@ func resolvePathsInfo() PathsInfo {
 	info := PathsInfo{}
 
 	info.ConfigRoot = resolveOrError(paths.ConfigRoot)
+	info.DataRoot = resolveOrError(paths.DataRoot)
 	info.StateRoot = resolveOrError(paths.StateRoot)
 	info.CacheRoot = resolveOrError(paths.CacheRoot)
+	info.RuntimeRoot = resolveOrError(paths.RuntimeRoot)
 	info.LogFile = resolveOrError(paths.DefaultLogFile)
 	info.HistoryDir = resolveOrError(paths.HistoryDir)
 	info.BundleCache = resolveOrError(paths.BundleCacheDir)
 	info.UpdateState = resolveOrError(paths.UpdateStateFile)
-	info.Credentials = resolveOrError(paths.CredentialsFile)
 
 	if cr := info.ConfigRoot; cr != "" {
 		info.ConfigFile = cr + "/config.yaml"
@@ -94,7 +99,16 @@ func resolvePathsInfo() PathsInfo {
 		info.CACertFile = cfg.CACertFile()
 	}
 
-	source, _ := auth.GetCredentials()
+	hostID := paths.HostIDFromURL(cfg.APIURL())
+
+	credPath, credErr := paths.CredentialFilePath(hostID)
+	if credErr != nil {
+		info.Credentials = fmt.Sprintf("<error: %v>", credErr)
+	} else {
+		info.Credentials = credPath
+	}
+
+	source, _ := auth.GetCredentials(cfg.APIURL())
 	if source == auth.SourceNone {
 		info.AuthSource = "none"
 	} else {

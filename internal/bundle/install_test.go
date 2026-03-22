@@ -137,7 +137,7 @@ func TestUninstallRemovesFilesAndEntry(t *testing.T) {
 
 func TestSaveInstalledAtomic(t *testing.T) {
 	workDir := t.TempDir()
-	mushDir := filepath.Join(workDir, ".mush")
+	mushDir := filepath.Join(workDir, ".musher")
 
 	// Write initial state.
 	bundle := &InstalledBundle{
@@ -167,7 +167,7 @@ func TestSaveInstalledAtomic(t *testing.T) {
 
 	for _, e := range entries {
 		if e.Name() != installedFileName {
-			t.Fatalf("unexpected file in .mush/: %s", e.Name())
+			t.Fatalf("unexpected file in .musher/: %s", e.Name())
 		}
 	}
 
@@ -185,7 +185,7 @@ func TestSaveInstalledAtomic(t *testing.T) {
 func TestLoadInstalledBackfillsMissingRef(t *testing.T) {
 	workDir := t.TempDir()
 
-	mushDir := filepath.Join(workDir, ".mush")
+	mushDir := filepath.Join(workDir, ".musher")
 	if err := os.MkdirAll(mushDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll error = %v", err)
 	}
@@ -213,7 +213,7 @@ func TestLoadInstalledBackfillsMissingRef(t *testing.T) {
 func TestLoadInstalledBackfillsLegacySlugFormat(t *testing.T) {
 	workDir := t.TempDir()
 
-	mushDir := filepath.Join(workDir, ".mush")
+	mushDir := filepath.Join(workDir, ".musher")
 	if err := os.MkdirAll(mushDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll error = %v", err)
 	}

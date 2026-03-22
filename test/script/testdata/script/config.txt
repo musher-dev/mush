@@ -5,4 +5,4 @@ stderr 'Set keybindings.status = \[g\]'
 exec $MUSH_BIN config get keybindings.status
 stdout 'keybindings.status = \[g\]'
 
-exists $XDG_CONFIG_HOME/mush/config.yaml
+exists $XDG_CONFIG_HOME/musher/config.yaml

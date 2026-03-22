@@ -1,8 +1,8 @@
 // Package config handles Mush configuration using Viper.
 //
 // Configuration sources (in priority order):
-//  1. Environment variables (MUSH_*)
-//  2. Config file (<user config dir>/mush/config.yaml)
+//  1. Environment variables (MUSHER_*)
+//  2. Config file (<user config dir>/musher/config.yaml)
 //  3. Built-in defaults
 package config
 
@@ -68,7 +68,7 @@ func Load() *Config {
 			v.SetDefault("history.dir", historyDir)
 		} else {
 			if home, homeErr := os.UserHomeDir(); homeErr == nil {
-				v.SetDefault("history.dir", filepath.Join(home, ".local", "state", "mush", "history"))
+				v.SetDefault("history.dir", filepath.Join(home, ".local", "state", "musher", "history"))
 			}
 		}
 
@@ -78,7 +78,7 @@ func Load() *Config {
 	}
 
 	// Environment variables
-	v.SetEnvPrefix("MUSH")
+	v.SetEnvPrefix("MUSHER")
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	v.AutomaticEnv()
 

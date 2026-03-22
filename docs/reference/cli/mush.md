@@ -28,7 +28,7 @@ mush [flags]
 ### Options
 
 ```
-      --api-key string   API key override (prefer MUSH_API_KEY env var)
+      --api-key string   API key override (prefer MUSHER_API_KEY env var)
       --api-url string   Override Musher API URL for this command
   -h, --help             help for mush
       --json             Output in JSON format

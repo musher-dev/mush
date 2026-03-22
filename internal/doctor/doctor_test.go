@@ -6,14 +6,28 @@ import (
 	"testing"
 )
 
+func clearDoctorEnv(t *testing.T) {
+	t.Helper()
+
+	for _, env := range []string{
+		"MUSHER_HOME", "MUSHER_CONFIG_HOME", "MUSHER_DATA_HOME",
+		"MUSHER_STATE_HOME", "MUSHER_CACHE_HOME", "MUSHER_RUNTIME_DIR",
+		"XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME", "XDG_CACHE_HOME",
+	} {
+		t.Setenv(env, "")
+	}
+}
+
 func TestCheckDirectoryStructure_AllExist(t *testing.T) {
+	clearDoctorEnv(t)
+
 	tmp := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(tmp, "config"))
 	t.Setenv("XDG_STATE_HOME", filepath.Join(tmp, "state"))
 	t.Setenv("XDG_CACHE_HOME", filepath.Join(tmp, "cache"))
 
-	// Create the directories (paths package appends "mush")
-	for _, name := range []string{"config/mush", "state/mush", "cache/mush"} {
+	// Create the directories (paths package appends "musher")
+	for _, name := range []string{"config/musher", "state/musher", "cache/musher"} {
 		if err := os.MkdirAll(filepath.Join(tmp, name), 0o700); err != nil {
 			t.Fatal(err)
 		}
@@ -26,6 +40,8 @@ func TestCheckDirectoryStructure_AllExist(t *testing.T) {
 }
 
 func TestCheckDirectoryStructure_Missing(t *testing.T) {
+	clearDoctorEnv(t)
+
 	tmp := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(tmp, "config"))
 	t.Setenv("XDG_STATE_HOME", filepath.Join(tmp, "state"))
@@ -39,18 +55,20 @@ func TestCheckDirectoryStructure_Missing(t *testing.T) {
 }
 
 func TestCheckDirectoryStructure_NotADir(t *testing.T) {
+	clearDoctorEnv(t)
+
 	tmp := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(tmp, "config"))
 	t.Setenv("XDG_STATE_HOME", filepath.Join(tmp, "state"))
 	t.Setenv("XDG_CACHE_HOME", filepath.Join(tmp, "cache"))
 
-	// Create config/mush as a file instead of directory
+	// Create config/musher as a file instead of directory
 	configDir := filepath.Join(tmp, "config")
 	if err := os.MkdirAll(configDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := os.WriteFile(filepath.Join(configDir, "mush"), []byte("oops"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(configDir, "musher"), []byte("oops"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -61,6 +79,8 @@ func TestCheckDirectoryStructure_NotADir(t *testing.T) {
 }
 
 func TestCheckConfigFile_NoFile(t *testing.T) {
+	clearDoctorEnv(t)
+
 	tmp := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", tmp)
 
@@ -75,10 +95,12 @@ func TestCheckConfigFile_NoFile(t *testing.T) {
 }
 
 func TestCheckConfigFile_ValidYAML(t *testing.T) {
+	clearDoctorEnv(t)
+
 	tmp := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", tmp)
 
-	configDir := filepath.Join(tmp, "mush")
+	configDir := filepath.Join(tmp, "musher")
 	if err := os.MkdirAll(configDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -94,10 +116,12 @@ func TestCheckConfigFile_ValidYAML(t *testing.T) {
 }
 
 func TestCheckConfigFile_InvalidYAML(t *testing.T) {
+	clearDoctorEnv(t)
+
 	tmp := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", tmp)
 
-	configDir := filepath.Join(tmp, "mush")
+	configDir := filepath.Join(tmp, "musher")
 	if err := os.MkdirAll(configDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -113,8 +137,10 @@ func TestCheckConfigFile_InvalidYAML(t *testing.T) {
 }
 
 func TestCheckCredentialsFile_NoFile(t *testing.T) {
+	clearDoctorEnv(t)
+
 	tmp := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", tmp)
+	t.Setenv("XDG_DATA_HOME", tmp)
 
 	result := checkCredentialsFile(t.Context())
 	if result.Status != StatusPass {
@@ -127,15 +153,18 @@ func TestCheckCredentialsFile_NoFile(t *testing.T) {
 }
 
 func TestCheckCredentialsFile_Secure(t *testing.T) {
-	tmp := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", tmp)
+	clearDoctorEnv(t)
 
-	configDir := filepath.Join(tmp, "mush")
-	if err := os.MkdirAll(configDir, 0o700); err != nil {
+	tmp := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", tmp)
+
+	// Credentials are now host-scoped under data root
+	credDir := filepath.Join(tmp, "musher", "credentials", "api.musher.dev")
+	if err := os.MkdirAll(credDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
 
-	credFile := filepath.Join(configDir, "api-key")
+	credFile := filepath.Join(credDir, "api-key")
 	if err := os.WriteFile(credFile, []byte("sa_test_key"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -147,15 +176,18 @@ func TestCheckCredentialsFile_Secure(t *testing.T) {
 }
 
 func TestCheckCredentialsFile_TooPermissive(t *testing.T) {
-	tmp := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", tmp)
+	clearDoctorEnv(t)
 
-	configDir := filepath.Join(tmp, "mush")
-	if err := os.MkdirAll(configDir, 0o700); err != nil {
+	tmp := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", tmp)
+
+	// Credentials are now host-scoped under data root
+	credDir := filepath.Join(tmp, "musher", "credentials", "api.musher.dev")
+	if err := os.MkdirAll(credDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
 
-	credFile := filepath.Join(configDir, "api-key")
+	credFile := filepath.Join(credDir, "api-key")
 	if err := os.WriteFile(credFile, []byte("sa_test_key"), 0o644); err != nil {
 		t.Fatal(err)
 	}

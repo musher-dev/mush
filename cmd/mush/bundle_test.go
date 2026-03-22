@@ -151,21 +151,26 @@ func TestBundleInstallAnonymousNon403ErrorNoAuthHint(t *testing.T) {
 	}
 }
 
-func TestBundleCommandHasNoRunSubcommand(t *testing.T) {
+func TestBundleCommandHasRunSubcommand(t *testing.T) {
 	cmd := newBundleCmd()
 
 	hasLoad := false
+	hasRun := false
 
 	for _, sub := range cmd.Commands() {
 		switch sub.Name() {
 		case "load":
 			hasLoad = true
 		case "run":
-			t.Fatal("unexpected removed subcommand: run")
+			hasRun = true
 		}
 	}
 
 	if !hasLoad {
 		t.Fatal("expected load subcommand")
+	}
+
+	if !hasRun {
+		t.Fatal("expected run subcommand")
 	}
 }

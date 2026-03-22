@@ -104,7 +104,7 @@ func TestInstallStopHook_DoesNotDuplicateExistingMushHook(t *testing.T) {
 		t.Fatalf("mkdir failed: %v", err)
 	}
 
-	mushCommand := `sh -c "if [ -n \"$MUSH_SIGNAL_DIR\" ]; then touch \"$MUSH_SIGNAL_DIR/` + SignalFileName + `\"; fi"`
+	mushCommand := `sh -c "if [ -n \"$MUSHER_SIGNAL_DIR\" ]; then touch \"$MUSHER_SIGNAL_DIR/` + SignalFileName + `\"; fi"`
 	seed := map[string]interface{}{
 		"hooks": map[string]interface{}{
 			"Stop": []interface{}{

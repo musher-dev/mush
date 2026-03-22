@@ -1,9 +1,9 @@
 // Package auth handles credential storage and retrieval for Mush.
 //
 // Credentials are sourced in the following priority order:
-//  1. Environment variable: MUSH_API_KEY
-//  2. OS Keyring (macOS Keychain, Windows Credential Manager, Linux Secret Service)
-//  3. Config file fallback: <user config dir>/mush/api-key (for non-interactive environments)
+//  1. Environment variable: MUSHER_API_KEY
+//  2. OS Keyring (service name derived from API URL: musher/{host})
+//  3. Data file fallback: <data root>/credentials/<hostID>/api-key
 package auth
 
 import (
@@ -18,12 +18,10 @@ import (
 )
 
 const (
-	// keyringService is the service name used in OS keyring storage.
-	keyringService = "dev.musher.mush"
 	// keyringUser is the user/account name used in OS keyring storage.
 	keyringUser = "api-key"
 	// envVarName is the environment variable for the API key.
-	envVarName = "MUSH_API_KEY"
+	envVarName = "MUSHER_API_KEY"
 )
 
 // CredentialSource indicates where credentials were found.
@@ -37,47 +35,52 @@ const (
 	SourceNone    CredentialSource = ""
 )
 
-// GetCredentials returns the API key and its source.
+// GetCredentials returns the API key and its source for the given API URL.
 // Returns empty strings if no credentials are found.
-func GetCredentials() (source CredentialSource, apiKey string) {
+func GetCredentials(apiURL string) (source CredentialSource, apiKey string) {
 	// Priority 1: Environment variable
 	if key := os.Getenv(envVarName); key != "" {
 		return SourceEnv, key
 	}
 
-	// Priority 2: OS Keyring
-	if key, err := keyring.Get(keyringService, keyringUser); err == nil && key != "" {
+	// Priority 2: OS Keyring (host-scoped)
+	service := paths.KeyringServiceFromURL(apiURL)
+	if key, err := keyring.Get(service, keyringUser); err == nil && key != "" {
 		return SourceKeyring, key
 	}
 
-	// Priority 3: Config file fallback
-	if key := readCredentialsFile(); key != "" {
+	// Priority 3: Data file fallback (host-scoped)
+	if key := readCredentialsFile(apiURL); key != "" {
 		return SourceFile, key
 	}
 
 	return SourceNone, ""
 }
 
-// StoreAPIKey stores the API key in the OS keyring.
+// StoreAPIKey stores the API key for the given API URL in the OS keyring.
 // Falls back to file storage if keyring is unavailable.
-func StoreAPIKey(apiKey string) error {
+func StoreAPIKey(apiURL, apiKey string) error {
 	// Try keyring first
-	err := keyring.Set(keyringService, keyringUser, apiKey)
+	service := paths.KeyringServiceFromURL(apiURL)
+
+	err := keyring.Set(service, keyringUser, apiKey)
 	if err == nil {
 		return nil
 	}
 
 	// Fallback to file storage
-	return writeCredentialsFile(apiKey)
+	return writeCredentialsFile(apiURL, apiKey)
 }
 
-// DeleteAPIKey removes the stored API key.
-func DeleteAPIKey() error {
+// DeleteAPIKey removes the stored API key for the given API URL.
+func DeleteAPIKey(apiURL string) error {
+	service := paths.KeyringServiceFromURL(apiURL)
+
 	// Try to delete from keyring
-	keyringErr := keyring.Delete(keyringService, keyringUser)
+	keyringErr := keyring.Delete(service, keyringUser)
 
 	// Also try to delete from file
-	fileErr := deleteCredentialsFile()
+	fileErr := deleteCredentialsFile(apiURL)
 
 	// Return error only if both failed and nothing was deleted
 	if keyringErr != nil && fileErr != nil {
@@ -87,9 +90,11 @@ func DeleteAPIKey() error {
 	return nil
 }
 
-// credentialsFilePath returns the path to the credentials file.
-func credentialsFilePath() string {
-	path, err := paths.CredentialsFile()
+// credentialFilePath returns the host-scoped credential file path for the given API URL.
+func credentialFilePath(apiURL string) string {
+	hostID := paths.HostIDFromURL(apiURL)
+
+	path, err := paths.CredentialFilePath(hostID)
 	if err != nil {
 		return ""
 	}
@@ -97,9 +102,9 @@ func credentialsFilePath() string {
 	return filepath.Clean(path)
 }
 
-// readCredentialsFile reads the API key from the file fallback.
-func readCredentialsFile() string {
-	path := credentialsFilePath()
+// readCredentialsFile reads the API key from the host-scoped file fallback.
+func readCredentialsFile(apiURL string) string {
+	path := credentialFilePath(apiURL)
 	if path == "" {
 		return ""
 	}
@@ -112,17 +117,17 @@ func readCredentialsFile() string {
 	return strings.TrimSpace(string(data))
 }
 
-// writeCredentialsFile writes the API key to the file fallback.
-func writeCredentialsFile(apiKey string) error {
-	path := credentialsFilePath()
+// writeCredentialsFile writes the API key to the host-scoped file fallback.
+func writeCredentialsFile(apiURL, apiKey string) error {
+	path := credentialFilePath(apiURL)
 	if path == "" {
-		return fmt.Errorf("could not determine home directory")
+		return fmt.Errorf("could not determine data directory")
 	}
 
 	// Create directory with secure permissions
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return fmt.Errorf("failed to create config directory: %w", err)
+		return fmt.Errorf("failed to create credentials directory: %w", err)
 	}
 
 	// Write file with secure permissions (owner read/write only)
@@ -133,11 +138,11 @@ func writeCredentialsFile(apiKey string) error {
 	return nil
 }
 
-// deleteCredentialsFile removes the credentials file.
-func deleteCredentialsFile() error {
-	path := credentialsFilePath()
+// deleteCredentialsFile removes the host-scoped credentials file.
+func deleteCredentialsFile(apiURL string) error {
+	path := credentialFilePath(apiURL)
 	if path == "" {
-		return fmt.Errorf("could not determine home directory")
+		return fmt.Errorf("could not determine data directory")
 	}
 
 	err := os.Remove(path)

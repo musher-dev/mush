@@ -145,7 +145,7 @@ func TestPullCleanupOnFailure(t *testing.T) {
 	}
 
 	// Verify no partial staging directories remain.
-	versionDir := filepath.Join(cacheRoot, "mush", "cache", "acme", "my-bundle")
+	versionDir := filepath.Join(cacheRoot, "musher", "bundles", "acme", "my-bundle")
 
 	entries, readErr := os.ReadDir(versionDir)
 	if readErr != nil {

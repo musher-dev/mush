@@ -12,18 +12,17 @@ var apiClientFactory = newAPIClient
 // newAPIClient creates an authenticated API client using stored credentials
 // and the configured API URL. Returns a CLIError if not authenticated.
 //
-// This consolidates the repeated pattern of:
-//
-//	source, apiKey := auth.GetCredentials()
-//	cfg := config.Load()
-//	c := client.New(cfg.APIURL(), apiKey)
+// Config is loaded first to determine the API URL, then credentials are
+// resolved for that host.
 func newAPIClient() (auth.CredentialSource, *client.Client, error) {
-	source, apiKey := auth.GetCredentials()
+	cfg := config.Load()
+
+	source, apiKey := auth.GetCredentials(cfg.APIURL())
 	if apiKey == "" {
 		return "", nil, clierrors.NotAuthenticated()
 	}
 
-	apiClient, err := newAPIClientWithKey(apiKey)
+	apiClient, err := newAPIClientFromConfig(cfg, apiKey)
 	if err != nil {
 		return "", nil, err
 	}
@@ -34,10 +33,14 @@ func newAPIClient() (auth.CredentialSource, *client.Client, error) {
 func newAPIClientWithKey(apiKey string) (*client.Client, error) {
 	cfg := config.Load()
 
+	return newAPIClientFromConfig(cfg, apiKey)
+}
+
+func newAPIClientFromConfig(cfg *config.Config, apiKey string) (*client.Client, error) {
 	httpClient, err := client.NewInstrumentedHTTPClient(cfg.CACertFile())
 	if err != nil {
 		return nil, clierrors.ConfigFailed("initialize HTTP client", err).
-			WithHint("Set MUSH_NETWORK_CA_CERT_FILE to a readable PEM bundle, or unset it and retry")
+			WithHint("Set MUSHER_NETWORK_CA_CERT_FILE to a readable PEM bundle, or unset it and retry")
 	}
 
 	return client.NewWithHTTPClient(cfg.APIURL(), apiKey, httpClient), nil
@@ -49,9 +52,11 @@ var tryAPIClient = newTryAPIClient
 // client when no credentials are found. The returned workspaceKeyOverride is
 // "public" for anonymous clients, or empty when authenticated.
 func newTryAPIClient() (auth.CredentialSource, *client.Client, string, error) {
-	source, apiKey := auth.GetCredentials()
+	cfg := config.Load()
 
-	apiClient, err := newAPIClientWithKey(apiKey)
+	source, apiKey := auth.GetCredentials(cfg.APIURL())
+
+	apiClient, err := newAPIClientFromConfig(cfg, apiKey)
 	if err != nil {
 		return auth.SourceNone, nil, "", err
 	}

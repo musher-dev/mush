@@ -10,13 +10,14 @@ Available Commands:
   install     Install bundle assets into the current project
   list        List local bundle cache and installed bundles
   load        Load a bundle into an ephemeral session
+  run         Run a bundle directly with a harness
   uninstall   Remove installed bundle assets from the current project
 
 Flags:
   -h, --help   help for bundle
 
 Global Flags:
-      --api-key string   API key override (prefer MUSH_API_KEY env var)
+      --api-key string   API key override (prefer MUSHER_API_KEY env var)
       --api-url string   Override Musher API URL for this command
       --json             Output in JSON format
       --no-color         Disable colored output

@@ -6,6 +6,20 @@ import (
 	"testing"
 )
 
+const testAPIURL = "https://api.musher.dev"
+
+func clearAuthEnv(t *testing.T) {
+	t.Helper()
+
+	for _, env := range []string{
+		"MUSHER_API_KEY",
+		"MUSHER_HOME", "MUSHER_DATA_HOME",
+		"XDG_DATA_HOME", "XDG_CONFIG_HOME",
+	} {
+		t.Setenv(env, "")
+	}
+}
+
 func TestGetCredentials_FromEnv(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -29,6 +43,8 @@ func TestGetCredentials_FromEnv(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			clearAuthEnv(t)
+
 			if tt.envKey != "" {
 				t.Setenv(envVarName, tt.envKey)
 			} else {
@@ -36,7 +52,7 @@ func TestGetCredentials_FromEnv(t *testing.T) {
 				os.Unsetenv(envVarName)
 			}
 
-			source, key := GetCredentials()
+			source, key := GetCredentials(testAPIURL)
 
 			// Environment variable has highest priority
 			if tt.envKey != "" {
@@ -52,24 +68,39 @@ func TestGetCredentials_FromEnv(t *testing.T) {
 	}
 }
 
-func TestCredentialsFilePath(t *testing.T) {
-	path := credentialsFilePath()
+func TestCredentialFilePath_HostScoped(t *testing.T) {
+	clearAuthEnv(t)
+
+	tmpDir := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", tmpDir)
+
+	path := credentialFilePath(testAPIURL)
 
 	if path == "" {
-		t.Skip("Could not determine home directory")
+		t.Skip("Could not determine data directory")
 	}
 
-	// Should be an absolute path ending with mush/api-key under a config directory.
 	if !filepath.IsAbs(path) {
-		t.Errorf("credentialsFilePath() = %q, want absolute path", path)
+		t.Errorf("credentialFilePath() = %q, want absolute path", path)
 	}
 
-	// The exact config root varies by OS (e.g., ~/.config/mush on Linux,
-	// ~/Library/Application Support/mush on macOS), but the path must always
-	// end with the app directory and credential file name.
-	expectedSuffix := filepath.Join("mush", "api-key")
+	expectedSuffix := filepath.Join("musher", "credentials", "api.musher.dev", "api-key")
 	if !containsPath(path, expectedSuffix) {
-		t.Errorf("credentialsFilePath() = %q, want to contain %q", path, expectedSuffix)
+		t.Errorf("credentialFilePath() = %q, want to contain %q", path, expectedSuffix)
+	}
+}
+
+func TestCredentialFilePath_DifferentHosts(t *testing.T) {
+	clearAuthEnv(t)
+
+	tmpDir := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", tmpDir)
+
+	path1 := credentialFilePath("https://api.musher.dev")
+	path2 := credentialFilePath("http://localhost:17201")
+
+	if path1 == path2 {
+		t.Errorf("different API URLs should produce different credential paths, both got %q", path1)
 	}
 }
 
@@ -94,33 +125,32 @@ func TestCredentialSource_String(t *testing.T) {
 }
 
 func TestWriteAndReadCredentialsFile(t *testing.T) {
-	// Create a temporary directory for testing
+	clearAuthEnv(t)
+
 	tmpDir := t.TempDir()
 	t.Setenv("HOME", tmpDir)
+	t.Setenv("XDG_DATA_HOME", filepath.Join(tmpDir, "data"))
 
 	testKey := "test-api-key-xyz"
 
-	// Write credentials
-	err := writeCredentialsFile(testKey)
+	err := writeCredentialsFile(testAPIURL, testKey)
 	if err != nil {
 		t.Fatalf("writeCredentialsFile() error = %v", err)
 	}
 
-	// Read back
-	got := readCredentialsFile()
+	got := readCredentialsFile(testAPIURL)
 	if got != testKey {
 		t.Errorf("readCredentialsFile() = %q, want %q", got, testKey)
 	}
 
 	// Verify file permissions
-	path := credentialsFilePath()
+	path := credentialFilePath(testAPIURL)
 
 	info, err := os.Stat(path)
 	if err != nil {
 		t.Fatalf("os.Stat() error = %v", err)
 	}
 
-	// Check permissions (0600 = owner read/write only)
 	perm := info.Mode().Perm()
 	if perm != 0o600 {
 		t.Errorf("credentials file permissions = %o, want 0600", perm)
@@ -128,36 +158,36 @@ func TestWriteAndReadCredentialsFile(t *testing.T) {
 }
 
 func TestDeleteCredentialsFile(t *testing.T) {
-	// Create a temporary directory for testing
+	clearAuthEnv(t)
+
 	tmpDir := t.TempDir()
 	t.Setenv("HOME", tmpDir)
+	t.Setenv("XDG_DATA_HOME", filepath.Join(tmpDir, "data"))
 
-	// Write credentials first
-	err := writeCredentialsFile("test-key")
+	err := writeCredentialsFile(testAPIURL, "test-key")
 	if err != nil {
 		t.Fatalf("writeCredentialsFile() error = %v", err)
 	}
 
-	// Delete
-	err = deleteCredentialsFile()
+	err = deleteCredentialsFile(testAPIURL)
 	if err != nil {
 		t.Errorf("deleteCredentialsFile() error = %v", err)
 	}
 
-	// Verify file is gone
-	path := credentialsFilePath()
+	path := credentialFilePath(testAPIURL)
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Errorf("credentials file still exists after delete")
 	}
 }
 
 func TestDeleteCredentialsFile_NotFound(t *testing.T) {
-	// Create a temporary directory for testing
+	clearAuthEnv(t)
+
 	tmpDir := t.TempDir()
 	t.Setenv("HOME", tmpDir)
+	t.Setenv("XDG_DATA_HOME", filepath.Join(tmpDir, "data"))
 
-	// Try to delete non-existent file
-	err := deleteCredentialsFile()
+	err := deleteCredentialsFile(testAPIURL)
 	if err == nil {
 		t.Errorf("deleteCredentialsFile() should return error for non-existent file")
 	}

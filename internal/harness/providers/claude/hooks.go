@@ -111,7 +111,7 @@ func InstallStopHook(signalDir string) (func() error, error) {
 	stopHooks := settings.Hooks["Stop"]
 
 	command := fmt.Sprintf(
-		"sh -c \"if [ -n \\\"$MUSH_SIGNAL_DIR\\\" ]; then touch \\\"$MUSH_SIGNAL_DIR/%s\\\"; fi\"",
+		"sh -c \"if [ -n \\\"$MUSHER_SIGNAL_DIR\\\" ]; then touch \\\"$MUSHER_SIGNAL_DIR/%s\\\"; fi\"",
 		SignalFileName,
 	)
 

@@ -1,19 +1,25 @@
 # Configuration and Data Storage
 
-Mush stores data across three root locations following the XDG Base Directory Specification: a **config root** for configuration and credentials, a **state root** for logs, transcript history, and update-check state, and a **cache root** for downloaded bundle assets. Path resolution checks `XDG_CONFIG_HOME` / `XDG_STATE_HOME` / `XDG_CACHE_HOME` first on all platforms, then falls back to OS-specific defaults (config/cache) or `$HOME/.local/state` (state). During bundle install operations, Mush also writes project-level files into the current working directory.
+Mush stores data across four root locations following the XDG Base Directory Specification: a **config root** for configuration, a **data root** for credentials and persistent data, a **state root** for logs, transcript history, and update-check state, and a **cache root** for downloaded bundle assets. Path resolution checks `MUSHER_CONFIG_HOME` / `MUSHER_DATA_HOME` / `MUSHER_STATE_HOME` / `MUSHER_CACHE_HOME` first, then `XDG_CONFIG_HOME` / `XDG_DATA_HOME` / `XDG_STATE_HOME` / `XDG_CACHE_HOME`, then falls back to OS-specific defaults (config/cache) or `$HOME/.local/share` (data) / `$HOME/.local/state` (state). `MUSHER_HOME` sets all roots at once under a single directory. During bundle install operations, Mush also writes project-level files into the current working directory.
 
 ## Directory Layout
 
 ### Config Root
 
-`~/.config/mush/` (Linux default; `$XDG_CONFIG_HOME/mush` when set)
+`~/.config/musher/` (Linux default; `$XDG_CONFIG_HOME/musher` or `$MUSHER_CONFIG_HOME` when set)
 
 - `config.yaml` — user configuration
-- `api-key` — API key file fallback (when OS keyring is unavailable)
+
+### Data Root
+
+`~/.local/share/musher/` (Linux default; `$XDG_DATA_HOME/musher` or `$MUSHER_DATA_HOME` when set)
+
+- `credentials/{hostID}/`
+  - `api-key` — API key file fallback (when OS keyring is unavailable)
 
 ### State Root
 
-`~/.local/state/mush/` (Linux default; `$XDG_STATE_HOME/mush` when set)
+`~/.local/state/musher/` (Linux default; `$XDG_STATE_HOME/musher` or `$MUSHER_STATE_HOME` when set)
 
 - `logs/`
   - `mush.log` — structured log file
@@ -27,7 +33,7 @@ Mush stores data across three root locations following the XDG Base Directory Sp
 
 ### Cache Root
 
-`~/.cache/mush/` (Linux default; `$XDG_CACHE_HOME/mush` when set)
+`~/.cache/musher/` (Linux default; `$XDG_CACHE_HOME/musher` or `$MUSHER_CACHE_HOME` when set)
 
 - `bundles/`
   - `{namespace}/{slug}/{version}/`
@@ -36,16 +42,17 @@ Mush stores data across three root locations following the XDG Base Directory Sp
 
 ### Project-Level
 
-- `{project}/.mush/` — project-level tracking
+- `{project}/.musher/` — project-level tracking
   - `installed.json` — installed bundle registry
 
 ### Path Resolution
 
 Path resolution follows this order for each root:
 
-1. **XDG env var** — `XDG_CONFIG_HOME` / `XDG_STATE_HOME` / `XDG_CACHE_HOME` if set to an absolute path
-2. **OS-specific default** — `os.UserConfigDir()` / `os.UserCacheDir()` for config/cache; no OS API for state (skipped)
-3. **Home-dir fallback** — `$HOME/.config` / `$HOME/.local/state` / `$HOME/.cache`
+1. **Musher override** — `MUSHER_HOME` (sets all roots), or per-root: `MUSHER_CONFIG_HOME` / `MUSHER_DATA_HOME` / `MUSHER_STATE_HOME` / `MUSHER_CACHE_HOME` / `MUSHER_RUNTIME_DIR`
+2. **XDG env var** — `XDG_CONFIG_HOME` / `XDG_DATA_HOME` / `XDG_STATE_HOME` / `XDG_CACHE_HOME` if set to an absolute path
+3. **OS-specific default** — `os.UserConfigDir()` / `os.UserCacheDir()` for config/cache; no OS API for state/data (skipped)
+4. **Home-dir fallback** — `$HOME/.config` / `$HOME/.local/share` / `$HOME/.local/state` / `$HOME/.cache`
 
 Relative XDG paths are ignored per the XDG Base Directory Specification. If none of these resolve (e.g., `$HOME` is unset in a container), Mush returns an error.
 
@@ -57,22 +64,22 @@ Mush reads `config.yaml` from the config root. The file is created automatically
 
 | Key | Type | Default | Env Override | Description |
 |-----|------|---------|-------------|-------------|
-| `api.url` | string | `https://api.musher.dev` | `MUSH_API_URL` | Musher platform API endpoint |
-| `network.ca_cert_file` | string | `""` | `MUSH_NETWORK_CA_CERT_FILE` | Optional PEM CA bundle for corporate proxy/TLS interception |
-| `worker.poll_interval` | duration | `30s` | `MUSH_WORKER_POLL_INTERVAL` | Job poll interval (e.g. `30s`, `1m`) |
-| `worker.heartbeat_interval` | duration | `30s` | `MUSH_WORKER_HEARTBEAT_INTERVAL` | Heartbeat interval (e.g. `30s`, `1m`) |
+| `api.url` | string | `https://api.musher.dev` | `MUSHER_API_URL` | Musher platform API endpoint |
+| `network.ca_cert_file` | string | `""` | `MUSHER_NETWORK_CA_CERT_FILE` | Optional PEM CA bundle for corporate proxy/TLS interception |
+| `worker.poll_interval` | duration | `30s` | `MUSHER_WORKER_POLL_INTERVAL` | Job poll interval (e.g. `30s`, `1m`) |
+| `worker.heartbeat_interval` | duration | `30s` | `MUSHER_WORKER_HEARTBEAT_INTERVAL` | Heartbeat interval (e.g. `30s`, `1m`) |
 | `keybindings.<action>` | string[] | action-specific defaults | none | Override TUI action bindings; set per action to replace that action's defaults |
-| `tui` | bool | `true` | `MUSH_TUI` / `MUSH_NO_TUI` | Enable interactive TUI when running bare `mush` |
-| `history.enabled` | bool | `true` | `MUSH_HISTORY_ENABLED` | Enable transcript history recording |
-| `history.dir` | string | `<state root>/history` | `MUSH_HISTORY_DIR` | Transcript storage directory |
-| `history.scrollback_lines` | int | `10000` | `MUSH_HISTORY_SCROLLBACK_LINES` | In-memory scrollback ring buffer size (lines) |
-| `history.retention` | duration | `720h` (30 days) | `MUSH_HISTORY_RETENTION` | Retention period for `mush history prune` |
-| `update.auto_apply` | bool | `true` | `MUSH_UPDATE_AUTO_APPLY` | Enable staged background auto-apply on future runs |
-| `update.check_interval` | duration | `24h` | `MUSH_UPDATE_CHECK_INTERVAL` | Background update check cadence |
+| `tui` | bool | `true` | `MUSHER_TUI` / `MUSH_NO_TUI` | Enable interactive TUI when running bare `mush` |
+| `history.enabled` | bool | `true` | `MUSHER_HISTORY_ENABLED` | Enable transcript history recording |
+| `history.dir` | string | `<state root>/history` | `MUSHER_HISTORY_DIR` | Transcript storage directory |
+| `history.scrollback_lines` | int | `10000` | `MUSHER_HISTORY_SCROLLBACK_LINES` | In-memory scrollback ring buffer size (lines) |
+| `history.retention` | duration | `720h` (30 days) | `MUSHER_HISTORY_RETENTION` | Retention period for `mush history prune` |
+| `update.auto_apply` | bool | `true` | `MUSHER_UPDATE_AUTO_APPLY` | Enable staged background auto-apply on future runs |
+| `update.check_interval` | duration | `24h` | `MUSHER_UPDATE_CHECK_INTERVAL` | Background update check cadence |
 
-Environment variables use the `MUSH_` prefix with dots replaced by underscores (e.g., `api.url` becomes `MUSH_API_URL`). Environment variables take precedence over the config file.
+Config-file keys that go through Viper use the `MUSHER_` prefix with dots replaced by underscores (e.g., `api.url` becomes `MUSHER_API_URL`). CLI-specific env vars (`MUSH_JSON`, `MUSH_QUIET`, `MUSH_NO_INPUT`, `MUSH_NO_TUI`, `MUSH_NO_COLOR`, `MUSH_LOG_*`, `MUSH_EXPERIMENTAL`) keep the `MUSH_` prefix. Environment variables take precedence over the config file.
 
-When `network.ca_cert_file` / `MUSH_NETWORK_CA_CERT_FILE` is configured, Mush appends the provided CA certificates to the system trust store for outbound API TLS verification.
+When `network.ca_cert_file` / `MUSHER_NETWORK_CA_CERT_FILE` is configured, Mush appends the provided CA certificates to the system trust store for outbound API TLS verification.
 
 Supported `keybindings.<action>` names:
 
@@ -88,14 +95,14 @@ Keybinding overrides replace the default key list for that action only. Actions 
 Configuration is resolved in this order (highest priority first):
 
 1. CLI flags (`--api-url`)
-2. Environment variables (`MUSH_*`)
+2. Environment variables (`MUSHER_*` for config keys, `MUSH_*` for CLI-specific)
 3. Config file (`config.yaml`)
 4. Built-in defaults
 
 `--api-url` is a global flag and applies to any `mush` command. It overrides
-`MUSH_API_URL` and `api.url` for that command process.
+`MUSHER_API_URL` and `api.url` for that command process.
 `--api-key` is not global; it is available on `mush auth login --api-key`,
-with `MUSH_API_KEY` preferred for non-interactive environments.
+with `MUSHER_API_KEY` preferred for non-interactive environments.
 
 ### CLI API URL override
 
@@ -131,9 +138,9 @@ keybindings:
 
 Mush resolves the API key from the following sources in order:
 
-1. **Environment variable** — `MUSH_API_KEY`
-2. **OS Keyring** — stored under service `dev.musher.mush`, account `api-key`
-3. **File fallback** — `<config root>/api-key`
+1. **Environment variable** — `MUSHER_API_KEY`
+2. **OS Keyring** — stored under service `musher/{hostname}`, account `api-key`
+3. **File fallback** — `<data root>/credentials/{hostID}/api-key`
 
 ### Keyring Backends
 
@@ -149,7 +156,7 @@ If the OS keyring is unavailable (headless servers, containers, CI), `mush auth 
 
 The credentials file stores the API key as a single line of plaintext. It is created with `0o600` permissions (owner read/write only) inside a `0o700` directory. The key is written with a trailing newline; whitespace is trimmed on read.
 
-**Security note:** The file fallback is intended for non-interactive environments where no keyring is available. On shared machines, prefer `MUSH_API_KEY` or ensure the config directory has restrictive permissions.
+**Security note:** The file fallback is intended for non-interactive environments where no keyring is available. On shared machines, prefer `MUSHER_API_KEY` or ensure the data directory has restrictive permissions.
 
 ## Logs
 
@@ -224,7 +231,7 @@ Transcript history captures raw PTY output and may contain secrets such as API k
 
 - Session directories and event files use restrictive permissions (`0o700` / `0o600`)
 - `mush history prune` deletes sessions older than the configured retention period (default: 30 days)
-- Set `MUSH_HISTORY_ENABLED=false` or `history.enabled: false` in `config.yaml` to disable transcript recording entirely
+- Set `MUSHER_HISTORY_ENABLED=false` or `history.enabled: false` in `config.yaml` to disable transcript recording entirely
 
 In sensitive environments (shared machines, compliance-scoped workloads), consider disabling transcript history or reducing the retention window.
 
@@ -235,7 +242,7 @@ Downloaded bundles are cached at `<cache root>/bundles/{namespace}/{slug}/{versi
 ### Structure
 
 ```
-~/.cache/mush/bundles/
+~/.cache/musher/bundles/
   bf9a0291-.../
     my-bundle/
       1.0.0/
@@ -262,12 +269,12 @@ Downloads use a staging directory (`{version}.partial.*`) alongside the final ve
 The bundle cache is safe to delete at any time. Bundles will be re-downloaded from the platform on the next `bundle load` or `bundle install`.
 
 ```bash
-rm -rf ~/.cache/mush/bundles
+rm -rf ~/.cache/musher/bundles
 ```
 
 ### Permissions
 
-The top-level cache root (`~/.cache/mush/`) is created with `0o700` to restrict access. Subdirectories within the cache are created with `0o755`. Asset files are written with `0o644`. The manifest is written with `0o644`.
+The top-level cache root (`~/.cache/musher/`) is created with `0o700` to restrict access. Subdirectories within the cache are created with `0o755`. Asset files are written with `0o644`. The manifest is written with `0o644`.
 
 **Note:** On Windows, POSIX permission bits are best-effort and may not be enforced by the filesystem.
 
@@ -299,13 +306,13 @@ Mush caches the result of update checks in `<state root>/update-check.json` to a
 - Auto-apply runs only for standalone installs; managed installs (for example Homebrew) stay notify-only.
 - The state file is written atomically (temp file + rename) to prevent corruption from concurrent processes.
 - If the file is missing or corrupted, Mush treats it as empty and performs a fresh check.
-- Set `MUSH_UPDATE_DISABLED=1` to disable all update checks.
+- Set `MUSHER_UPDATE_DISABLED=1` to disable all update checks.
 
 ## Project-Level Files
 
 `mush bundle install` writes files into the current project directory:
 
-- **`.mush/installed.json`** — tracks installed bundles (namespace, slug, ref, version, harness, asset paths)
+- **`.musher/installed.json`** — tracks installed bundles (namespace, slug, ref, version, harness, asset paths)
 - **Harness-specific assets** — installed to `.claude/skills/`, `.claude/agents/`, or other harness-specific directories depending on the bundle configuration
 
 ### installed.json Format
@@ -335,52 +342,65 @@ Summary of all environment variables that affect Mush behavior:
 
 | Variable | Purpose |
 |----------|---------|
-| `MUSH_API_KEY` | API key for authentication (highest priority credential source) |
-| `MUSH_API_URL` | Platform API URL override |
+| **Shared (MUSHER_ prefix)** | |
+| `MUSHER_API_KEY` | API key for authentication (highest priority credential source) |
+| `MUSHER_API_URL` | Platform API URL override |
+| `MUSHER_HISTORY_DIR` | Transcript history directory override |
+| `MUSHER_HISTORY_ENABLED` | Enable/disable transcript history |
+| `MUSHER_HISTORY_SCROLLBACK_LINES` | In-memory scrollback ring buffer size |
+| `MUSHER_HISTORY_RETENTION` | History retention period (Go duration, e.g., `720h`) |
+| `MUSHER_UPDATE_AUTO_APPLY` | Enable/disable staged background auto-apply (`true`/`false`) |
+| `MUSHER_UPDATE_CHECK_INTERVAL` | Background update check interval (Go duration, e.g., `24h`) |
+| `MUSHER_UPDATE_DISABLED` | Disable update checks (`1` or `true`) |
+| `MUSHER_WORKER_POLL_INTERVAL` | Job poll interval (Go duration, e.g., `30s`) |
+| `MUSHER_WORKER_HEARTBEAT_INTERVAL` | Heartbeat interval (Go duration, e.g., `30s`) |
+| `MUSHER_TUI` | Enable/disable interactive TUI for bare `mush` (`true` or `false`) |
+| `MUSHER_NETWORK_CA_CERT_FILE` | Optional PEM CA bundle for corporate proxy/TLS interception |
+| **CLI-specific (MUSH_ prefix)** | |
+| `MUSH_JSON` | Enable JSON output (`1` or `true`) |
+| `MUSH_QUIET` | Enable quiet mode (`1` or `true`) |
+| `MUSH_NO_INPUT` | Disable interactive prompts (`1` or `true`) |
+| `MUSH_NO_TUI` | Disable interactive TUI for bare `mush` (`1` or `true`) |
+| `MUSH_NO_COLOR` | Disable colored output (`1` or `true`) |
 | `MUSH_LOG_FILE` | Structured log file path |
 | `MUSH_LOG_LEVEL` | Log level (`error`, `warn`, `info`, `debug`) |
 | `MUSH_LOG_FORMAT` | Log format (`json`, `text`) |
 | `MUSH_LOG_STDERR` | Stderr logging mode (`auto`, `on`, `off`) |
-| `MUSH_HISTORY_DIR` | Transcript history directory override |
-| `MUSH_HISTORY_ENABLED` | Enable/disable transcript history |
-| `MUSH_HISTORY_SCROLLBACK_LINES` | In-memory scrollback ring buffer size |
-| `MUSH_HISTORY_RETENTION` | History retention period (Go duration, e.g., `720h`) |
-| `MUSH_UPDATE_AUTO_APPLY` | Enable/disable staged background auto-apply (`true`/`false`) |
-| `MUSH_UPDATE_CHECK_INTERVAL` | Background update check interval (Go duration, e.g., `24h`) |
-| `MUSH_WORKER_POLL_INTERVAL` | Job poll interval (Go duration, e.g., `30s`) |
-| `MUSH_WORKER_HEARTBEAT_INTERVAL` | Heartbeat interval (Go duration, e.g., `30s`) |
-| `MUSH_TUI` | Enable/disable interactive TUI for bare `mush` (`true` or `false`) |
-| `MUSH_NO_TUI` | Disable interactive TUI for bare `mush` (`1` or `true`) |
-| `MUSH_UPDATE_DISABLED` | Disable update checks (`1` or `true`) |
-| `MUSH_JSON` | Enable JSON output (`1` or `true`) |
-| `MUSH_QUIET` | Enable quiet mode (`1` or `true`) |
-| `MUSH_NO_INPUT` | Disable interactive prompts (`1` or `true`) |
-| `XDG_CONFIG_HOME` | Override config root (all platforms, checked first; must be absolute) |
-| `XDG_STATE_HOME` | Override state root (all platforms, checked first; must be absolute) |
-| `XDG_CACHE_HOME` | Override cache root (all platforms, checked first; must be absolute) |
+| `MUSH_EXPERIMENTAL` | Enable experimental features (`1` or `true`) |
+| **Path overrides** | |
+| `MUSHER_HOME` | Override all storage roots under a single directory |
+| `MUSHER_CONFIG_HOME` | Override config root |
+| `MUSHER_DATA_HOME` | Override data root |
+| `MUSHER_STATE_HOME` | Override state root |
+| `MUSHER_CACHE_HOME` | Override cache root |
+| `MUSHER_RUNTIME_DIR` | Override runtime directory |
+| `XDG_CONFIG_HOME` | Override config root (all platforms; must be absolute) |
+| `XDG_DATA_HOME` | Override data root (all platforms; must be absolute) |
+| `XDG_STATE_HOME` | Override state root (all platforms; must be absolute) |
+| `XDG_CACHE_HOME` | Override cache root (all platforms; must be absolute) |
 
 ## Platform Differences
 
-| | Config Root | State Root | Cache Root | Keyring Backend |
-|-|-------------|------------|------------|-----------------|
-| **Linux** | `~/.config/mush` | `~/.local/state/mush` | `~/.cache/mush` | Secret Service (D-Bus) |
-| **macOS** | `~/Library/Application Support/mush` | `~/.local/state/mush` | `~/Library/Caches/mush` | Keychain |
-| **Windows** | `%AppData%\mush` | `~/.local/state/mush` | `%LocalAppData%\mush` | Credential Manager |
+| | Config Root | Data Root | State Root | Cache Root | Keyring Backend |
+|-|-------------|-----------|------------|------------|-----------------|
+| **Linux** | `~/.config/musher` | `~/.local/share/musher` | `~/.local/state/musher` | `~/.cache/musher` | Secret Service (D-Bus) |
+| **macOS** | `~/Library/Application Support/musher` | `~/.local/share/musher` | `~/.local/state/musher` | `~/Library/Caches/musher` | Keychain |
+| **Windows** | `%AppData%\musher` | `~/.local/share/musher` | `~/.local/state/musher` | `%LocalAppData%\musher` | Credential Manager |
 
-`XDG_CONFIG_HOME`, `XDG_STATE_HOME`, and `XDG_CACHE_HOME` are checked first on all platforms. When set, they override the OS-specific defaults shown above. The state root has no OS-specific default and always falls back to `$HOME/.local/state/mush`.
+`MUSHER_HOME` sets all roots at once. Per-root overrides (`MUSHER_CONFIG_HOME`, `MUSHER_DATA_HOME`, `MUSHER_STATE_HOME`, `MUSHER_CACHE_HOME`) take precedence over `MUSHER_HOME`. XDG variables (`XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_STATE_HOME`, `XDG_CACHE_HOME`) are checked next on all platforms. When set, they override the OS-specific defaults shown above.
 
 ## Resetting Mush
 
 **Clear everything** (config, credentials, state, cache):
 
 ```bash
-rm -rf ~/.config/mush ~/.local/state/mush ~/.cache/mush
+rm -rf ~/.config/musher ~/.local/share/musher ~/.local/state/musher ~/.cache/musher
 ```
 
 **Clear only the bundle cache** (re-downloaded on next use):
 
 ```bash
-rm -rf ~/.cache/mush/bundles
+rm -rf ~/.cache/musher/bundles
 ```
 
 **Clear only credentials:**
@@ -392,7 +412,7 @@ mush auth logout
 Or manually:
 
 ```bash
-rm ~/.config/mush/api-key
+rm -rf ~/.local/share/musher/credentials/
 ```
 
 Note: `mush auth logout` also clears the OS keyring entry. The manual `rm` command only removes the file fallback.

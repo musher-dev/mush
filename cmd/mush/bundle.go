@@ -28,6 +28,7 @@ directory structure.`,
 	}
 
 	cmd.AddCommand(newBundleLoadCmd())
+	cmd.AddCommand(newBundleRunCmd())
 	cmd.AddCommand(newBundleInstallCmd())
 	cmd.AddCommand(newBundleListCmd())
 	cmd.AddCommand(newBundleInfoCmd())

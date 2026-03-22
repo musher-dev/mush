@@ -23,7 +23,7 @@ func testWriter() (*output.Writer, *bytes.Buffer) {
 
 func TestConfigList_Empty_Golden(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	t.Setenv("MUSH_HISTORY_DIR", "/tmp/mush-history")
+	t.Setenv("MUSHER_HISTORY_DIR", "/tmp/mush-history")
 
 	out, buf := testWriter()
 	cmd := newConfigListCmd()
@@ -41,7 +41,7 @@ func TestConfigList_Empty_Golden(t *testing.T) {
 
 func TestConfigGet_Set_Golden(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	t.Setenv("MUSH_API_URL", "https://custom.api.dev")
+	t.Setenv("MUSHER_API_URL", "https://custom.api.dev")
 
 	out, buf := testWriter()
 	cmd := newConfigGetCmd()
@@ -88,7 +88,7 @@ func TestConfigSet_KeybindingsListValue(t *testing.T) {
 		t.Fatalf("config set should succeed: %v", err)
 	}
 
-	data, err := os.ReadFile(filepath.Join(os.Getenv("XDG_CONFIG_HOME"), "mush", "config.yaml"))
+	data, err := os.ReadFile(filepath.Join(os.Getenv("XDG_CONFIG_HOME"), "musher", "config.yaml"))
 	if err != nil {
 		t.Fatalf("ReadFile() error = %v", err)
 	}

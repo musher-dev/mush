@@ -35,7 +35,12 @@ func cmdLoadContext(ctx context.Context, deps *Dependencies) tea.Cmd {
 		}
 
 		// 1. Check auth credentials (local, fast).
-		source, apiKey := auth.GetCredentials()
+		apiURL := "https://api.musher.dev"
+		if deps.Config != nil {
+			apiURL = deps.Config.APIURL()
+		}
+
+		source, apiKey := auth.GetCredentials(apiURL)
 		if source != auth.SourceNone && apiKey != "" {
 			msg.authStatus = "authenticated"
 		}

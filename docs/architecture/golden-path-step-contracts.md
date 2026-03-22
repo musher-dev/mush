@@ -21,7 +21,7 @@ This contract defines the hardened CLI golden path in this repository.
 ## Step 2: Authenticate
 
 - Entry:
-  - API key available via `MUSH_API_KEY`, `mush auth login`, or `mush init`
+  - API key available via `MUSHER_API_KEY`, `mush auth login`, or `mush init`
 - Exit:
   - `mush auth status` returns credential/organization identity
 - Invariants:

@@ -20,7 +20,7 @@ func TestGoldenPathCanary(t *testing.T) {
 		t.Skip("canary disabled; set MUSH_CANARY_API_URL, MUSH_CANARY_API_KEY, MUSH_CANARY_HABITAT_ID, and MUSH_CANARY_QUEUE_ID")
 	}
 
-	httpClient, err := client.NewInstrumentedHTTPClient(os.Getenv("MUSH_NETWORK_CA_CERT_FILE"))
+	httpClient, err := client.NewInstrumentedHTTPClient(os.Getenv("MUSHER_NETWORK_CA_CERT_FILE"))
 	if err != nil {
 		t.Fatalf("build HTTP client: %v", err)
 	}

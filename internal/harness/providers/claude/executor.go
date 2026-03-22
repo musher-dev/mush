@@ -413,7 +413,7 @@ func (e *Executor) startPTY(ctx context.Context) error {
 	cmd.Env = append(os.Environ(),
 		"TERM=xterm-256color",
 		"FORCE_COLOR=1",
-		"MUSH_SIGNAL_DIR="+e.signalDir,
+		"MUSHER_SIGNAL_DIR="+e.signalDir,
 	)
 
 	cmd.Env = append(cmd.Env, e.opts.Env...)

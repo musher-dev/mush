@@ -46,7 +46,7 @@ func TestValidateAPIURL(t *testing.T) {
 }
 
 func TestRootCmd_APIURLFlagSetsEnv(t *testing.T) {
-	t.Setenv("MUSH_API_URL", "https://from-env.example")
+	t.Setenv("MUSHER_API_URL", "https://from-env.example")
 
 	root := newRootCmd()
 	root.SetArgs([]string{"--api-url", "https://from-flag.example", "version"})
@@ -56,8 +56,8 @@ func TestRootCmd_APIURLFlagSetsEnv(t *testing.T) {
 		t.Fatalf("root.Execute() error = %v", err)
 	}
 
-	if got := strings.TrimSpace(os.Getenv("MUSH_API_URL")); got != "https://from-flag.example" {
-		t.Fatalf("MUSH_API_URL = %q, want https://from-flag.example", got)
+	if got := strings.TrimSpace(os.Getenv("MUSHER_API_URL")); got != "https://from-flag.example" {
+		t.Fatalf("MUSHER_API_URL = %q, want https://from-flag.example", got)
 	}
 }
 
