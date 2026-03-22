@@ -1,5 +1,16 @@
 # Changelog
 
+## [4.0.0](https://github.com/musher-dev/mush/compare/v3.17.3...v4.0.0) (2026-03-22)
+
+
+### ⚠ BREAKING CHANGES
+
+* Environment variables renamed from MUSH_* to MUSHER_* (e.g. MUSH_API_KEY → MUSHER_API_KEY). Storage directories move from ~/.config/mush to ~/.config/musher (and similarly for data, state, cache). Credential keyring service is now derived from API host.
+
+### Features
+
+* align storage paths and env vars with musher brand ([#132](https://github.com/musher-dev/mush/issues/132)) ([209f9e9](https://github.com/musher-dev/mush/commit/209f9e9aa18a3060a9a0b282f9c6c77c5edd3d11))
+
 ## [3.17.3](https://github.com/musher-dev/mush/compare/v3.17.2...v3.17.3) (2026-03-20)
 
 
