@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/musher-dev/mush/internal/auth"
+	"github.com/musher-dev/mush/internal/config"
 )
 
 // contextInfoMsg carries async-loaded context data back to the model.
@@ -35,9 +36,11 @@ func cmdLoadContext(ctx context.Context, deps *Dependencies) tea.Cmd {
 		}
 
 		// 1. Check auth credentials (local, fast).
-		apiURL := "https://api.musher.dev"
+		var apiURL string
 		if deps.Config != nil {
 			apiURL = deps.Config.APIURL()
+		} else {
+			apiURL = config.Load().APIURL()
 		}
 
 		source, apiKey := auth.GetCredentials(apiURL)

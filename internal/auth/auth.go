@@ -31,7 +31,7 @@ type CredentialSource string
 const (
 	SourceEnv     CredentialSource = "environment variable"
 	SourceKeyring CredentialSource = "keyring"
-	SourceFile    CredentialSource = "config file"
+	SourceFile    CredentialSource = "credentials file"
 	SourceNone    CredentialSource = ""
 )
 

@@ -210,7 +210,7 @@ func HostIDFromURL(apiURL string) string {
 func KeyringServiceFromURL(apiURL string) string {
 	parsed, err := url.Parse(apiURL)
 	if err != nil || parsed.Host == "" {
-		return "musher/" + apiURL
+		return "musher/" + sanitizeHostID(apiURL)
 	}
 
 	hostname := parsed.Hostname()

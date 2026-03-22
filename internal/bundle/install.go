@@ -58,10 +58,19 @@ func TrackInstall(workDir string, bundle *InstalledBundle) error {
 }
 
 // LoadInstalled reads the list of installed bundles from .musher/installed.json.
+// Falls back to reading legacy .mush/installed.json for projects that installed
+// bundles before the storage directory rename.
 func LoadInstalled(workDir string) ([]InstalledBundle, error) {
 	path := filepath.Join(workDir, ".musher", installedFileName)
 
 	data, err := safeio.ReadFile(path)
+	if err != nil && errors.Is(err, os.ErrNotExist) {
+		// Try legacy path before giving up.
+		legacyPath := filepath.Join(workDir, ".mush", installedFileName)
+
+		data, err = safeio.ReadFile(legacyPath)
+	}
+
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil

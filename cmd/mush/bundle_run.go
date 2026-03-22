@@ -248,7 +248,20 @@ func launchHarnessSubprocess(
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
 
-	defer signal.Stop(sigCh)
+	// Drain the signal channel and forward signals to the child so that
+	// default termination behavior is preserved while allowing mush to
+	// perform cleanup.
+	go func() {
+		for sig := range sigCh {
+			// Best-effort forwarding; ignore errors if the child is already gone.
+			_ = child.Process.Signal(sig)
+		}
+	}()
+
+	defer func() {
+		signal.Stop(sigCh)
+		close(sigCh)
+	}()
 
 	waitErr := child.Wait()
 
@@ -276,8 +289,21 @@ func launchHarnessSubprocess(
 
 // buildRunArgs constructs the CLI arguments for the harness binary based on
 // the provider spec, bundle directory, and optional MCP config path.
+//
+// Provider-specific args (e.g. sandbox flags) are injected before bundle/MCP
+// flags so that harness binaries receive them in the expected order.
 func buildRunArgs(spec *harnesstype.ProviderSpec, bundleDir, mcpConfigPath string) []string {
 	var args []string
+
+	// Provider-specific extra args required for correct operation.
+	switch spec.Name {
+	case "codex", "gemini":
+		// These harnesses require explicit sandbox mode when using --add-dir;
+		// without this, they default to read-only and ignore the bundle dir.
+		if bundleDir != "" {
+			args = append(args, "--sandbox", "workspace-write")
+		}
+	}
 
 	if bundleDir != "" && spec.BundleDir != nil && spec.BundleDir.Flag != "" {
 		args = append(args, spec.BundleDir.Flag, bundleDir)

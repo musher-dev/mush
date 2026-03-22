@@ -111,7 +111,7 @@ func TestCredentialSource_String(t *testing.T) {
 	}{
 		{SourceEnv, "environment variable"},
 		{SourceKeyring, "keyring"},
-		{SourceFile, "config file"},
+		{SourceFile, "credentials file"},
 		{SourceNone, ""},
 	}
 

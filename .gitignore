@@ -47,3 +47,4 @@ Thumbs.db
 .gocache/
 bin/
 .musher/installed.json
+.mush/installed.json

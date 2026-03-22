@@ -3,7 +3,7 @@ Update mush to the latest version from GitHub Releases.
 Downloads the new binary, verifies its checksum, and replaces the current
 executable. If the binary is not writable, sudo is requested automatically.
 
-Set MUSH_UPDATE_DISABLED=1 to disable update checks.
+Set MUSHER_UPDATE_DISABLED=1 to disable update checks.
 
 Usage:
   mush update [flags]

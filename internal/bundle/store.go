@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/musher-dev/mush/internal/client"
 	"github.com/musher-dev/mush/internal/paths"
@@ -164,7 +165,7 @@ func ReadRef(hostID, namespace, slug string) (string, error) {
 		return "", fmt.Errorf("read ref: %w", err)
 	}
 
-	return string(data[:len(data)-1]), nil // trim trailing newline
+	return strings.TrimSpace(string(data)), nil
 }
 
 // PruneBlobs removes blobs that are not referenced by any cached manifest.
@@ -181,7 +182,10 @@ func PruneBlobs() (int, error) {
 	}
 
 	// Collect all referenced digests from manifests.
-	referenced := collectReferencedDigests()
+	referenced, walkErr := collectReferencedDigests()
+	if walkErr != nil {
+		return 0, fmt.Errorf("collect referenced digests: %w", walkErr)
+	}
 
 	pruned := 0
 
@@ -201,14 +205,24 @@ func PruneBlobs() (int, error) {
 }
 
 // collectReferencedDigests walks all manifests and returns the set of blob digests they reference.
-func collectReferencedDigests() map[string]bool {
+// Returns an error if the manifests directory cannot be walked, to prevent PruneBlobs from
+// deleting all blobs when the manifest directory is unreadable.
+func collectReferencedDigests() (map[string]bool, error) {
 	digests := make(map[string]bool)
 
 	manifestRoot := filepath.Join(cacheRootDir(), "manifests")
 
-	_ = filepath.WalkDir(manifestRoot, func(path string, dirEntry os.DirEntry, walkErr error) error {
-		if walkErr != nil || dirEntry.IsDir() || filepath.Ext(path) != ".json" {
-			return nil //nolint:nilerr // skip non-manifest entries
+	if _, err := os.Stat(manifestRoot); os.IsNotExist(err) {
+		return digests, nil
+	}
+
+	walkErr := filepath.WalkDir(manifestRoot, func(path string, dirEntry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if dirEntry.IsDir() || filepath.Ext(path) != ".json" {
+			return nil
 		}
 
 		data, readErr := safeio.ReadFile(path)
@@ -229,8 +243,11 @@ func collectReferencedDigests() map[string]bool {
 
 		return nil
 	})
+	if walkErr != nil {
+		return nil, fmt.Errorf("walk manifests: %w", walkErr)
+	}
 
-	return digests
+	return digests, nil
 }
 
 func sha256Hex(data []byte) string {
