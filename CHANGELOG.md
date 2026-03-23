@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.1.0](https://github.com/musher-dev/mush/compare/v4.0.0...v4.1.0) (2026-03-23)
+
+
+### Features
+
+* add hub metadata to bundle info, cache-only load, and keyring timeout handling ([#140](https://github.com/musher-dev/mush/issues/140)) ([20a766f](https://github.com/musher-dev/mush/commit/20a766fd647278932639fad95876cb18ee48632f)), closes [#137](https://github.com/musher-dev/mush/issues/137) [#138](https://github.com/musher-dev/mush/issues/138) [#139](https://github.com/musher-dev/mush/issues/139)
+
 ## [4.0.0](https://github.com/musher-dev/mush/compare/v3.17.3...v4.0.0) (2026-03-22)
 
 
