@@ -11,7 +11,7 @@ require (
 	github.com/charmbracelet/x/ansi v0.11.6
 	github.com/creack/pty v1.1.24
 	github.com/creativeprojects/go-selfupdate v1.5.2
-	github.com/fatih/color v1.18.0
+	github.com/fatih/color v1.19.0
 	github.com/gdamore/tcell/v2 v2.13.8
 	github.com/google/go-containerregistry v0.21.2
 	github.com/google/uuid v1.6.0
