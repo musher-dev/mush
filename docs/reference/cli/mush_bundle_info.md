@@ -1,16 +1,18 @@
 ---
 title: "mush bundle info"
-description: "Show local details for a bundle reference"
+description: "Show details for a bundle reference"
 ---
 
 ## mush bundle info
 
-Show local details for a bundle reference
+Show details for a bundle reference
 
 ### Synopsis
 
-Show cached versions and installation status for a specific bundle reference
-in the current project directory.
+Show hub metadata, cached versions, and installation status for a bundle.
+
+Queries the Musher Hub for bundle details (public, no auth required) and
+also checks the local cache and current project directory.
 
 ```
 mush bundle info <namespace/slug>[:<version>] [flags]

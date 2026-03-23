@@ -45,15 +45,14 @@ func configureRootRuntime(
 	}
 
 	logCfg := observability.Config{
-		Level:          pickFlagOrEnv(logLevel, "MUSH_LOG_LEVEL", "info"),
-		Format:         pickFlagOrEnv(logFormat, "MUSH_LOG_FORMAT", "json"),
-		LogFile:        pickFlagOrEnv(logFile, "MUSH_LOG_FILE", ""),
-		StderrMode:     pickFlagOrEnv(logStderr, "MUSH_LOG_STDERR", "auto"),
-		InteractiveTTY: out.Terminal().IsTTY && isInteractiveCommand(cmd.CommandPath()),
-		SessionID:      uuid.NewString(),
-		CommandPath:    cmd.CommandPath(),
-		Version:        version,
-		Commit:         commit,
+		Level:       pickFlagOrEnv(logLevel, "MUSH_LOG_LEVEL", "info"),
+		Format:      pickFlagOrEnv(logFormat, "MUSH_LOG_FORMAT", "json"),
+		LogFile:     pickFlagOrEnv(logFile, "MUSH_LOG_FILE", ""),
+		StderrMode:  pickFlagOrEnv(logStderr, "MUSH_LOG_STDERR", "auto"),
+		SessionID:   uuid.NewString(),
+		CommandPath: cmd.CommandPath(),
+		Version:     version,
+		Commit:      commit,
 	}
 
 	logger, cleanup, err := observability.NewLogger(&logCfg)
@@ -169,12 +168,6 @@ func hasExperimentalFlag() bool {
 	}
 
 	return false
-}
-
-func isInteractiveCommand(path string) bool {
-	return path == "mush worker start" || strings.HasPrefix(path, "mush worker start ") ||
-		path == "mush bundle load" || strings.HasPrefix(path, "mush bundle load ") ||
-		path == "mush bundle run" || strings.HasPrefix(path, "mush bundle run ")
 }
 
 // buildTUIDeps creates the Dependencies struct for the TUI from available auth/config.

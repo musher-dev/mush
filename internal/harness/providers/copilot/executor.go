@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"os/exec"
 	"strings"
@@ -234,7 +235,7 @@ func (e *Executor) applyRunnerConfig(cfg *client.RunnerConfigResponse) error {
 		return nil
 	}
 
-	path, sig, cleanup, err := harnesstype.CreateMCPConfigFile(mcpSpec, cfg, now)
+	path, sig, cleanup, err := harnesstype.CreateMCPConfigFile(slog.Default(), mcpSpec, cfg, now)
 	if err != nil {
 		return fmt.Errorf("create mcp config: %w", err)
 	}

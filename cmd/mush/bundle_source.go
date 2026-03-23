@@ -99,17 +99,26 @@ func resolveBundleSource(
 	if err != nil {
 		logger.Error("bundle pull failed", slog.String("error", err.Error()))
 
-		if !apiClient.IsAuthenticated() && isForbiddenError(err) {
+		if isForbiddenError(err) {
+			if !apiClient.IsAuthenticated() {
+				return nil, &clierrors.CLIError{
+					Message: fmt.Sprintf("Access denied for bundle: %s", ref.Slug),
+					Hint:    "This bundle may require authentication. Run 'mush auth login' to authenticate and try again",
+					Cause:   err,
+					Code:    clierrors.ExitAuth,
+				}
+			}
+
 			return nil, &clierrors.CLIError{
-				Message: fmt.Sprintf("Failed to pull bundle: %s", ref.Slug),
-				Hint:    "This bundle may be private. Run 'mush auth login' to authenticate",
+				Message: fmt.Sprintf("Access denied for bundle: %s", ref.Slug),
+				Hint:    "This bundle is private. Private bundles can only be accessed via the namespace API",
 				Cause:   err,
 				Code:    clierrors.ExitAuth,
 			}
 		}
 
 		return nil, clierrors.Wrap(clierrors.ExitNetwork, "Failed to pull bundle", err).
-			WithHint("Check your network connection and bundle reference")
+			WithHint("Check your network connection and bundle reference.\nSearch for available bundles with 'mush hub search <query>'")
 	}
 
 	return &bundleSourceResult{

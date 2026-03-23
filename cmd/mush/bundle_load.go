@@ -26,6 +26,7 @@ func newBundleLoadCmd() *cobra.Command {
 		forceSidebar bool
 		dirPath      string
 		useSample    bool
+		cacheOnly    bool
 	)
 
 	cmd := &cobra.Command{
@@ -35,10 +36,14 @@ func newBundleLoadCmd() *cobra.Command {
 to Run or Install. Use --no-tui to skip the TUI and launch the harness
 directly (requires --harness).
 
+Use --cache to download and cache a bundle without launching a session.
+This is useful for pre-warming the bundle cache in CI or container builds.
+
 Alternatively, load a bundle from a local directory with --dir or use the
 built-in sample bundle with --sample for testing.`,
 		Example: `  mush bundle load acme/my-kit
   mush bundle load acme/my-kit:0.1.0
+  mush bundle load acme/my-kit --cache
   mush bundle load acme/my-kit --no-tui --harness claude
   mush bundle load --dir ./my-bundle --no-tui --harness claude
   mush bundle load --sample --no-tui --harness claude`,
@@ -68,10 +73,10 @@ built-in sample bundle with --sample for testing.`,
 				slog.String("event.type", "bundle.load.start"),
 			)
 
-			if !out.Terminal().IsTTY {
+			if !cacheOnly && !out.Terminal().IsTTY {
 				return &clierrors.CLIError{
 					Message: "Bundle load requires a terminal (TTY)",
-					Hint:    "Run this command directly in a terminal, not in a pipe or script",
+					Hint:    "Run this command directly in a terminal, not in a pipe or script.\nUse --cache to download without launching a session",
 					Code:    clierrors.ExitUsage,
 				}
 			}
@@ -79,7 +84,7 @@ built-in sample bundle with --sample for testing.`,
 			noTUI, _ := cmd.Root().PersistentFlags().GetBool("no-tui")
 			useTUI := shouldShowTUI(noTUI, out)
 
-			if !useTUI && harnessType == "" {
+			if !cacheOnly && !useTUI && harnessType == "" {
 				return &clierrors.CLIError{
 					Message: "Harness type is required in --no-tui mode",
 					Hint:    fmt.Sprintf("Use --harness flag. Available: %s", joinNames(harness.RegisteredNames())),
@@ -97,6 +102,18 @@ built-in sample bundle with --sample for testing.`,
 			}
 			defer source.Cleanup()
 
+			if cacheOnly {
+				out.Success("Cached %s/%s:%s", source.Ref.Namespace, source.Ref.Slug, source.Resolved.Version)
+				out.Print("  Cache: %s\n", source.CachePath)
+				logger.Info("bundle cached",
+					slog.String("bundle.namespace", source.Ref.Namespace),
+					slog.String("bundle.slug", source.Ref.Slug),
+					slog.String("bundle.version", source.Resolved.Version),
+				)
+
+				return nil
+			}
+
 			return executeBundleLoad(cmd, out, logger, source, harnessType, forceSidebar, useTUI)
 		},
 	}
@@ -105,6 +122,7 @@ built-in sample bundle with --sample for testing.`,
 	cmd.Flags().BoolVar(&forceSidebar, "force-sidebar", false, "Skip terminal probe and force sidebar rendering")
 	cmd.Flags().StringVar(&dirPath, "dir", "", "Load bundle from a local directory")
 	cmd.Flags().BoolVar(&useSample, "sample", false, "Load the built-in sample bundle")
+	cmd.Flags().BoolVar(&cacheOnly, "cache", false, "Download and cache the bundle without launching a session")
 	cmd.MarkFlagsMutuallyExclusive("dir", "sample")
 
 	return cmd

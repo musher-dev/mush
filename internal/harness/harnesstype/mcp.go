@@ -90,9 +90,9 @@ func MCPSignature(specs []MCPProviderSpec) (string, error) {
 }
 
 // CreateMCPConfigFile creates an ephemeral MCP config file using the given MCPSpec.
-func CreateMCPConfigFile(mcpSpec *MCPSpec, cfg *client.RunnerConfigResponse, now time.Time) (path, sig string, cleanup func() error, err error) {
+func CreateMCPConfigFile(logger *slog.Logger, mcpSpec *MCPSpec, cfg *client.RunnerConfigResponse, now time.Time) (path, sig string, cleanup func() error, err error) {
 	specs := BuildMCPProviderSpecs(cfg, now)
-	slog.Default().Info(
+	logger.Info(
 		"MCP specs built",
 		slog.String("component", "mcp"),
 		slog.String("event.type", "mcp.specs.built"),
@@ -125,7 +125,7 @@ func CreateMCPConfigFile(mcpSpec *MCPSpec, cfg *client.RunnerConfigResponse, now
 	}
 
 	path = file.Name()
-	slog.Default().Info(
+	logger.Info(
 		"MCP config file created",
 		slog.String("component", "mcp"),
 		slog.String("event.type", "mcp.config.file.created"),
@@ -160,7 +160,7 @@ func CreateMCPConfigFile(mcpSpec *MCPSpec, cfg *client.RunnerConfigResponse, now
 			return fmt.Errorf("remove mcp config file: %w", removeErr)
 		}
 
-		slog.Default().Debug(
+		logger.Debug(
 			"MCP config file removed",
 			slog.String("component", "mcp"),
 			slog.String("event.type", "mcp.config.file.removed"),

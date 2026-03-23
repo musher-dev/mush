@@ -1,5 +1,7 @@
-Show cached versions and installation status for a specific bundle reference
-in the current project directory.
+Show hub metadata, cached versions, and installation status for a bundle.
+
+Queries the Musher Hub for bundle details (public, no auth required) and
+also checks the local cache and current project directory.
 
 Usage:
   mush bundle info <namespace/slug>[:<version>] [flags]

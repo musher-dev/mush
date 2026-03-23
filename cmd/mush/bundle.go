@@ -12,6 +12,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/musher-dev/mush/internal/bundle"
+	"github.com/musher-dev/mush/internal/client"
+	"github.com/musher-dev/mush/internal/config"
 	clierrors "github.com/musher-dev/mush/internal/errors"
 	"github.com/musher-dev/mush/internal/harness"
 	"github.com/musher-dev/mush/internal/output"
@@ -100,9 +102,11 @@ current project directory.`,
 func newBundleInfoCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "info <namespace/slug>[:<version>]",
-		Short: "Show local details for a bundle reference",
-		Long: `Show cached versions and installation status for a specific bundle reference
-in the current project directory.`,
+		Short: "Show details for a bundle reference",
+		Long: `Show hub metadata, cached versions, and installation status for a bundle.
+
+Queries the Musher Hub for bundle details (public, no auth required) and
+also checks the local cache and current project directory.`,
 		Example: `  mush bundle info acme/my-agent-kit
   mush bundle info acme/my-agent-kit:1.0.0`,
 		Args: cobra.ExactArgs(1),
@@ -117,6 +121,11 @@ in the current project directory.`,
 					Code:    clierrors.ExitUsage,
 				}
 			}
+
+			// Query the hub (public, no auth required). Failures are non-fatal.
+			cfg := config.Load()
+			hubClient := client.New(cfg.APIURL(), "")
+			hubDetail, hubErr := hubClient.GetHubBundleDetail(cmd.Context(), ref.Namespace, ref.Slug)
 
 			cached, err := bundle.ListCached()
 			if err != nil {
@@ -161,35 +170,85 @@ in the current project directory.`,
 				installedMatches = append(installedMatches, installed[i])
 			}
 
-			if len(cachedMatches) == 0 && len(installedMatches) == 0 {
-				return clierrors.BundleNotFound(ref.String())
+			if hubErr != nil && len(cachedMatches) == 0 && len(installedMatches) == 0 {
+				return &clierrors.CLIError{
+					Message: fmt.Sprintf("Bundle not found: %s", ref.String()),
+					Hint:    "Not found on the Musher Hub or locally.\nSearch for available bundles with 'mush hub search <query>'",
+					Code:    clierrors.ExitGeneral,
+				}
 			}
 
 			out.Print("Bundle: %s\n\n", ref.String())
-			out.Println("Cached versions:")
 
-			if len(cachedMatches) == 0 {
-				out.Print("  (none)\n")
-			} else {
-				for _, c := range cachedMatches {
-					out.Print("  %s/%s:%s (%d assets)\n", c.Namespace, c.Slug, c.Version, c.AssetCount)
-				}
+			// Hub metadata section.
+			if hubDetail != nil {
+				printHubDetail(out, hubDetail)
 			}
 
-			out.Println()
-			out.Println("Installed in current project:")
+			// Status section.
+			out.Println("Status:")
 
-			if len(installedMatches) == 0 {
-				out.Print("  (none)\n")
+			if hubDetail != nil && hubErr == nil {
+				out.Print("  Hub:       available\n")
 			} else {
-				for i := range installedMatches {
-					out.Print("  %s:%s [%s] (%d assets)\n", installedMatches[i].Ref, installedMatches[i].Version, installedMatches[i].Harness, len(installedMatches[i].Assets))
+				out.Print("  Hub:       not found\n")
+			}
+
+			if len(cachedMatches) > 0 {
+				versions := make([]string, 0, len(cachedMatches))
+				for _, c := range cachedMatches {
+					versions = append(versions, c.Version)
 				}
+
+				out.Print("  Cached:    %s\n", strings.Join(versions, ", "))
+			} else {
+				out.Print("  Cached:    no\n")
+			}
+
+			if len(installedMatches) > 0 {
+				for i := range installedMatches {
+					out.Print("  Installed: %s [%s]\n", installedMatches[i].Version, installedMatches[i].Harness)
+				}
+			} else {
+				out.Print("  Installed: no\n")
 			}
 
 			return nil
 		},
 	}
+}
+
+// printHubDetail formats hub bundle metadata for display.
+func printHubDetail(out *output.Writer, detail *client.HubBundleDetail) {
+	if detail.DisplayName != "" {
+		out.Print("Name:        %s\n", detail.DisplayName)
+	}
+
+	if detail.Publisher.Handle != "" {
+		out.Print("Publisher:   %s\n", detail.Publisher.Handle)
+	}
+
+	if detail.Summary != "" {
+		out.Print("Summary:     %s\n", detail.Summary)
+	}
+
+	if detail.LatestVersion != "" {
+		out.Print("Latest:      %s\n", detail.LatestVersion)
+	}
+
+	if detail.License != "" {
+		out.Print("License:     %s\n", detail.License)
+	}
+
+	if detail.StarsCount > 0 || detail.DownloadsTotal > 0 {
+		out.Print("Stars: %d  Downloads: %d\n", detail.StarsCount, detail.DownloadsTotal)
+	}
+
+	if detail.IsDeprecated {
+		out.Warning("This bundle is deprecated")
+	}
+
+	out.Println()
 }
 
 func newBundleUninstallCmd() *cobra.Command {

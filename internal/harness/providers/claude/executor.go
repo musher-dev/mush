@@ -39,10 +39,11 @@ const defaultPTYShutdownDeadline = 3 * time.Second
 
 // Executor runs jobs via Claude Code in a persistent PTY session.
 type Executor struct {
-	mu   sync.Mutex
-	ptmx *os.File
-	cmd  *exec.Cmd
-	pgid int
+	mu     sync.Mutex
+	logger *slog.Logger
+	ptmx   *os.File
+	cmd    *exec.Cmd
+	pgid   int
 
 	opts harnesstype.SetupOptions
 
@@ -96,6 +97,7 @@ type Executor struct {
 // NewExecutor creates a new Executor with default settings.
 func NewExecutor() *Executor {
 	executor := &Executor{
+		logger:              slog.Default(),
 		promptDetected:      make(chan struct{}, 1),
 		ptyReady:            make(chan *os.File, 4),
 		done:                make(chan struct{}),
@@ -359,7 +361,7 @@ func (e *Executor) ApplyRefresh(ctx context.Context, cfg *client.RunnerConfigRes
 	oldNames := e.loadedMCPNames
 
 	if err := e.applyRunnerConfig(cfg); err != nil {
-		slog.Default().Error(
+		e.logger.Error(
 			"MCP config refresh failed",
 			slog.String("component", "mcp"),
 			slog.String("event.type", "mcp.reload.error"),
@@ -383,7 +385,7 @@ func (e *Executor) ApplyRefresh(ctx context.Context, cfg *client.RunnerConfigRes
 		e.opts.OnOutput([]byte(msg))
 	}
 
-	slog.Default().Info(
+	e.logger.Info(
 		"MCP servers reloaded",
 		slog.String("component", "mcp"),
 		slog.String("event.type", "mcp.reload"),
@@ -398,7 +400,7 @@ func (e *Executor) ApplyRefresh(ctx context.Context, cfg *client.RunnerConfigRes
 
 func (e *Executor) startPTY(ctx context.Context) error {
 	args := e.commandArgs()
-	slog.Default().Debug(
+	e.logger.Debug(
 		"starting harness PTY",
 		slog.String("component", "harness"),
 		slog.String("event.type", "harness.pty.start"),
@@ -495,7 +497,7 @@ func (e *Executor) closePTY() {
 		return
 	}
 
-	slog.Default().Debug(
+	e.logger.Debug(
 		"stopping harness PTY",
 		slog.String("component", "harness"),
 		slog.String("event.type", "harness.pty.stop"),
@@ -812,7 +814,7 @@ func (e *Executor) applyRunnerConfig(cfg *client.RunnerConfigResponse) error {
 		return nil
 	}
 
-	path, sig, cleanup, err := harnesstype.CreateMCPConfigFile(mcpSpec, cfg, now)
+	path, sig, cleanup, err := harnesstype.CreateMCPConfigFile(e.logger, mcpSpec, cfg, now)
 	if err != nil {
 		return fmt.Errorf("create mcp config: %w", err)
 	}
@@ -830,7 +832,7 @@ func (e *Executor) applyRunnerConfig(cfg *client.RunnerConfigResponse) error {
 		_ = oldCleanup()
 	}
 
-	slog.Default().Info(
+	e.logger.Info(
 		"MCP config applied",
 		slog.String("component", "mcp"),
 		slog.String("event.type", "mcp.config.applied"),
