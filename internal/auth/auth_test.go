@@ -1,9 +1,13 @@
 package auth
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/musher-dev/mush/internal/paths"
+	"github.com/zalando/go-keyring"
 )
 
 const testAPIURL = "https://api.musher.dev"
@@ -190,6 +194,109 @@ func TestDeleteCredentialsFile_NotFound(t *testing.T) {
 	err := deleteCredentialsFile(testAPIURL)
 	if err == nil {
 		t.Errorf("deleteCredentialsFile() should return error for non-existent file")
+	}
+}
+
+func TestGetCredentials_FromKeyring(t *testing.T) {
+	clearAuthEnv(t)
+	keyring.MockInit()
+
+	service := paths.KeyringServiceFromURL(testAPIURL)
+	if err := keyring.Set(service, keyringUser, "keyring-test-key"); err != nil {
+		t.Fatalf("keyring.Set() error = %v", err)
+	}
+
+	source, key := GetCredentials(testAPIURL)
+
+	if source != SourceKeyring {
+		t.Errorf("source = %v, want %v", source, SourceKeyring)
+	}
+
+	if key != "keyring-test-key" {
+		t.Errorf("key = %q, want %q", key, "keyring-test-key")
+	}
+}
+
+func TestGetCredentials_KeyringFails_FallsBackToFile(t *testing.T) {
+	clearAuthEnv(t)
+	keyring.MockInitWithError(fmt.Errorf("mock keyring failure"))
+
+	tmpDir := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", filepath.Join(tmpDir, "data"))
+
+	if err := writeCredentialsFile(testAPIURL, "file-key"); err != nil {
+		t.Fatalf("writeCredentialsFile() error = %v", err)
+	}
+
+	source, key := GetCredentials(testAPIURL)
+
+	if source != SourceFile {
+		t.Errorf("source = %v, want %v", source, SourceFile)
+	}
+
+	if key != "file-key" {
+		t.Errorf("key = %q, want %q", key, "file-key")
+	}
+}
+
+func TestGetCredentials_NoCreds(t *testing.T) {
+	clearAuthEnv(t)
+	keyring.MockInitWithError(fmt.Errorf("mock keyring failure"))
+
+	tmpDir := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", filepath.Join(tmpDir, "data"))
+
+	source, key := GetCredentials(testAPIURL)
+
+	if source != SourceNone {
+		t.Errorf("source = %v, want %v", source, SourceNone)
+	}
+
+	if key != "" {
+		t.Errorf("key = %q, want empty", key)
+	}
+}
+
+func TestStoreAPIKey_KeyringFails_FallsBackToFile(t *testing.T) {
+	clearAuthEnv(t)
+	keyring.MockInitWithError(fmt.Errorf("mock keyring failure"))
+
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+	t.Setenv("XDG_DATA_HOME", filepath.Join(tmpDir, "data"))
+
+	err := StoreAPIKey(testAPIURL, "my-key")
+	if err != nil {
+		t.Fatalf("StoreAPIKey() error = %v", err)
+	}
+
+	got := readCredentialsFile(testAPIURL)
+	if got != "my-key" {
+		t.Errorf("stored key = %q, want %q", got, "my-key")
+	}
+}
+
+func TestDeleteAPIKey_KeyringFails_DeletesFile(t *testing.T) {
+	clearAuthEnv(t)
+	keyring.MockInitWithError(fmt.Errorf("mock keyring failure"))
+
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+	t.Setenv("XDG_DATA_HOME", filepath.Join(tmpDir, "data"))
+
+	// Write a credential file first
+	if err := writeCredentialsFile(testAPIURL, "delete-me"); err != nil {
+		t.Fatalf("writeCredentialsFile() error = %v", err)
+	}
+
+	err := DeleteAPIKey(testAPIURL)
+	if err != nil {
+		t.Errorf("DeleteAPIKey() error = %v", err)
+	}
+
+	path := credentialFilePath(testAPIURL)
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Errorf("credentials file still exists after DeleteAPIKey")
 	}
 }
 

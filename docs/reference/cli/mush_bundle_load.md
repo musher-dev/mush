@@ -13,6 +13,9 @@ Pull a bundle and launch the TUI at the Ready screen where you can choose
 to Run or Install. Use --no-tui to skip the TUI and launch the harness
 directly (requires --harness).
 
+Use --cache to download and cache a bundle without launching a session.
+This is useful for pre-warming the bundle cache in CI or container builds.
+
 Alternatively, load a bundle from a local directory with --dir or use the
 built-in sample bundle with --sample for testing.
 
@@ -25,6 +28,7 @@ mush bundle load [<namespace/slug>[:<version>]] [flags]
 ```
   mush bundle load acme/my-kit
   mush bundle load acme/my-kit:0.1.0
+  mush bundle load acme/my-kit --cache
   mush bundle load acme/my-kit --no-tui --harness claude
   mush bundle load --dir ./my-bundle --no-tui --harness claude
   mush bundle load --sample --no-tui --harness claude
@@ -33,6 +37,7 @@ mush bundle load [<namespace/slug>[:<version>]] [flags]
 ### Options
 
 ```
+      --cache            Download and cache the bundle without launching a session
       --dir string       Load bundle from a local directory
       --force-sidebar    Skip terminal probe and force sidebar rendering
       --harness string   Harness type to use (required with --no-tui)

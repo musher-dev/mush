@@ -193,7 +193,7 @@ func provisionMCPConfig(
 		return "", nil
 	}
 
-	path, _, cleanup, mcpErr := harnesstype.CreateMCPConfigFile(info.MCPSpec, runnerConfig, time.Now())
+	path, _, cleanup, mcpErr := harnesstype.CreateMCPConfigFile(slog.Default(), info.MCPSpec, runnerConfig, time.Now())
 	if mcpErr != nil {
 		out.Warning("MCP config disabled: %v", mcpErr)
 		return "", nil

@@ -6,20 +6,19 @@ import (
 	"testing"
 )
 
-func TestNewLogger_DefaultFileFallbackForInteractiveAuto(t *testing.T) {
+func TestNewLogger_AutoModeWritesToFileNotStderr(t *testing.T) {
 	stateRoot := t.TempDir()
 	t.Setenv("XDG_STATE_HOME", stateRoot)
 
 	cfg := &Config{
-		Level:          "info",
-		Format:         "json",
-		LogFile:        "",
-		StderrMode:     "auto",
-		InteractiveTTY: true,
-		SessionID:      "session-test",
-		CommandPath:    "mush bundle load",
-		Version:        "test",
-		Commit:         "abc123",
+		Level:       "info",
+		Format:      "json",
+		LogFile:     "",
+		StderrMode:  "auto",
+		SessionID:   "session-test",
+		CommandPath: "mush bundle install",
+		Version:     "test",
+		Commit:      "abc123",
 	}
 
 	logger, cleanup, err := NewLogger(cfg)

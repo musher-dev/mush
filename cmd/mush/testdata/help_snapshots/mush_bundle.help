@@ -6,7 +6,7 @@ Usage:
   mush bundle [command]
 
 Available Commands:
-  info        Show local details for a bundle reference
+  info        Show details for a bundle reference
   install     Install bundle assets into the current project
   list        List local bundle cache and installed bundles
   load        Load a bundle into an ephemeral session

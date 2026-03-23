@@ -23,15 +23,14 @@ type contextKey struct{}
 
 // Config holds the configuration for the observability logger.
 type Config struct {
-	Level          string
-	Format         string
-	LogFile        string
-	StderrMode     string
-	InteractiveTTY bool
-	SessionID      string
-	CommandPath    string
-	Version        string
-	Commit         string
+	Level       string
+	Format      string
+	LogFile     string
+	StderrMode  string
+	SessionID   string
+	CommandPath string
+	Version     string
+	Commit      string
 }
 
 // WithLogger returns a new context carrying the given logger.
@@ -55,7 +54,7 @@ func NewLogger(cfg *Config) (*slog.Logger, func() error, error) {
 		return nil, nil, err
 	}
 
-	stderrEnabled, err := shouldEnableStderr(cfg.StderrMode, cfg.InteractiveTTY)
+	stderrEnabled, err := shouldEnableStderr(cfg.StderrMode)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -205,10 +204,10 @@ func rotateLogFile(path string, maxBytes int64, maxBackups int) error {
 	return nil
 }
 
-func shouldEnableStderr(mode string, interactiveTTY bool) (bool, error) {
+func shouldEnableStderr(mode string) (bool, error) {
 	switch strings.ToLower(strings.TrimSpace(mode)) {
 	case "", "auto":
-		return !interactiveTTY, nil
+		return false, nil
 	case "on", "true", "1":
 		return true, nil
 	case "off", "false", "0":

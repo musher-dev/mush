@@ -34,7 +34,7 @@ directory structure.
 ### SEE ALSO
 
 * [mush](mush.md)	 - Portable agent bundles for local coding agents
-* [mush bundle info](mush_bundle_info.md)	 - Show local details for a bundle reference
+* [mush bundle info](mush_bundle_info.md)	 - Show details for a bundle reference
 * [mush bundle install](mush_bundle_install.md)	 - Install bundle assets into the current project
 * [mush bundle list](mush_bundle_list.md)	 - List local bundle cache and installed bundles
 * [mush bundle load](mush_bundle_load.md)	 - Load a bundle into an ephemeral session

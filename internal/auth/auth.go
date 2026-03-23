@@ -11,11 +11,71 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/musher-dev/mush/internal/paths"
 	"github.com/musher-dev/mush/internal/safeio"
 	"github.com/zalando/go-keyring"
 )
+
+// keyringTimeout is the maximum time to wait for OS keyring operations.
+// Keyring access is local IPC and completes in milliseconds when working;
+// a timeout indicates the D-Bus session bus is unavailable (containers, WSL, headless).
+const keyringTimeout = 3 * time.Second
+
+// keyringGet wraps keyring.Get with a timeout to prevent hanging on unavailable D-Bus.
+func keyringGet(service, user string) (string, error) {
+	type result struct {
+		key string
+		err error
+	}
+
+	ch := make(chan result, 1)
+
+	go func() {
+		key, err := keyring.Get(service, user)
+		ch <- result{key, err}
+	}()
+
+	select {
+	case r := <-ch:
+		return r.key, r.err
+	case <-time.After(keyringTimeout):
+		return "", fmt.Errorf("keyring access timed out after %s", keyringTimeout)
+	}
+}
+
+// keyringSet wraps keyring.Set with a timeout to prevent hanging on unavailable D-Bus.
+func keyringSet(service, user, pass string) error {
+	ch := make(chan error, 1)
+
+	go func() {
+		ch <- keyring.Set(service, user, pass)
+	}()
+
+	select {
+	case err := <-ch:
+		return err
+	case <-time.After(keyringTimeout):
+		return fmt.Errorf("keyring access timed out after %s", keyringTimeout)
+	}
+}
+
+// keyringDelete wraps keyring.Delete with a timeout to prevent hanging on unavailable D-Bus.
+func keyringDelete(service, user string) error {
+	ch := make(chan error, 1)
+
+	go func() {
+		ch <- keyring.Delete(service, user)
+	}()
+
+	select {
+	case err := <-ch:
+		return err
+	case <-time.After(keyringTimeout):
+		return fmt.Errorf("keyring access timed out after %s", keyringTimeout)
+	}
+}
 
 const (
 	// keyringUser is the user/account name used in OS keyring storage.
@@ -45,7 +105,7 @@ func GetCredentials(apiURL string) (source CredentialSource, apiKey string) {
 
 	// Priority 2: OS Keyring (host-scoped)
 	service := paths.KeyringServiceFromURL(apiURL)
-	if key, err := keyring.Get(service, keyringUser); err == nil && key != "" {
+	if key, err := keyringGet(service, keyringUser); err == nil && key != "" {
 		return SourceKeyring, key
 	}
 
@@ -63,7 +123,7 @@ func StoreAPIKey(apiURL, apiKey string) error {
 	// Try keyring first
 	service := paths.KeyringServiceFromURL(apiURL)
 
-	err := keyring.Set(service, keyringUser, apiKey)
+	err := keyringSet(service, keyringUser, apiKey)
 	if err == nil {
 		return nil
 	}
@@ -77,7 +137,7 @@ func DeleteAPIKey(apiURL string) error {
 	service := paths.KeyringServiceFromURL(apiURL)
 
 	// Try to delete from keyring
-	keyringErr := keyring.Delete(service, keyringUser)
+	keyringErr := keyringDelete(service, keyringUser)
 
 	// Also try to delete from file
 	fileErr := deleteCredentialsFile(apiURL)

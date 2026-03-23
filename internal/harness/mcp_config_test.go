@@ -4,6 +4,7 @@ package harness
 
 import (
 	"encoding/json"
+	"log/slog"
 	"os"
 	"strings"
 	"testing"
@@ -82,7 +83,7 @@ func TestCreateMCPConfigFile(t *testing.T) {
 		BuildConfig: BuildJSONMCPConfig,
 	}
 
-	path, sig, cleanup, err := CreateMCPConfigFile(mcpSpec, cfg, now)
+	path, sig, cleanup, err := CreateMCPConfigFile(slog.Default(), mcpSpec, cfg, now)
 	if err != nil {
 		t.Fatalf("CreateMCPConfigFile() error = %v", err)
 	}

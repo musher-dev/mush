@@ -519,10 +519,13 @@ func (m *model) handleBundleResolved(msg *bundleResolvedMsg) (tea.Model, tea.Cmd
 func (m *model) handleBundleResolveError(msg bundleResolveErrorMsg) (tea.Model, tea.Cmd) {
 	hint := "Check the bundle reference and try again"
 
-	// If the error contains a 403 and the client is unauthenticated,
-	// the bundle is likely private — guide the user to log in.
-	if isForbiddenError(msg.err) && m.deps != nil && m.deps.Client != nil && !m.deps.Client.IsAuthenticated() {
-		hint = "This bundle may be private. Run 'mush auth login' to authenticate"
+	// If the error contains a 403, provide auth-aware guidance.
+	if isForbiddenError(msg.err) && m.deps != nil && m.deps.Client != nil {
+		if !m.deps.Client.IsAuthenticated() {
+			hint = "This bundle may require authentication. Run 'mush auth login' to authenticate and try again"
+		} else {
+			hint = "This bundle is private. Private bundles can only be accessed via the namespace API"
+		}
 	}
 
 	m.bundleError = bundleErrorState{
