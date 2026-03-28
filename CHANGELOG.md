@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.2.0](https://github.com/musher-dev/mush/compare/v4.1.0...v4.2.0) (2026-03-28)
+
+
+### Features
+
+* add hub pull endpoint, asset type support, and download fallbacks ([#142](https://github.com/musher-dev/mush/issues/142)) ([e44f194](https://github.com/musher-dev/mush/commit/e44f194f6b46325a89b06afc8d0229948db980bf))
+
 ## [4.1.0](https://github.com/musher-dev/mush/compare/v4.0.0...v4.1.0) (2026-03-23)
 
 
