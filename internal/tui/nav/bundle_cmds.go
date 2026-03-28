@@ -2,8 +2,6 @@ package nav
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -229,18 +227,28 @@ func loadManifestFromCache(cachePath string) (*client.BundleResolveResponse, err
 	return &resolved, nil
 }
 
-// downloadBundle downloads all assets, verifies them, and writes the manifest.
+// downloadBundle downloads all assets and writes them to the cache.
+// It tries the single-request pull endpoint first, falling back to per-asset download.
 func downloadBundle(ctx context.Context, c *client.Client, resolved *client.BundleResolveResponse, cachePath string) error {
+	// Try single-request pull endpoint first.
+	pullResp, pullErr := c.PullBundle(ctx, resolved.Namespace, resolved.Slug, resolved.Version)
+	if pullErr == nil && len(pullResp.Manifest) > 0 {
+		return downloadBundleFromPull(resolved, pullResp, cachePath)
+	}
+
+	// Fallback: per-asset download.
 	if len(resolved.Manifest.Layers) == 0 {
 		return fmt.Errorf("bundle has no downloadable assets")
 	}
 
-	// Ensure parent directory exists.
+	return downloadBundlePerAsset(ctx, c, resolved, cachePath)
+}
+
+func downloadBundleFromPull(resolved *client.BundleResolveResponse, pullResp *client.PullBundleResponse, cachePath string) error {
 	if err := os.MkdirAll(filepath.Dir(cachePath), 0o700); err != nil {
 		return fmt.Errorf("create cache parent: %w", err)
 	}
 
-	// Create staging directory.
 	stagingDir, err := os.MkdirTemp(filepath.Dir(cachePath), filepath.Base(cachePath)+".partial.")
 	if err != nil {
 		return fmt.Errorf("create staging directory: %w", err)
@@ -255,12 +263,86 @@ func downloadBundle(ctx context.Context, c *client.Client, resolved *client.Bund
 	}()
 
 	assetsDir := filepath.Join(stagingDir, "assets")
-
 	if mkdirErr := safeio.MkdirAll(assetsDir, 0o755); mkdirErr != nil {
 		return fmt.Errorf("create staging assets directory: %w", mkdirErr)
 	}
 
-	// Download each asset.
+	// Backfill resolved manifest layers from pull response.
+	if len(resolved.Manifest.Layers) == 0 {
+		layers := make([]client.BundleLayer, len(pullResp.Manifest))
+		for i, asset := range pullResp.Manifest {
+			layers[i] = client.BundleLayer{
+				LogicalPath: asset.LogicalPath,
+				AssetType:   asset.AssetType,
+			}
+		}
+
+		resolved.Manifest.Layers = layers
+	}
+
+	for _, asset := range pullResp.Manifest {
+		if validateErr := bundle.ValidateLogicalPath(asset.LogicalPath); validateErr != nil {
+			return fmt.Errorf("invalid logical path %q: %w", asset.LogicalPath, validateErr)
+		}
+
+		destPath := filepath.Join(assetsDir, asset.LogicalPath)
+		if mkdirErr := safeio.MkdirAll(filepath.Dir(destPath), 0o755); mkdirErr != nil {
+			return fmt.Errorf("create asset directory: %w", mkdirErr)
+		}
+
+		if writeErr := safeio.WriteFile(destPath, []byte(asset.ContentText), 0o644); writeErr != nil {
+			return fmt.Errorf("write asset %s: %w", asset.LogicalPath, writeErr)
+		}
+	}
+
+	manifestData, err := json.MarshalIndent(resolved, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal manifest: %w", err)
+	}
+
+	if err := safeio.WriteFile(filepath.Join(stagingDir, "manifest.json"), manifestData, 0o644); err != nil {
+		return fmt.Errorf("write manifest: %w", err)
+	}
+
+	if err := os.Rename(stagingDir, cachePath); err != nil {
+		if _, statErr := os.Stat(filepath.Join(cachePath, "manifest.json")); statErr == nil {
+			_ = os.RemoveAll(stagingDir)
+			stagingFailed = false
+
+			return nil
+		}
+
+		return fmt.Errorf("promote staging cache: %w", err)
+	}
+
+	stagingFailed = false
+
+	return nil
+}
+
+func downloadBundlePerAsset(ctx context.Context, c *client.Client, resolved *client.BundleResolveResponse, cachePath string) error {
+	if err := os.MkdirAll(filepath.Dir(cachePath), 0o700); err != nil {
+		return fmt.Errorf("create cache parent: %w", err)
+	}
+
+	stagingDir, err := os.MkdirTemp(filepath.Dir(cachePath), filepath.Base(cachePath)+".partial.")
+	if err != nil {
+		return fmt.Errorf("create staging directory: %w", err)
+	}
+
+	stagingFailed := true
+
+	defer func() {
+		if stagingFailed {
+			_ = os.RemoveAll(stagingDir)
+		}
+	}()
+
+	assetsDir := filepath.Join(stagingDir, "assets")
+	if mkdirErr := safeio.MkdirAll(assetsDir, 0o755); mkdirErr != nil {
+		return fmt.Errorf("create staging assets directory: %w", mkdirErr)
+	}
+
 	for _, layer := range resolved.Manifest.Layers {
 		if validateErr := bundle.ValidateLogicalPath(layer.LogicalPath); validateErr != nil {
 			return fmt.Errorf("invalid logical path %q: %w", layer.LogicalPath, validateErr)
@@ -272,20 +354,22 @@ func downloadBundle(ctx context.Context, c *client.Client, resolved *client.Bund
 
 		data, fetchErr := c.FetchBundleAsset(ctx, layer.AssetID)
 		if fetchErr != nil {
-			return fmt.Errorf("fetch asset %s: %w", layer.AssetID, fetchErr)
+			data, fetchErr = c.FetchHubBundleAsset(ctx, resolved.Namespace, resolved.Slug, layer.LogicalPath, resolved.Version)
 		}
 
-		// Verify SHA256.
+		if fetchErr != nil {
+			return fmt.Errorf("fetch asset %s: %w", layer.LogicalPath, fetchErr)
+		}
+
 		if layer.ContentSHA256 != "" {
-			h := sha256.Sum256(data)
-			got := hex.EncodeToString(h[:])
-
-			if got != layer.ContentSHA256 {
-				return fmt.Errorf("asset %s: sha256 mismatch (got %s, want %s)", layer.LogicalPath, got, layer.ContentSHA256)
+			verified, verifyErr := bundle.VerifySHA256(data, layer.ContentSHA256)
+			if verifyErr != nil {
+				return fmt.Errorf("asset %s: %w", layer.LogicalPath, verifyErr)
 			}
+
+			data = verified
 		}
 
-		// Write to staging.
 		destPath := filepath.Join(assetsDir, layer.LogicalPath)
 		if mkdirErr := safeio.MkdirAll(filepath.Dir(destPath), 0o755); mkdirErr != nil {
 			return fmt.Errorf("create asset directory: %w", mkdirErr)
@@ -296,7 +380,6 @@ func downloadBundle(ctx context.Context, c *client.Client, resolved *client.Bund
 		}
 	}
 
-	// Write manifest (serves as cache-hit marker).
 	manifestData, err := json.MarshalIndent(resolved, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal manifest: %w", err)
@@ -306,9 +389,7 @@ func downloadBundle(ctx context.Context, c *client.Client, resolved *client.Bund
 		return fmt.Errorf("write manifest: %w", err)
 	}
 
-	// Atomically promote staging to final cache path.
 	if err := os.Rename(stagingDir, cachePath); err != nil {
-		// Another process may have won the race — check if the final cache already exists.
 		if _, statErr := os.Stat(filepath.Join(cachePath, "manifest.json")); statErr == nil {
 			_ = os.RemoveAll(stagingDir)
 			stagingFailed = false

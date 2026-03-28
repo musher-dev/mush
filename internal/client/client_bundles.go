@@ -117,6 +117,58 @@ func (c *Client) ResolveBundle(ctx context.Context, namespace, slug, version str
 	}, nil
 }
 
+// PullBundleResponse is the response from the single-request pull endpoint.
+// It contains all asset content inline, eliminating the need for per-asset fetches.
+type PullBundleResponse struct {
+	Namespace   string            `json:"namespace"`
+	Slug        string            `json:"slug"`
+	Version     string            `json:"version"`
+	Name        string            `json:"name"`
+	Description *string           `json:"description"`
+	Manifest    []PullBundleAsset `json:"manifest"`
+}
+
+// PullBundleAsset is a single asset with inline content from the pull endpoint.
+type PullBundleAsset struct {
+	LogicalPath string  `json:"logicalPath"`
+	AssetType   string  `json:"assetType"`
+	ContentText string  `json:"contentText"`
+	MediaType   *string `json:"mediaType"`
+}
+
+// PullBundle fetches a bundle version with all asset content in a single request.
+// This is the preferred download method — it returns everything inline and handles
+// OCI-to-DB fallback server-side. Public endpoint, no auth required.
+func (c *Client) PullBundle(ctx context.Context, namespace, slug, version string) (*PullBundleResponse, error) {
+	path := fmt.Sprintf("/v1/hub/bundles/%s/%s/versions/%s:pull",
+		neturl.PathEscape(namespace),
+		neturl.PathEscape(slug),
+		neturl.PathEscape(version),
+	)
+
+	req, err := c.newPublicRequest(ctx, "GET", c.baseURL+path, http.NoBody)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.do(req, path)
+	if err != nil {
+		return nil, fmt.Errorf("pull bundle: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, unexpectedStatus("pull bundle", resp)
+	}
+
+	var result PullBundleResponse
+	if err := decodeJSON(resp.Body, &result, "failed to parse pull response"); err != nil {
+		return nil, err
+	}
+
+	return &result, nil
+}
+
 // ErrNullContent indicates the server returned a null contentText for an asset.
 // This typically means the server could not resolve the asset content (e.g. OCI
 // registry unavailable for a registry-sourced bundle).
@@ -126,13 +178,37 @@ var ErrNullContent = errors.New("asset content unavailable from server")
 // The asset ID is already version-specific, so no version query param is needed.
 func (c *Client) FetchBundleAsset(ctx context.Context, assetID string) ([]byte, error) {
 	path := fmt.Sprintf("/v1/runner/assets/%s", neturl.PathEscape(assetID))
-	return c.fetchBundleAssetAttempt(ctx, path)
+	return c.fetchAsset(ctx, path, true)
 }
 
-func (c *Client) fetchBundleAssetAttempt(ctx context.Context, path string) ([]byte, error) {
+// FetchHubBundleAsset downloads a single asset via the public hub asset-by-path
+// endpoint. This serves as a fallback when the runner asset endpoint fails
+// (e.g. OCI registry unavailable for registry-sourced bundles).
+func (c *Client) FetchHubBundleAsset(ctx context.Context, namespace, slug, logicalPath, version string) ([]byte, error) {
+	path := fmt.Sprintf("/v1/hub/bundles/%s/%s/assets/%s?version=%s",
+		neturl.PathEscape(namespace),
+		neturl.PathEscape(slug),
+		logicalPath,
+		neturl.QueryEscape(version),
+	)
+
+	return c.fetchAsset(ctx, path, false)
+}
+
+func (c *Client) fetchAsset(ctx context.Context, path string, authenticated bool) ([]byte, error) {
 	endpointURL := c.baseURL + path
 
-	req, err := c.newRequest(ctx, "GET", endpointURL, http.NoBody)
+	var (
+		req *http.Request
+		err error
+	)
+
+	if authenticated {
+		req, err = c.newRequest(ctx, "GET", endpointURL, http.NoBody)
+	} else {
+		req, err = c.newPublicRequest(ctx, "GET", endpointURL, http.NoBody)
+	}
+
 	if err != nil {
 		return nil, err
 	}

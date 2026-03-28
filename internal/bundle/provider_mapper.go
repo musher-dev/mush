@@ -34,11 +34,11 @@ func (m *providerMapper) MapAsset(workDir string, layer *client.BundleLayer) (st
 	switch layer.AssetType {
 	case "skill":
 		return filepath.Join(workDir, assets.SkillDir, stripMatchingPrefix(assets.SkillDir, layer.LogicalPath)), nil
-	case "agent_definition":
+	case "agent_definition", "agent_spec":
 		return filepath.Join(workDir, assets.AgentDir, stripMatchingPrefix(assets.AgentDir, layer.LogicalPath)), nil
 	case "tool_config":
 		return filepath.Join(workDir, assets.ToolConfigFile), nil
-	case "other":
+	case "other", "config", "reference", "prompt":
 		return filepath.Join(workDir, layer.LogicalPath), nil
 	default:
 		return "", fmt.Errorf("unsupported asset type for %s: %s", m.spec.Name, layer.AssetType)

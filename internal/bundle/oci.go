@@ -229,12 +229,12 @@ func materializeFromMetadata(
 	return &client.BundleManifest{Layers: layers}, nil
 }
 
-// verifySHA256 verifies that file content matches the expected SHA256 hex digest.
+// VerifySHA256 verifies that file content matches the expected SHA256 hex digest.
 // It returns the (possibly corrected) data. If the hash doesn't match but
 // appending a trailing newline fixes it, the newline-appended data is returned.
 // This works around a server-side bug where the API contentText field strips
 // trailing newlines from uploaded asset content.
-func verifySHA256(data []byte, expectedHex string) ([]byte, error) {
+func VerifySHA256(data []byte, expectedHex string) ([]byte, error) {
 	if expectedHex == "" {
 		return data, nil
 	}
