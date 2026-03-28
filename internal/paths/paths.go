@@ -174,16 +174,6 @@ func HistoryDir() (string, error) {
 	return filepath.Join(root, "history"), nil
 }
 
-// BundleCacheDir returns the bundle cache directory.
-func BundleCacheDir() (string, error) {
-	root, err := cacheRoot()
-	if err != nil {
-		return "", err
-	}
-
-	return filepath.Join(root, "bundles"), nil
-}
-
 // HostIDFromURL returns a filesystem-safe host identifier from an API URL.
 // Default ports (443 for HTTPS, 80 for HTTP) are omitted.
 // Non-default ports are appended with an underscore separator.

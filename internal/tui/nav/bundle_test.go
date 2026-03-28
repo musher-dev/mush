@@ -179,18 +179,12 @@ func TestBundleCacheHitMsg(t *testing.T) {
 	mdl.bundleProgress.slug = "test"
 	mdl.bundleProgress.version = "1.0.0"
 
-	msg := bundleCacheHitMsg{
-		cachePath: "/tmp/cache/test/1.0.0",
-	}
+	msg := bundleCacheHitMsg{}
 
 	mdl = updateModel(mdl, msg)
 
 	if mdl.activeScreen != screenBundleAction {
 		t.Errorf("activeScreen = %d, want screenBundleAction", mdl.activeScreen)
-	}
-
-	if mdl.bundleAction.cachePath != "/tmp/cache/test/1.0.0" {
-		t.Errorf("cachePath = %q, want '/tmp/cache/test/1.0.0'", mdl.bundleAction.cachePath)
 	}
 }
 
@@ -203,7 +197,6 @@ func TestBundleActionEscGoesHome(t *testing.T) {
 		namespace: "acme",
 		slug:      "test",
 		version:   "1.0.0",
-		cachePath: "/tmp/test",
 	}
 
 	// Esc goes home.
@@ -223,7 +216,7 @@ func TestBundleActionRunPushesHarness(t *testing.T) {
 		namespace: "acme",
 		slug:      "test",
 		version:   "1.0.0",
-		cachePath: "/tmp/test",
+
 		buttonIdx: 0, // Run
 	}
 
@@ -248,7 +241,7 @@ func TestBundleActionInstallPushesHarness(t *testing.T) {
 		namespace: "acme",
 		slug:      "test",
 		version:   "1.0.0",
-		cachePath: "/tmp/test",
+
 		buttonIdx: 1, // Install
 	}
 
@@ -273,7 +266,6 @@ func TestBundleActionViewIncludesHelpText(t *testing.T) {
 		namespace: "acme",
 		slug:      "test",
 		version:   "1.0.0",
-		cachePath: "/tmp/test",
 	}
 
 	view := mdl.View()
@@ -303,7 +295,7 @@ func TestBundleActionViewIncludesInstallHelpWhenSelected(t *testing.T) {
 		namespace: "acme",
 		slug:      "test",
 		version:   "1.0.0",
-		cachePath: "/tmp/test",
+
 		buttonIdx: 1,
 	}
 
@@ -334,7 +326,7 @@ func TestBundleHarnessSelectRun(t *testing.T) {
 		namespace: "acme",
 		slug:      "test",
 		version:   "1.0.0",
-		cachePath: "/tmp/test",
+
 		installed: installed,
 	}
 
@@ -380,10 +372,10 @@ func TestBundleHarnessSelectInstall(t *testing.T) {
 	}
 
 	mdl.bundleHarness = bundleHarnessState{
-		namespace:  "acme",
-		slug:       "test",
-		version:    "1.0.0",
-		cachePath:  "/tmp/test",
+		namespace: "acme",
+		slug:      "test",
+		version:   "1.0.0",
+
 		installed:  installed,
 		forInstall: true,
 	}
@@ -406,10 +398,10 @@ func TestBundleInstallConfirmWithoutConflicts(t *testing.T) {
 	mdl := testModel()
 	mdl.pushScreen(screenBundleInstallConfirm)
 	mdl.bundleInstallConfirm = bundleInstallConfirmState{
-		namespace:    "acme",
-		slug:         "test",
-		version:      "1.0.0",
-		cachePath:    "/tmp/test",
+		namespace: "acme",
+		slug:      "test",
+		version:   "1.0.0",
+
 		harness:      "claude",
 		hasConflicts: false,
 		buttonIdx:    0, // Install button
@@ -441,10 +433,10 @@ func TestBundleInstallConfirmWithConflicts(t *testing.T) {
 	mdl := testModel()
 	mdl.pushScreen(screenBundleInstallConfirm)
 	mdl.bundleInstallConfirm = bundleInstallConfirmState{
-		namespace:     "acme",
-		slug:          "test",
-		version:       "1.0.0",
-		cachePath:     "/tmp/test",
+		namespace: "acme",
+		slug:      "test",
+		version:   "1.0.0",
+
 		harness:       "claude",
 		hasConflicts:  true,
 		conflictPaths: []string{"/path/to/conflict"},
@@ -517,7 +509,6 @@ func TestBundleActionScreenFromSeed(t *testing.T) {
 			Namespace: "acme",
 			Slug:      "seeded-kit",
 			Version:   "2.0.0",
-			CachePath: "/tmp/seeded",
 		},
 	}
 
@@ -539,8 +530,8 @@ func TestBundleActionScreenFromSeed(t *testing.T) {
 		t.Errorf("version = %q, want '2.0.0'", mdl.bundleAction.version)
 	}
 
-	if mdl.bundleAction.cachePath != "/tmp/seeded" {
-		t.Errorf("cachePath = %q, want '/tmp/seeded'", mdl.bundleAction.cachePath)
+	if mdl.bundleAction.namespace != "acme" {
+		t.Errorf("namespace = %q, want 'acme'", mdl.bundleAction.namespace)
 	}
 
 	if len(mdl.screenStack) != 1 || mdl.screenStack[0] != screenHome {
@@ -556,7 +547,6 @@ func TestBundleActionScreenSeedEscGoesHome(t *testing.T) {
 			Namespace: "acme",
 			Slug:      "seeded-kit",
 			Version:   "2.0.0",
-			CachePath: "/tmp/seeded",
 		},
 	}
 
@@ -652,7 +642,7 @@ func TestBundleScreenViews(t *testing.T) {
 			screen: screenBundleAction,
 			setup: func(m *model) {
 				m.bundleAction = bundleActionState{
-					slug: "test", version: "1.0.0", cachePath: "/tmp/test",
+					slug: "test", version: "1.0.0",
 				}
 			},
 			check: "Contents",

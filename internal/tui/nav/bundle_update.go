@@ -321,7 +321,6 @@ func (m *model) handleBundleActionKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			namespace:  m.bundleAction.namespace,
 			slug:       m.bundleAction.slug,
 			version:    m.bundleAction.version,
-			cachePath:  m.bundleAction.cachePath,
 			installed:  installed,
 			forInstall: m.bundleAction.buttonIdx == 1,
 		}
@@ -366,7 +365,6 @@ func (m *model) handleBundleHarnessKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				BundleSlug:      m.bundleHarness.slug,
 				BundleVer:       m.bundleHarness.version,
 				Harness:         harness,
-				CachePath:       m.bundleHarness.cachePath,
 			}
 
 			return m, tea.Quit
@@ -382,14 +380,18 @@ func (m *model) handleBundleHarnessKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			namespace: m.bundleHarness.namespace,
 			slug:      m.bundleHarness.slug,
 			version:   m.bundleHarness.version,
-			cachePath: m.bundleHarness.cachePath,
 			harness:   harness,
 			targetDir: workDir,
 		}
 
 		m.pushScreen(screenBundleInstallConfirm)
 
-		return m, cmdCheckInstallConflicts(m.bundleHarness.cachePath, harness, workDir)
+		var navClient *client.Client
+		if m.deps != nil {
+			navClient = m.deps.Client
+		}
+
+		return m, cmdCheckInstallConflicts(m.bundleHarness.namespace, m.bundleHarness.slug, m.bundleHarness.version, harness, workDir, navClient)
 	}
 
 	return m, nil
@@ -439,7 +441,6 @@ func (m *model) handleBundleInstallConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cm
 				BundleSlug:      m.bundleInstallConfirm.slug,
 				BundleVer:       m.bundleInstallConfirm.version,
 				Harness:         m.bundleInstallConfirm.harness,
-				CachePath:       m.bundleInstallConfirm.cachePath,
 				Force:           m.bundleInstallConfirm.force,
 			}
 
@@ -548,24 +549,8 @@ func isForbiddenError(err error) bool {
 }
 
 // handleBundleCacheHit processes a cache hit.
-func (m *model) handleBundleCacheHit(msg bundleCacheHitMsg) (tea.Model, tea.Cmd) {
-	var layers []client.BundleLayer
-	if manifest, err := loadManifestFromCache(msg.cachePath); err == nil {
-		layers = manifest.Manifest.Layers
-	}
-
-	m.bundleAction = bundleActionState{
-		namespace: m.bundleProgress.namespace,
-		slug:      m.bundleProgress.slug,
-		version:   m.bundleProgress.version,
-		cachePath: msg.cachePath,
-		layers:    layers,
-	}
-
-	// Replace progress screen with action choice.
-	m.activeScreen = screenBundleAction
-
-	return m, nil
+func (m *model) handleBundleCacheHit(_ bundleCacheHitMsg) (tea.Model, tea.Cmd) {
+	return m.transitionToBundleAction()
 }
 
 // handleBundleDownloadProgress processes a download progress update.
@@ -578,17 +563,24 @@ func (m *model) handleBundleDownloadProgress(msg bundleDownloadProgressMsg) (tea
 }
 
 // handleBundleDownloadComplete processes download completion.
-func (m *model) handleBundleDownloadComplete(msg bundleDownloadCompleteMsg) (tea.Model, tea.Cmd) {
+func (m *model) handleBundleDownloadComplete(_ bundleDownloadCompleteMsg) (tea.Model, tea.Cmd) {
+	return m.transitionToBundleAction()
+}
+
+// transitionToBundleAction loads manifest layers and moves to the action screen.
+func (m *model) transitionToBundleAction() (tea.Model, tea.Cmd) {
 	var layers []client.BundleLayer
-	if manifest, err := loadManifestFromCache(msg.cachePath); err == nil {
-		layers = manifest.Manifest.Layers
+
+	if m.deps != nil && m.deps.Client != nil {
+		if manifest, err := loadManifestFromStore(m.deps.Client, m.bundleProgress.namespace, m.bundleProgress.slug, m.bundleProgress.version); err == nil {
+			layers = manifest.Manifest.Layers
+		}
 	}
 
 	m.bundleAction = bundleActionState{
 		namespace: m.bundleProgress.namespace,
 		slug:      m.bundleProgress.slug,
 		version:   m.bundleProgress.version,
-		cachePath: msg.cachePath,
 		layers:    layers,
 	}
 

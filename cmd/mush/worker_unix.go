@@ -437,7 +437,7 @@ func resolveBundle(
 	spin := out.Spinner(fmt.Sprintf("Pulling bundle %s", ref.Slug))
 	spin.Start()
 
-	resolved, cachePath, err := bundle.Pull(ctx, c, ref.Namespace, ref.Slug, ref.Version, out)
+	resolved, err := bundle.Pull(ctx, c, ref.Namespace, ref.Slug, ref.Version, out)
 	if err != nil {
 		spin.StopWithFailure(fmt.Sprintf("Failed to pull bundle %s", ref.Slug))
 		logger.Error("bundle pull failed", slog.String("event.type", "worker.bundle.error"), slog.String("error", err.Error()))
@@ -454,7 +454,7 @@ func resolveBundle(
 		return emptySummary, clierrors.Wrap(clierrors.ExitGeneral, "Failed to get working directory", err)
 	}
 
-	installedPaths, installErr := bundle.InstallFromCache(workDir, cachePath, &resolved.Manifest, mapper, true)
+	installedPaths, installErr := bundle.InstallFromCache(workDir, &resolved.Manifest, mapper, true)
 	if installErr != nil {
 		var conflict *bundle.InstallConflictError
 		if errors.As(installErr, &conflict) {

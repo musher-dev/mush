@@ -67,6 +67,6 @@ func stripMatchingPrefix(dir, logicalPath string) string {
 }
 
 // PrepareLoad creates a temp directory with assets in the provider's native structure.
-func (m *providerMapper) PrepareLoad(_ context.Context, cachePath string, manifest *client.BundleManifest) (tmpDir string, cleanup func(), err error) {
-	return prepareLoadCommon(m, cachePath, manifest, nil)
+func (m *providerMapper) PrepareLoad(_ context.Context, manifest *client.BundleManifest) (tmpDir string, cleanup func(), err error) {
+	return prepareLoadCommon(m, manifest, nil)
 }

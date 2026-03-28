@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/musher-dev/mush/internal/client"
@@ -17,79 +18,101 @@ type CachedBundle struct {
 	Namespace  string
 	Slug       string
 	Version    string
+	HostID     string
 	AssetCount int
-	ModTime    time.Time // modification time of the cache directory
+	FetchedAt  time.Time
 }
 
-// ListCached returns all cached bundle versions.
+// ListCached returns all cached bundle versions by walking the manifests/ directory.
 func ListCached() ([]CachedBundle, error) {
-	root := CacheDir()
+	root := filepath.Join(cacheRootDir(), "manifests")
 
-	entries, err := os.ReadDir(root)
+	hostEntries, err := os.ReadDir(root)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil
 		}
 
-		return nil, fmt.Errorf("read cache root: %w", err)
+		return nil, fmt.Errorf("read manifests root: %w", err)
 	}
 
 	var out []CachedBundle
 
-	for _, nsEntry := range entries {
-		if !nsEntry.IsDir() {
+	for _, hostEntry := range hostEntries {
+		if !hostEntry.IsDir() {
 			continue
 		}
 
-		nsPath := filepath.Join(root, nsEntry.Name())
+		hostPath := filepath.Join(root, hostEntry.Name())
 
-		slugDirs, err := os.ReadDir(nsPath)
+		nsEntries, err := os.ReadDir(hostPath)
 		if err != nil {
 			continue
 		}
 
-		for _, slugDir := range slugDirs {
-			if !slugDir.IsDir() {
+		for _, nsEntry := range nsEntries {
+			if !nsEntry.IsDir() {
 				continue
 			}
 
-			slugPath := filepath.Join(nsPath, slugDir.Name())
+			nsPath := filepath.Join(hostPath, nsEntry.Name())
 
-			versionDirs, err := os.ReadDir(slugPath)
+			slugEntries, err := os.ReadDir(nsPath)
 			if err != nil {
 				continue
 			}
 
-			for _, versionDir := range versionDirs {
-				if !versionDir.IsDir() {
+			for _, slugEntry := range slugEntries {
+				if !slugEntry.IsDir() {
 					continue
 				}
 
-				versionPath := filepath.Join(slugPath, versionDir.Name())
-				manifestPath := filepath.Join(versionPath, "manifest.json")
+				slugPath := filepath.Join(nsPath, slugEntry.Name())
 
-				data, err := safeio.ReadFile(manifestPath)
+				versionFiles, err := os.ReadDir(slugPath)
 				if err != nil {
 					continue
 				}
 
-				var manifest client.BundleResolveResponse
-				if err := json.Unmarshal(data, &manifest); err != nil {
-					continue
-				}
+				for _, dirEntry := range versionFiles {
+					if dirEntry.IsDir() || !strings.HasSuffix(dirEntry.Name(), ".json") || strings.HasSuffix(dirEntry.Name(), ".meta.json") {
+						continue
+					}
 
-				var modTime time.Time
-				if info, statErr := os.Stat(versionPath); statErr == nil {
-					modTime = info.ModTime()
-				}
+					version := strings.TrimSuffix(dirEntry.Name(), ".json")
 
-				out = append(out, CachedBundle{
-					Namespace:  nsEntry.Name(),
-					Slug:       slugDir.Name(),
-					Version:    versionDir.Name(),
-					AssetCount: len(manifest.Manifest.Layers),
-					ModTime:    modTime,
-				})
+					data, readErr := safeio.ReadFile(filepath.Join(slugPath, dirEntry.Name()))
+					if readErr != nil {
+						continue
+					}
+
+					var manifest client.BundleResolveResponse
+					if jsonErr := json.Unmarshal(data, &manifest); jsonErr != nil {
+						continue
+					}
+
+					// Try to read FetchedAt from the metadata sidecar.
+					var fetchedAt time.Time
+
+					metaPath := filepath.Join(slugPath, version+".meta.json")
+
+					metaData, metaErr := safeio.ReadFile(metaPath)
+					if metaErr == nil {
+						var meta ManifestMeta
+						if jsonErr := json.Unmarshal(metaData, &meta); jsonErr == nil {
+							fetchedAt = meta.FetchedAt
+						}
+					}
+
+					out = append(out, CachedBundle{
+						Namespace:  nsEntry.Name(),
+						Slug:       slugEntry.Name(),
+						Version:    version,
+						HostID:     hostEntry.Name(),
+						AssetCount: len(manifest.Manifest.Layers),
+						FetchedAt:  fetchedAt,
+					})
+				}
 			}
 		}
 	}
@@ -109,7 +132,7 @@ func ListCached() ([]CachedBundle, error) {
 	return out, nil
 }
 
-// ListCachedByRecency returns cached bundles sorted by directory modification
+// ListCachedByRecency returns cached bundles sorted by FetchedAt
 // time (most recent first).
 func ListCachedByRecency() ([]CachedBundle, error) {
 	all, err := ListCached()
@@ -118,7 +141,7 @@ func ListCachedByRecency() ([]CachedBundle, error) {
 	}
 
 	sort.Slice(all, func(i, j int) bool {
-		return all[i].ModTime.After(all[j].ModTime)
+		return all[i].FetchedAt.After(all[j].FetchedAt)
 	})
 
 	return all, nil

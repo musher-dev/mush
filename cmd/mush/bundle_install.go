@@ -95,7 +95,7 @@ Alternatively, install from a local directory with --dir.`,
 				return clierrors.Wrap(clierrors.ExitGeneral, "Failed to get working directory", err)
 			}
 
-			installedPaths, installErr := bundle.InstallFromCache(workDir, source.CachePath, &source.Resolved.Manifest, mapper, force)
+			installedPaths, installErr := bundle.InstallFromCache(workDir, &source.Resolved.Manifest, mapper, force)
 			if installErr != nil {
 				var conflict *bundle.InstallConflictError
 				if errors.As(installErr, &conflict) {

@@ -1,6 +1,7 @@
 package bundle
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -10,6 +11,9 @@ import (
 )
 
 func TestLoadFromDir_CacheCompatible(t *testing.T) {
+	clearStoreEnv(t)
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+
 	// Create a directory with assets/ subdirectory (cache-compatible layout).
 	dir := t.TempDir()
 	assetsDir := filepath.Join(dir, "assets", "skills", "hello")
@@ -23,12 +27,10 @@ func TestLoadFromDir_CacheCompatible(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	resolved, cachePath, cleanup, err := LoadFromDir(dir)
+	resolved, err := LoadFromDir(dir)
 	if err != nil {
 		t.Fatalf("LoadFromDir() error = %v", err)
 	}
-
-	defer cleanup()
 
 	if resolved.Namespace != "_local" {
 		t.Errorf("Namespace = %q, want %q", resolved.Namespace, "_local")
@@ -36,10 +38,6 @@ func TestLoadFromDir_CacheCompatible(t *testing.T) {
 
 	if resolved.Version != "0.0.0-local" {
 		t.Errorf("Version = %q, want %q", resolved.Version, "0.0.0-local")
-	}
-
-	if cachePath != dir {
-		t.Errorf("cachePath = %q, want %q", cachePath, dir)
 	}
 
 	if len(resolved.Manifest.Layers) != 1 {
@@ -55,13 +53,21 @@ func TestLoadFromDir_CacheCompatible(t *testing.T) {
 		t.Errorf("LogicalPath = %q, want %q", layer.LogicalPath, "skills/hello/SKILL.md")
 	}
 
-	// Verify manifest.json was written.
-	if _, err := os.Stat(filepath.Join(dir, "manifest.json")); err != nil {
-		t.Errorf("manifest.json not written: %v", err)
+	// Verify blob was stored and is readable via ReadAsset.
+	data, readErr := ReadAsset(&layer)
+	if readErr != nil {
+		t.Fatalf("ReadAsset() error = %v", readErr)
+	}
+
+	if !bytes.Equal(data, skillContent) {
+		t.Fatalf("ReadAsset() = %q, want %q", data, skillContent)
 	}
 }
 
 func TestLoadFromDir_CacheCompatibleWithManifest(t *testing.T) {
+	clearStoreEnv(t)
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+
 	// Create a directory with assets/ and pre-existing manifest.json.
 	dir := t.TempDir()
 	assetsDir := filepath.Join(dir, "assets", "skills", "hello")
@@ -70,7 +76,8 @@ func TestLoadFromDir_CacheCompatibleWithManifest(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := os.WriteFile(filepath.Join(assetsDir, "SKILL.md"), []byte("# Hello\n"), 0o644); err != nil {
+	skillContent := []byte("# Hello\n")
+	if err := os.WriteFile(filepath.Join(assetsDir, "SKILL.md"), skillContent, 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -81,7 +88,7 @@ func TestLoadFromDir_CacheCompatibleWithManifest(t *testing.T) {
 		Version:   "1.2.3",
 		Manifest: client.BundleManifest{
 			Layers: []client.BundleLayer{
-				{LogicalPath: "skills/hello/SKILL.md", AssetType: "skill"},
+				{LogicalPath: "skills/hello/SKILL.md", AssetType: "skill", ContentSHA256: sha256Hex(skillContent)},
 			},
 		},
 	}
@@ -91,12 +98,10 @@ func TestLoadFromDir_CacheCompatibleWithManifest(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	resolved, _, cleanup, err := LoadFromDir(dir)
+	resolved, err := LoadFromDir(dir)
 	if err != nil {
 		t.Fatalf("LoadFromDir() error = %v", err)
 	}
-
-	defer cleanup()
 
 	// Should use pre-existing manifest values.
 	if resolved.Version != "1.2.3" {
@@ -109,6 +114,9 @@ func TestLoadFromDir_CacheCompatibleWithManifest(t *testing.T) {
 }
 
 func TestLoadFromDir_BareDirectory(t *testing.T) {
+	clearStoreEnv(t)
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+
 	// Create a bare directory without assets/ subdirectory.
 	dir := t.TempDir()
 	skillsDir := filepath.Join(dir, "skills", "greet")
@@ -117,57 +125,39 @@ func TestLoadFromDir_BareDirectory(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := os.WriteFile(filepath.Join(skillsDir, "SKILL.md"), []byte("# Greet\n"), 0o644); err != nil {
+	skillContent := []byte("# Greet\n")
+	if err := os.WriteFile(filepath.Join(skillsDir, "SKILL.md"), skillContent, 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	resolved, cachePath, cleanup, err := LoadFromDir(dir)
+	resolved, err := LoadFromDir(dir)
 	if err != nil {
 		t.Fatalf("LoadFromDir() error = %v", err)
 	}
 
-	defer cleanup()
-
 	if resolved.Namespace != "_local" {
 		t.Errorf("Namespace = %q, want %q", resolved.Namespace, "_local")
-	}
-
-	// cachePath should be a temp dir, not the original dir.
-	if cachePath == dir {
-		t.Error("cachePath should be a temp dir for bare layout, got original dir")
-	}
-
-	// Verify the symlinked asset exists in the cache structure.
-	assetPath := filepath.Join(cachePath, "assets", "skills", "greet", "SKILL.md")
-	if _, lstatErr := os.Lstat(assetPath); lstatErr != nil {
-		t.Errorf("symlinked asset not found: %v", lstatErr)
-	}
-
-	// Verify the symlink target.
-	target, linkErr := os.Readlink(assetPath)
-	if linkErr != nil {
-		t.Errorf("readlink failed: %v", linkErr)
-	}
-
-	expectedTarget := filepath.Join(dir, "skills", "greet", "SKILL.md")
-	if target != expectedTarget {
-		t.Errorf("symlink target = %q, want %q", target, expectedTarget)
 	}
 
 	if len(resolved.Manifest.Layers) != 1 {
 		t.Fatalf("got %d layers, want 1", len(resolved.Manifest.Layers))
 	}
 
-	// Cleanup should remove the temp dir.
-	cleanup()
+	// Verify the asset is readable via ReadAsset.
+	layer := resolved.Manifest.Layers[0]
 
-	if _, err := os.Stat(cachePath); !os.IsNotExist(err) {
-		t.Errorf("cleanup did not remove temp dir %s", cachePath)
+	data, readErr := ReadAsset(&layer)
+	if readErr != nil {
+		t.Fatalf("ReadAsset() error = %v", readErr)
+	}
+
+	if !bytes.Equal(data, skillContent) {
+		t.Fatalf("ReadAsset() = %q, want %q", data, skillContent)
 	}
 }
 
 func TestLoadFromDir_MissingDir(t *testing.T) {
-	_, _, _, err := LoadFromDir("/nonexistent/path")
+	_, err := LoadFromDir("/nonexistent/path")
 	if err == nil {
 		t.Fatal("expected error for missing directory")
 	}
@@ -181,26 +171,32 @@ func TestLoadFromDir_NotADirectory(t *testing.T) {
 
 	f.Close()
 
-	_, _, _, err = LoadFromDir(f.Name())
+	_, err = LoadFromDir(f.Name())
 	if err == nil {
 		t.Fatal("expected error for non-directory path")
 	}
 }
 
 func TestLoadFromDir_EmptyAssetsDir(t *testing.T) {
+	clearStoreEnv(t)
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+
 	dir := t.TempDir()
 
 	if err := os.MkdirAll(filepath.Join(dir, "assets"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 
-	_, _, _, err := LoadFromDir(dir)
+	_, err := LoadFromDir(dir)
 	if err == nil {
 		t.Fatal("expected error for empty assets directory")
 	}
 }
 
 func TestLoadFromDir_EmptyBareDir(t *testing.T) {
+	clearStoreEnv(t)
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+
 	dir := t.TempDir()
 
 	// Write a non-bundle file.
@@ -208,7 +204,7 @@ func TestLoadFromDir_EmptyBareDir(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, _, _, err := LoadFromDir(dir)
+	_, err := LoadFromDir(dir)
 	if err == nil {
 		t.Fatal("expected error for directory with no recognized assets")
 	}

@@ -15,7 +15,6 @@ import (
 // It performs merge semantics for tool_config assets.
 func InstallFromCache(
 	workDir string,
-	cachePath string,
 	manifest *client.BundleManifest,
 	mapper AssetMapper,
 	force bool,
@@ -34,9 +33,7 @@ func InstallFromCache(
 			return nil, fmt.Errorf("map asset %s: %w", layer.LogicalPath, mapErr)
 		}
 
-		srcPath := filepath.Join(cachePath, "assets", layer.LogicalPath)
-
-		data, readErr := safeio.ReadFile(srcPath)
+		data, readErr := ReadAsset(&layer)
 		if readErr != nil {
 			return nil, fmt.Errorf("read cached asset %s: %w", layer.LogicalPath, readErr)
 		}
@@ -134,7 +131,7 @@ var discoveredAssetTypes = map[string]bool{
 // directories it created.
 // On error the returned cleanup removes any files and directories already created.
 func InjectAssetsForLoad(
-	projectDir, cachePath string,
+	projectDir string,
 	manifest *client.BundleManifest,
 	mapper AssetMapper,
 ) (injected, warnings []string, cleanup func(), err error) {
@@ -172,9 +169,7 @@ func InjectAssetsForLoad(
 			return nil, nil, makeCleanup(), fmt.Errorf("stat target asset %s: %w", layer.LogicalPath, statErr)
 		}
 
-		srcPath := filepath.Join(cachePath, "assets", layer.LogicalPath)
-
-		data, readErr := safeio.ReadFile(srcPath)
+		data, readErr := ReadAsset(&layer)
 		if readErr != nil {
 			return nil, nil, makeCleanup(), fmt.Errorf("read cached asset %s: %w", layer.LogicalPath, readErr)
 		}
@@ -244,7 +239,7 @@ func InjectAssetsForLoad(
 // CWD, not from --add-dir paths). Any existing file at the target path is
 // backed up and restored by the returned cleanup function.
 func InjectToolConfigsForLoad(
-	projectDir, cachePath string,
+	projectDir string,
 	manifest *client.BundleManifest,
 	mapper AssetMapper,
 ) (injected []string, cleanup func(), err error) {
@@ -288,9 +283,7 @@ func InjectToolConfigsForLoad(
 			return nil, makeCleanup(), fmt.Errorf("map asset %s: %w", layer.LogicalPath, mapErr)
 		}
 
-		srcPath := filepath.Join(cachePath, "assets", layer.LogicalPath)
-
-		data, readErr := safeio.ReadFile(srcPath)
+		data, readErr := ReadAsset(&layer)
 		if readErr != nil {
 			return nil, makeCleanup(), fmt.Errorf("read cached asset %s: %w", layer.LogicalPath, readErr)
 		}

@@ -173,7 +173,6 @@ type bundleActionState struct {
 	namespace string
 	slug      string
 	version   string
-	cachePath string
 	buttonIdx int                  // 0=Run, 1=Install
 	layers    []client.BundleLayer // asset manifest layers
 }
@@ -183,7 +182,6 @@ type bundleHarnessState struct {
 	namespace  string
 	slug       string
 	version    string
-	cachePath  string
 	cursor     int   // selected index within installed list
 	installed  []int // indices into model.harnesses for installed harnesses
 	forInstall bool  // true=Install path, false=Run path
@@ -194,7 +192,6 @@ type bundleInstallConfirmState struct {
 	namespace     string
 	slug          string
 	version       string
-	cachePath     string
 	harness       string
 	hasConflicts  bool     // true if existing files detected
 	force         bool     // overwrite toggle (only shown if hasConflicts)
@@ -568,15 +565,17 @@ func newModel(ctx context.Context, deps *Dependencies) *model {
 	// If a bundle seed is provided, start directly at the action screen.
 	if deps != nil && deps.InitialBundle != nil {
 		var layers []client.BundleLayer
-		if manifest, err := loadManifestFromCache(deps.InitialBundle.CachePath); err == nil {
-			layers = manifest.Manifest.Layers
+
+		if deps.Client != nil {
+			if manifest, err := loadManifestFromStore(deps.Client, deps.InitialBundle.Namespace, deps.InitialBundle.Slug, deps.InitialBundle.Version); err == nil {
+				layers = manifest.Manifest.Layers
+			}
 		}
 
 		mdl.bundleAction = bundleActionState{
 			namespace: deps.InitialBundle.Namespace,
 			slug:      deps.InitialBundle.Slug,
 			version:   deps.InitialBundle.Version,
-			cachePath: deps.InitialBundle.CachePath,
 			layers:    layers,
 		}
 		mdl.activeScreen = screenBundleAction

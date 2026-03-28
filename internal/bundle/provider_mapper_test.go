@@ -10,40 +10,29 @@ import (
 )
 
 func TestProviderMapper_PrepareLoad_Claude(t *testing.T) {
+	clearStoreEnv(t)
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+
 	spec, ok := harness.GetProvider("claude")
 	if !ok {
 		t.Fatal("claude provider not found")
 	}
 
 	mapper := NewProviderMapper(spec)
-	cacheDir := t.TempDir()
 
-	assetsDir := filepath.Join(cacheDir, "assets")
-
-	write := func(rel, data string) {
-		path := filepath.Join(assetsDir, rel)
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			t.Fatalf("MkdirAll(%s) error = %v", rel, err)
-		}
-
-		if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
-			t.Fatalf("WriteFile(%s) error = %v", rel, err)
-		}
-	}
-
-	write("skills/web/SKILL.md", "skill content")
-	write("researcher.md", "agent content")
-	write("mcp.json", `{"mcpServers":{}}`)
+	skillDigest := storeTestAsset(t, "skill content")
+	agentDigest := storeTestAsset(t, "agent content")
+	toolDigest := storeTestAsset(t, `{"mcpServers":{}}`)
 
 	manifest := &client.BundleManifest{
 		Layers: []client.BundleLayer{
-			{LogicalPath: "skills/web/SKILL.md", AssetType: "skill"},
-			{LogicalPath: "researcher.md", AssetType: "agent_definition"},
-			{LogicalPath: "mcp.json", AssetType: "tool_config"},
+			{LogicalPath: "skills/web/SKILL.md", AssetType: "skill", ContentSHA256: skillDigest},
+			{LogicalPath: "researcher.md", AssetType: "agent_definition", ContentSHA256: agentDigest},
+			{LogicalPath: "mcp.json", AssetType: "tool_config", ContentSHA256: toolDigest},
 		},
 	}
 
-	tmpDir, cleanup, err := mapper.PrepareLoad(t.Context(), cacheDir, manifest)
+	tmpDir, cleanup, err := mapper.PrepareLoad(t.Context(), manifest)
 	if err != nil {
 		t.Fatalf("PrepareLoad error = %v", err)
 	}
@@ -63,9 +52,9 @@ func TestProviderMapper_PrepareLoad_Claude(t *testing.T) {
 	// tool_config should still be present in tmpDir.
 	toolPath := filepath.Join(tmpDir, ".mcp.json")
 
-	data, err := os.ReadFile(toolPath)
-	if err != nil {
-		t.Fatalf("ReadFile(tool_config) error = %v; tool_config should remain in tmpDir", err)
+	data, readErr := os.ReadFile(toolPath)
+	if readErr != nil {
+		t.Fatalf("ReadFile(tool_config) error = %v; tool_config should remain in tmpDir", readErr)
 	}
 
 	if len(data) == 0 {
@@ -74,38 +63,27 @@ func TestProviderMapper_PrepareLoad_Claude(t *testing.T) {
 }
 
 func TestProviderMapper_PrepareLoad_Claude_WithOtherAsset(t *testing.T) {
+	clearStoreEnv(t)
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+
 	spec, ok := harness.GetProvider("claude")
 	if !ok {
 		t.Fatal("claude provider not found")
 	}
 
 	mapper := NewProviderMapper(spec)
-	cacheDir := t.TempDir()
 
-	assetsDir := filepath.Join(cacheDir, "assets")
-
-	write := func(rel, data string) {
-		path := filepath.Join(assetsDir, rel)
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			t.Fatalf("MkdirAll(%s) error = %v", rel, err)
-		}
-
-		if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
-			t.Fatalf("WriteFile(%s) error = %v", rel, err)
-		}
-	}
-
-	write("skills/writing/SKILL.md", "skill content")
-	write("skills/writing/references/format.md", "reference content")
+	skillDigest := storeTestAsset(t, "skill content")
+	refDigest := storeTestAsset(t, "reference content")
 
 	manifest := &client.BundleManifest{
 		Layers: []client.BundleLayer{
-			{LogicalPath: "skills/writing/SKILL.md", AssetType: "skill"},
-			{LogicalPath: "skills/writing/references/format.md", AssetType: "other"},
+			{LogicalPath: "skills/writing/SKILL.md", AssetType: "skill", ContentSHA256: skillDigest},
+			{LogicalPath: "skills/writing/references/format.md", AssetType: "other", ContentSHA256: refDigest},
 		},
 	}
 
-	tmpDir, cleanup, err := mapper.PrepareLoad(t.Context(), cacheDir, manifest)
+	tmpDir, cleanup, err := mapper.PrepareLoad(t.Context(), manifest)
 	if err != nil {
 		t.Fatalf("PrepareLoad error = %v", err)
 	}
@@ -122,9 +100,9 @@ func TestProviderMapper_PrepareLoad_Claude_WithOtherAsset(t *testing.T) {
 		t.Fatalf("other asset should be materialized at logical path: %v", statErr)
 	}
 
-	data, err := os.ReadFile(otherPath)
-	if err != nil {
-		t.Fatalf("ReadFile(other) error = %v", err)
+	data, readErr := os.ReadFile(otherPath)
+	if readErr != nil {
+		t.Fatalf("ReadFile(other) error = %v", readErr)
 	}
 
 	if string(data) != "reference content" {
@@ -156,40 +134,29 @@ func TestStripMatchingPrefix(t *testing.T) {
 }
 
 func TestProviderMapper_PrepareLoad_Codex(t *testing.T) {
+	clearStoreEnv(t)
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+
 	spec, ok := harness.GetProvider("codex")
 	if !ok {
 		t.Fatal("codex provider not found")
 	}
 
 	mapper := NewProviderMapper(spec)
-	cacheDir := t.TempDir()
 
-	assetsDir := filepath.Join(cacheDir, "assets")
-
-	write := func(rel, data string) {
-		path := filepath.Join(assetsDir, rel)
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			t.Fatalf("MkdirAll(%s) error = %v", rel, err)
-		}
-
-		if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
-			t.Fatalf("WriteFile(%s) error = %v", rel, err)
-		}
-	}
-
-	write("researcher.md", "Agent A")
-	write("reviewer.md", "Agent B")
-	write("tools/mcp.toml", "[mcp_servers.test]\ncommand = \"test\"\n")
+	agentADigest := storeTestAsset(t, "Agent A")
+	agentBDigest := storeTestAsset(t, "Agent B")
+	toolDigest := storeTestAsset(t, "[mcp_servers.test]\ncommand = \"test\"\n")
 
 	manifest := &client.BundleManifest{
 		Layers: []client.BundleLayer{
-			{LogicalPath: "researcher.md", AssetType: "agent_definition"},
-			{LogicalPath: "reviewer.md", AssetType: "agent_definition"},
-			{LogicalPath: "tools/mcp.toml", AssetType: "tool_config"},
+			{LogicalPath: "researcher.md", AssetType: "agent_definition", ContentSHA256: agentADigest},
+			{LogicalPath: "reviewer.md", AssetType: "agent_definition", ContentSHA256: agentBDigest},
+			{LogicalPath: "tools/mcp.toml", AssetType: "tool_config", ContentSHA256: toolDigest},
 		},
 	}
 
-	tmpDir, cleanup, err := mapper.PrepareLoad(t.Context(), cacheDir, manifest)
+	tmpDir, cleanup, err := mapper.PrepareLoad(t.Context(), manifest)
 	if err != nil {
 		t.Fatalf("PrepareLoad error = %v", err)
 	}
@@ -206,9 +173,9 @@ func TestProviderMapper_PrepareLoad_Codex(t *testing.T) {
 	// tool_config should still be present in tmpDir.
 	toolPath := filepath.Join(tmpDir, ".codex", "config.toml")
 
-	data, err := os.ReadFile(toolPath)
-	if err != nil {
-		t.Fatalf("ReadFile(tool_config) error = %v; tool_config should remain in tmpDir", err)
+	data, readErr := os.ReadFile(toolPath)
+	if readErr != nil {
+		t.Fatalf("ReadFile(tool_config) error = %v; tool_config should remain in tmpDir", readErr)
 	}
 
 	if len(data) == 0 {

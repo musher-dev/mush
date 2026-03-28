@@ -15,22 +15,23 @@ import (
 // LoadFromDir loads a bundle from a local directory, bypassing the API.
 // It supports two layouts:
 //   - Cache-compatible: directory contains an assets/ subdirectory
-//   - Bare: directory contains files directly (symlinked into a temp cache structure)
+//   - Bare: directory contains files directly
 //
-// Returns the synthetic resolve response, cache path, cleanup function, and any error.
-func LoadFromDir(dirPath string) (resolved *client.BundleResolveResponse, cachePath string, cleanup func(), err error) {
+// Each scanned asset is stored as a blob so that ReadAsset works.
+// Returns the synthetic resolve response and any error.
+func LoadFromDir(dirPath string) (resolved *client.BundleResolveResponse, err error) {
 	info, err := os.Stat(dirPath)
 	if err != nil {
-		return nil, "", nil, fmt.Errorf("directory not found: %w", err)
+		return nil, fmt.Errorf("directory not found: %w", err)
 	}
 
 	if !info.IsDir() {
-		return nil, "", nil, fmt.Errorf("not a directory: %s", dirPath)
+		return nil, fmt.Errorf("not a directory: %s", dirPath)
 	}
 
 	absDir, err := filepath.Abs(dirPath)
 	if err != nil {
-		return nil, "", nil, fmt.Errorf("resolve absolute path: %w", err)
+		return nil, fmt.Errorf("resolve absolute path: %w", err)
 	}
 
 	assetsDir := filepath.Join(absDir, "assets")
@@ -43,104 +44,93 @@ func LoadFromDir(dirPath string) (resolved *client.BundleResolveResponse, cacheP
 }
 
 // loadCacheCompatible handles directories that already have assets/ layout.
-func loadCacheCompatible(absDir, assetsDir string) (resolved *client.BundleResolveResponse, cachePath string, cleanup func(), err error) {
+func loadCacheCompatible(absDir, assetsDir string) (resolved *client.BundleResolveResponse, err error) {
 	// Check for existing manifest.json.
 	manifestPath := filepath.Join(absDir, "manifest.json")
 	if _, statErr := os.Stat(manifestPath); statErr == nil {
 		// Read existing manifest.
 		data, readErr := safeio.ReadFile(manifestPath)
 		if readErr != nil {
-			return nil, "", nil, fmt.Errorf("read manifest.json: %w", readErr)
+			return nil, fmt.Errorf("read manifest.json: %w", readErr)
 		}
 
 		var resolved client.BundleResolveResponse
 		if jsonErr := decodeJSONBytes(data, &resolved); jsonErr != nil {
-			return nil, "", nil, fmt.Errorf("parse manifest.json: %w", jsonErr)
+			return nil, fmt.Errorf("parse manifest.json: %w", jsonErr)
 		}
 
-		return &resolved, absDir, func() {}, nil
+		// Store blobs for all layers so ReadAsset works.
+		if storeErr := storeBlobsFromAssetsDir(assetsDir, resolved.Manifest.Layers); storeErr != nil {
+			return nil, storeErr
+		}
+
+		return &resolved, nil
 	}
 
 	// No manifest — scan assets/ to build one.
 	layers, err := scanAssetsDir(assetsDir)
 	if err != nil {
-		return nil, "", nil, err
+		return nil, err
 	}
 
 	if len(layers) == 0 {
-		return nil, "", nil, fmt.Errorf("no recognized bundle assets found in %s", assetsDir)
+		return nil, fmt.Errorf("no recognized bundle assets found in %s", assetsDir)
 	}
 
 	resolved = syntheticResolveResponse(filepath.Base(absDir), layers)
 
-	// Write manifest for future cache hits.
-	if wErr := writeManifest(absDir, resolved); wErr != nil {
-		return nil, "", nil, fmt.Errorf("write manifest: %w", wErr)
-	}
-
-	return resolved, absDir, func() {}, nil
+	return resolved, nil
 }
 
-// loadBareDir handles directories without assets/ layout by creating a temp cache structure.
-func loadBareDir(absDir string) (resolved *client.BundleResolveResponse, cachePath string, cleanup func(), err error) {
-	// Scan the directory for recognizable assets.
-	layers, filePaths, err := scanBareDir(absDir)
+// loadBareDir handles directories without assets/ layout.
+func loadBareDir(absDir string) (resolved *client.BundleResolveResponse, err error) {
+	layers, err := scanBareDirAndStoreBlobs(absDir)
 	if err != nil {
-		return nil, "", nil, err
+		return nil, err
 	}
 
 	if len(layers) == 0 {
-		return nil, "", nil, fmt.Errorf("no recognized bundle assets found in %s", absDir)
-	}
-
-	// Create temp dir with cache structure.
-	tmpDir, err := os.MkdirTemp("", "mush-local-bundle-*")
-	if err != nil {
-		return nil, "", nil, fmt.Errorf("create temp dir: %w", err)
-	}
-
-	cleanup = func() { _ = os.RemoveAll(tmpDir) }
-
-	assetsDir := filepath.Join(tmpDir, "assets")
-
-	for i, layer := range layers {
-		destPath := filepath.Join(assetsDir, layer.LogicalPath)
-
-		if mkErr := safeio.MkdirAll(filepath.Dir(destPath), 0o755); mkErr != nil {
-			cleanup()
-			return nil, "", nil, fmt.Errorf("create asset dir: %w", mkErr)
-		}
-
-		if linkErr := os.Symlink(filePaths[i], destPath); linkErr != nil {
-			cleanup()
-			return nil, "", nil, fmt.Errorf("symlink asset %s: %w", layer.LogicalPath, linkErr)
-		}
+		return nil, fmt.Errorf("no recognized bundle assets found in %s", absDir)
 	}
 
 	resolved = syntheticResolveResponse(filepath.Base(absDir), layers)
 
-	if wErr := writeManifest(tmpDir, resolved); wErr != nil {
-		cleanup()
-		return nil, "", nil, fmt.Errorf("write manifest: %w", wErr)
-	}
-
-	return resolved, tmpDir, cleanup, nil
+	return resolved, nil
 }
 
-// scanAssetsDir walks an assets/ directory and builds BundleLayers.
-func scanAssetsDir(assetsDir string) ([]client.BundleLayer, error) {
+// storeBlobsFromAssetsDir stores blobs for each layer from an assets/ directory.
+func storeBlobsFromAssetsDir(assetsDir string, layers []client.BundleLayer) error {
+	for _, layer := range layers {
+		srcPath := filepath.Join(assetsDir, layer.LogicalPath)
+
+		data, readErr := safeio.ReadFile(srcPath)
+		if readErr != nil {
+			continue // skip missing files
+		}
+
+		if _, blobErr := StoreBlob(data); blobErr != nil {
+			return fmt.Errorf("store blob for %s: %w", layer.LogicalPath, blobErr)
+		}
+	}
+
+	return nil
+}
+
+// walkDirAndStoreBlobs is a common helper for scanning directories and storing blobs.
+// It walks the directory, infers asset types, builds layers, and stores each asset as a blob.
+func walkDirAndStoreBlobs(baseDir string) ([]client.BundleLayer, error) {
 	var layers []client.BundleLayer
 
-	err := filepath.WalkDir(assetsDir, func(path string, d os.DirEntry, walkErr error) error {
+	err := filepath.WalkDir(baseDir, func(path string, dirEntry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
 
-		if d.IsDir() {
+		if dirEntry.IsDir() {
 			return nil
 		}
 
-		relPath, relErr := filepath.Rel(assetsDir, path)
+		relPath, relErr := filepath.Rel(baseDir, path)
 		if relErr != nil {
 			return fmt.Errorf("relative path: %w", relErr)
 		}
@@ -150,7 +140,7 @@ func scanAssetsDir(assetsDir string) ([]client.BundleLayer, error) {
 			return nil // skip unrecognized files
 		}
 
-		layer, layerErr := buildLayer(path, relPath, assetType)
+		layer, layerErr := buildLayerAndStoreBlob(path, relPath, assetType)
 		if layerErr != nil {
 			return layerErr
 		}
@@ -160,54 +150,20 @@ func scanAssetsDir(assetsDir string) ([]client.BundleLayer, error) {
 		return nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf("scan assets directory: %w", err)
+		return nil, fmt.Errorf("scan directory: %w", err)
 	}
 
 	return layers, nil
 }
 
-// scanBareDir walks a bare directory (no assets/ subdirectory) and builds BundleLayers.
-// Returns layers and the corresponding absolute file paths.
-func scanBareDir(dir string) ([]client.BundleLayer, []string, error) {
-	var (
-		layers    []client.BundleLayer
-		filePaths []string
-	)
+// scanAssetsDir walks an assets/ directory and builds BundleLayers, storing blobs.
+func scanAssetsDir(assetsDir string) ([]client.BundleLayer, error) {
+	return walkDirAndStoreBlobs(assetsDir)
+}
 
-	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-
-		if d.IsDir() {
-			return nil
-		}
-
-		relPath, relErr := filepath.Rel(dir, path)
-		if relErr != nil {
-			return fmt.Errorf("relative path: %w", relErr)
-		}
-
-		assetType := inferAssetType(relPath)
-		if assetType == "" {
-			return nil // skip unrecognized files
-		}
-
-		layer, layerErr := buildLayer(path, relPath, assetType)
-		if layerErr != nil {
-			return layerErr
-		}
-
-		layers = append(layers, layer)
-		filePaths = append(filePaths, path)
-
-		return nil
-	})
-	if err != nil {
-		return nil, nil, fmt.Errorf("scan directory: %w", err)
-	}
-
-	return layers, filePaths, nil
+// scanBareDirAndStoreBlobs walks a bare directory and builds BundleLayers, storing blobs.
+func scanBareDirAndStoreBlobs(dir string) ([]client.BundleLayer, error) {
+	return walkDirAndStoreBlobs(dir)
 }
 
 // inferAssetType determines the asset type from a relative path.
@@ -229,19 +185,24 @@ func inferAssetType(relPath string) string {
 	}
 }
 
-// buildLayer creates a BundleLayer from a file on disk.
-func buildLayer(absPath, logicalPath, assetType string) (client.BundleLayer, error) {
+// buildLayerAndStoreBlob creates a BundleLayer from a file on disk and stores it as a blob.
+func buildLayerAndStoreBlob(absPath, logicalPath, assetType string) (client.BundleLayer, error) {
 	data, err := safeio.ReadFile(absPath)
 	if err != nil {
 		return client.BundleLayer{}, fmt.Errorf("read %s: %w", logicalPath, err)
 	}
 
 	hash := sha256.Sum256(data)
+	digest := fmt.Sprintf("%x", hash)
+
+	if _, blobErr := StoreBlob(data); blobErr != nil {
+		return client.BundleLayer{}, fmt.Errorf("store blob for %s: %w", logicalPath, blobErr)
+	}
 
 	return client.BundleLayer{
 		LogicalPath:   logicalPath,
 		AssetType:     assetType,
-		ContentSHA256: fmt.Sprintf("%x", hash),
+		ContentSHA256: digest,
 		SizeBytes:     int64(len(data)),
 	}, nil
 }

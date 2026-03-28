@@ -2,17 +2,16 @@ package nav
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/musher-dev/mush/internal/bundle"
 	"github.com/musher-dev/mush/internal/client"
 	harnesslib "github.com/musher-dev/mush/internal/harness"
-	"github.com/musher-dev/mush/internal/safeio"
+	"github.com/musher-dev/mush/internal/paths"
 )
 
 // --- Message types ---
@@ -34,9 +33,7 @@ type bundleResolveErrorMsg struct {
 }
 
 // bundleCacheHitMsg indicates the bundle is already cached.
-type bundleCacheHitMsg struct {
-	cachePath string
-}
+type bundleCacheHitMsg struct{}
 
 // bundleDownloadProgressMsg reports download progress.
 type bundleDownloadProgressMsg struct {
@@ -46,9 +43,7 @@ type bundleDownloadProgressMsg struct {
 }
 
 // bundleDownloadCompleteMsg indicates download is complete.
-type bundleDownloadCompleteMsg struct {
-	cachePath string
-}
+type bundleDownloadCompleteMsg struct{}
 
 // bundleDownloadErrorMsg carries a download error.
 type bundleDownloadErrorMsg struct {
@@ -81,7 +76,7 @@ func cmdLoadBundleLists(workDir string) tea.Cmd {
 					namespace: c.Namespace,
 					slug:      c.Slug,
 					version:   c.Version,
-					timeAgo:   formatTimeAgo(c.ModTime),
+					timeAgo:   formatTimeAgo(c.FetchedAt),
 				})
 			}
 		}
@@ -132,7 +127,7 @@ func cmdResolveBundle(ctx context.Context, c *client.Client, namespace, slug, ve
 	}
 }
 
-// cmdCheckBundleCache checks if the bundle is cached; if so, returns a cache hit.
+// cmdCheckBundleCache checks if the bundle is cached (manifest + all blobs); if so, returns a cache hit.
 // Otherwise, starts downloading assets.
 func cmdCheckBundleCache(ctx context.Context, deps *Dependencies, namespace, slug, version string) tea.Cmd {
 	return func() tea.Msg {
@@ -142,10 +137,13 @@ func cmdCheckBundleCache(ctx context.Context, deps *Dependencies, namespace, slu
 			}
 		}
 
-		// Check cache.
-		if bundle.IsCached(namespace, slug, version) {
-			return bundleCacheHitMsg{
-				cachePath: bundle.CachePath(namespace, slug, version),
+		hostID := paths.HostIDFromURL(deps.Client.BaseURL())
+
+		// Check cache: manifest exists + all blobs present.
+		if bundle.HasManifest(hostID, namespace, slug, version) {
+			manifest, loadErr := bundle.LoadManifest(hostID, namespace, slug, version)
+			if loadErr == nil && bundle.HasAllBlobs(&manifest.Manifest) {
+				return bundleCacheHitMsg{}
 			}
 		}
 
@@ -159,26 +157,20 @@ func cmdCheckBundleCache(ctx context.Context, deps *Dependencies, namespace, slu
 			}
 		}
 
-		// Download assets inline (returns progress messages via a channel would
-		// be ideal, but for simplicity we do a blocking download and return completion).
-		cachePath := bundle.CachePath(namespace, slug, resolved.Version)
-
-		if err := downloadBundle(resolveCtx, deps.Client, resolved, cachePath); err != nil {
+		if err := downloadBundle(resolveCtx, deps.Client, resolved); err != nil {
 			return bundleDownloadErrorMsg{
 				err: err,
 			}
 		}
 
-		return bundleDownloadCompleteMsg{
-			cachePath: cachePath,
-		}
+		return bundleDownloadCompleteMsg{}
 	}
 }
 
 // cmdCheckInstallConflicts checks which target files already exist in workDir.
-func cmdCheckInstallConflicts(cachePath, harnessName, workDir string) tea.Cmd {
+func cmdCheckInstallConflicts(namespace, slug, version, harnessName, workDir string, c *client.Client) tea.Cmd {
 	return func() tea.Msg {
-		manifest, err := loadManifestFromCache(cachePath)
+		manifest, err := loadManifestFromStore(c, namespace, slug, version)
 		if err != nil {
 			return bundleInstallConflictsMsg{}
 		}
@@ -210,30 +202,28 @@ func cmdCheckInstallConflicts(cachePath, harnessName, workDir string) tea.Cmd {
 	}
 }
 
-// loadManifestFromCache reads and parses the manifest.json from the cache directory.
-func loadManifestFromCache(cachePath string) (*client.BundleResolveResponse, error) {
-	manifestPath := filepath.Join(cachePath, "manifest.json")
+// loadManifestFromStore reads a manifest from the content-addressable store.
+func loadManifestFromStore(c *client.Client, namespace, slug, version string) (*client.BundleResolveResponse, error) {
+	var hostID string
+	if c != nil {
+		hostID = paths.HostIDFromURL(c.BaseURL())
+	}
 
-	data, err := safeio.ReadFile(manifestPath)
+	resolved, err := bundle.LoadManifest(hostID, namespace, slug, version)
 	if err != nil {
-		return nil, fmt.Errorf("read %s: %w", manifestPath, err)
+		return nil, fmt.Errorf("load manifest from store: %w", err)
 	}
 
-	var resolved client.BundleResolveResponse
-	if err := json.Unmarshal(data, &resolved); err != nil {
-		return nil, fmt.Errorf("parse manifest: %w", err)
-	}
-
-	return &resolved, nil
+	return resolved, nil
 }
 
-// downloadBundle downloads all assets and writes them to the cache.
+// downloadBundle downloads all assets and stores them as blobs.
 // It tries the single-request pull endpoint first, falling back to per-asset download.
-func downloadBundle(ctx context.Context, c *client.Client, resolved *client.BundleResolveResponse, cachePath string) error {
+func downloadBundle(ctx context.Context, c *client.Client, resolved *client.BundleResolveResponse) error {
 	// Try single-request pull endpoint first.
 	pullResp, pullErr := c.PullBundle(ctx, resolved.Namespace, resolved.Slug, resolved.Version)
 	if pullErr == nil && len(pullResp.Manifest) > 0 {
-		return downloadBundleFromPull(resolved, pullResp, cachePath)
+		return downloadBundleFromPull(resolved, pullResp, c)
 	}
 
 	// Fallback: per-asset download.
@@ -241,32 +231,10 @@ func downloadBundle(ctx context.Context, c *client.Client, resolved *client.Bund
 		return fmt.Errorf("bundle has no downloadable assets")
 	}
 
-	return downloadBundlePerAsset(ctx, c, resolved, cachePath)
+	return downloadBundlePerAsset(ctx, c, resolved)
 }
 
-func downloadBundleFromPull(resolved *client.BundleResolveResponse, pullResp *client.PullBundleResponse, cachePath string) error {
-	if err := os.MkdirAll(filepath.Dir(cachePath), 0o700); err != nil {
-		return fmt.Errorf("create cache parent: %w", err)
-	}
-
-	stagingDir, err := os.MkdirTemp(filepath.Dir(cachePath), filepath.Base(cachePath)+".partial.")
-	if err != nil {
-		return fmt.Errorf("create staging directory: %w", err)
-	}
-
-	stagingFailed := true
-
-	defer func() {
-		if stagingFailed {
-			_ = os.RemoveAll(stagingDir)
-		}
-	}()
-
-	assetsDir := filepath.Join(stagingDir, "assets")
-	if mkdirErr := safeio.MkdirAll(assetsDir, 0o755); mkdirErr != nil {
-		return fmt.Errorf("create staging assets directory: %w", mkdirErr)
-	}
-
+func downloadBundleFromPull(resolved *client.BundleResolveResponse, pullResp *client.PullBundleResponse, c *client.Client) error {
 	// Backfill resolved manifest layers from pull response.
 	if len(resolved.Manifest.Layers) == 0 {
 		layers := make([]client.BundleLayer, len(pullResp.Manifest))
@@ -285,64 +253,28 @@ func downloadBundleFromPull(resolved *client.BundleResolveResponse, pullResp *cl
 			return fmt.Errorf("invalid logical path %q: %w", asset.LogicalPath, validateErr)
 		}
 
-		destPath := filepath.Join(assetsDir, asset.LogicalPath)
-		if mkdirErr := safeio.MkdirAll(filepath.Dir(destPath), 0o755); mkdirErr != nil {
-			return fmt.Errorf("create asset directory: %w", mkdirErr)
+		data := []byte(asset.ContentText)
+
+		digest, blobErr := bundle.StoreBlob(data)
+		if blobErr != nil {
+			return fmt.Errorf("store blob for %s: %w", asset.LogicalPath, blobErr)
 		}
 
-		if writeErr := safeio.WriteFile(destPath, []byte(asset.ContentText), 0o644); writeErr != nil {
-			return fmt.Errorf("write asset %s: %w", asset.LogicalPath, writeErr)
+		// Backfill digest into layers.
+		for i := range resolved.Manifest.Layers {
+			if resolved.Manifest.Layers[i].LogicalPath == asset.LogicalPath && resolved.Manifest.Layers[i].ContentSHA256 == "" {
+				resolved.Manifest.Layers[i].ContentSHA256 = digest
+				resolved.Manifest.Layers[i].SizeBytes = int64(len(data))
+			}
 		}
 	}
 
-	manifestData, err := json.MarshalIndent(resolved, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshal manifest: %w", err)
-	}
-
-	if err := safeio.WriteFile(filepath.Join(stagingDir, "manifest.json"), manifestData, 0o644); err != nil {
-		return fmt.Errorf("write manifest: %w", err)
-	}
-
-	if err := os.Rename(stagingDir, cachePath); err != nil {
-		if _, statErr := os.Stat(filepath.Join(cachePath, "manifest.json")); statErr == nil {
-			_ = os.RemoveAll(stagingDir)
-			stagingFailed = false
-
-			return nil
-		}
-
-		return fmt.Errorf("promote staging cache: %w", err)
-	}
-
-	stagingFailed = false
+	storeManifestAndRef(c, resolved)
 
 	return nil
 }
 
-func downloadBundlePerAsset(ctx context.Context, c *client.Client, resolved *client.BundleResolveResponse, cachePath string) error {
-	if err := os.MkdirAll(filepath.Dir(cachePath), 0o700); err != nil {
-		return fmt.Errorf("create cache parent: %w", err)
-	}
-
-	stagingDir, err := os.MkdirTemp(filepath.Dir(cachePath), filepath.Base(cachePath)+".partial.")
-	if err != nil {
-		return fmt.Errorf("create staging directory: %w", err)
-	}
-
-	stagingFailed := true
-
-	defer func() {
-		if stagingFailed {
-			_ = os.RemoveAll(stagingDir)
-		}
-	}()
-
-	assetsDir := filepath.Join(stagingDir, "assets")
-	if mkdirErr := safeio.MkdirAll(assetsDir, 0o755); mkdirErr != nil {
-		return fmt.Errorf("create staging assets directory: %w", mkdirErr)
-	}
-
+func downloadBundlePerAsset(ctx context.Context, c *client.Client, resolved *client.BundleResolveResponse) error {
 	for _, layer := range resolved.Manifest.Layers {
 		if validateErr := bundle.ValidateLogicalPath(layer.LogicalPath); validateErr != nil {
 			return fmt.Errorf("invalid logical path %q: %w", layer.LogicalPath, validateErr)
@@ -370,37 +302,26 @@ func downloadBundlePerAsset(ctx context.Context, c *client.Client, resolved *cli
 			data = verified
 		}
 
-		destPath := filepath.Join(assetsDir, layer.LogicalPath)
-		if mkdirErr := safeio.MkdirAll(filepath.Dir(destPath), 0o755); mkdirErr != nil {
-			return fmt.Errorf("create asset directory: %w", mkdirErr)
-		}
-
-		if writeErr := safeio.WriteFile(destPath, data, 0o644); writeErr != nil {
-			return fmt.Errorf("write asset %s: %w", layer.LogicalPath, writeErr)
+		if _, blobErr := bundle.StoreBlob(data); blobErr != nil {
+			return fmt.Errorf("store blob for %s: %w", layer.LogicalPath, blobErr)
 		}
 	}
 
-	manifestData, err := json.MarshalIndent(resolved, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshal manifest: %w", err)
-	}
-
-	if err := safeio.WriteFile(filepath.Join(stagingDir, "manifest.json"), manifestData, 0o644); err != nil {
-		return fmt.Errorf("write manifest: %w", err)
-	}
-
-	if err := os.Rename(stagingDir, cachePath); err != nil {
-		if _, statErr := os.Stat(filepath.Join(cachePath, "manifest.json")); statErr == nil {
-			_ = os.RemoveAll(stagingDir)
-			stagingFailed = false
-
-			return nil
-		}
-
-		return fmt.Errorf("promote staging cache: %w", err)
-	}
-
-	stagingFailed = false
+	storeManifestAndRef(c, resolved)
 
 	return nil
+}
+
+// storeManifestAndRef persists manifest, metadata sidecar, and ref to the store (best-effort).
+func storeManifestAndRef(c *client.Client, resolved *client.BundleResolveResponse) {
+	hostID := paths.HostIDFromURL(c.BaseURL())
+
+	_ = bundle.StoreManifest(hostID, resolved.Namespace, resolved.Slug, resolved.Version, resolved)
+
+	_ = bundle.StoreManifestMeta(hostID, resolved.Namespace, resolved.Slug, resolved.Version, &bundle.ManifestMeta{
+		FetchedAt: time.Now(),
+		TTL:       bundle.DefaultManifestTTL,
+	})
+
+	_ = bundle.UpdateRef(hostID, resolved.Namespace, resolved.Slug, resolved.Version)
 }

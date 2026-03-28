@@ -29,11 +29,10 @@ type bundleSourceOptions struct {
 }
 
 type bundleSourceResult struct {
-	Kind      bundleSourceKind
-	Resolved  *client.BundleResolveResponse
-	CachePath string
-	Ref       bundle.Ref
-	Cleanup   func()
+	Kind     bundleSourceKind
+	Resolved *client.BundleResolveResponse
+	Ref      bundle.Ref
+	Cleanup  func()
 }
 
 func resolveBundleSource(
@@ -43,7 +42,7 @@ func resolveBundleSource(
 	opts bundleSourceOptions,
 ) (*bundleSourceResult, error) {
 	if opts.dirPath != "" {
-		resolved, cachePath, cleanup, err := bundle.LoadFromDir(opts.dirPath)
+		resolved, err := bundle.LoadFromDir(opts.dirPath)
 		if err != nil {
 			return nil, clierrors.Wrap(clierrors.ExitGeneral, "Failed to load bundle from directory", err)
 		}
@@ -51,16 +50,15 @@ func resolveBundleSource(
 		logger.Info("bundle loaded from local directory", slog.String("bundle.dir", opts.dirPath))
 
 		return &bundleSourceResult{
-			Kind:      bundleSourceDir,
-			Resolved:  resolved,
-			CachePath: cachePath,
-			Ref:       bundle.Ref{Namespace: resolved.Namespace, Slug: resolved.Slug},
-			Cleanup:   cleanup,
+			Kind:     bundleSourceDir,
+			Resolved: resolved,
+			Ref:      bundle.Ref{Namespace: resolved.Namespace, Slug: resolved.Slug},
+			Cleanup:  func() {},
 		}, nil
 	}
 
 	if opts.useSample {
-		resolved, cachePath, cleanup, err := bundle.ExtractSampleBundle()
+		resolved, err := bundle.ExtractSampleBundle()
 		if err != nil {
 			return nil, clierrors.Wrap(clierrors.ExitGeneral, "Failed to extract sample bundle", err)
 		}
@@ -68,11 +66,10 @@ func resolveBundleSource(
 		logger.Info("sample bundle extracted")
 
 		return &bundleSourceResult{
-			Kind:      bundleSourceSample,
-			Resolved:  resolved,
-			CachePath: cachePath,
-			Ref:       bundle.Ref{Namespace: resolved.Namespace, Slug: resolved.Slug},
-			Cleanup:   cleanup,
+			Kind:     bundleSourceSample,
+			Resolved: resolved,
+			Ref:      bundle.Ref{Namespace: resolved.Namespace, Slug: resolved.Slug},
+			Cleanup:  func() {},
 		}, nil
 	}
 
@@ -96,7 +93,7 @@ func resolveBundleSource(
 		out.Info("No credentials found; attempting public bundle access")
 	}
 
-	resolved, cachePath, err := bundle.Pull(ctx, apiClient, ref.Namespace, ref.Slug, ref.Version, out)
+	resolved, err := bundle.Pull(ctx, apiClient, ref.Namespace, ref.Slug, ref.Version, out)
 	if err != nil {
 		logger.Error("bundle pull failed", slog.String("error", err.Error()))
 
@@ -132,10 +129,9 @@ func resolveBundleSource(
 	}
 
 	return &bundleSourceResult{
-		Kind:      bundleSourceRemote,
-		Resolved:  resolved,
-		CachePath: cachePath,
-		Ref:       ref,
-		Cleanup:   func() {},
+		Kind:     bundleSourceRemote,
+		Resolved: resolved,
+		Ref:      ref,
+		Cleanup:  func() {},
 	}, nil
 }

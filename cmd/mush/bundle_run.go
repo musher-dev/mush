@@ -141,7 +141,7 @@ func executeBundleRun(
 	}
 
 	session, err := bundle.PrepareLoadSession(
-		cmd.Context(), projectDir, source.CachePath, &source.Resolved.Manifest, spec, mapper,
+		cmd.Context(), projectDir, &source.Resolved.Manifest, spec, mapper,
 	)
 	if err != nil {
 		return clierrors.Wrap(clierrors.ExitGeneral, "Failed to prepare bundle load session", err).

@@ -3,11 +3,9 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"syscall"
 
 	"github.com/spf13/cobra"
@@ -17,7 +15,7 @@ import (
 	clierrors "github.com/musher-dev/mush/internal/errors"
 	"github.com/musher-dev/mush/internal/harness"
 	"github.com/musher-dev/mush/internal/output"
-	"github.com/musher-dev/mush/internal/safeio"
+	"github.com/musher-dev/mush/internal/paths"
 	"github.com/musher-dev/mush/internal/tui/nav"
 )
 
@@ -30,9 +28,9 @@ func handleBundleLoadNavResult(cmd *cobra.Command, out *output.Writer, result *n
 		}
 	}
 
-	if result.CachePath == "" {
+	if result.BundleNamespace == "" {
 		return &clierrors.CLIError{
-			Message: "Missing bundle cache path from navigation result",
+			Message: "Missing bundle information from navigation result",
 			Hint:    "Re-run the bundle flow and launch again",
 			Code:    clierrors.ExitGeneral,
 		}
@@ -43,7 +41,7 @@ func handleBundleLoadNavResult(cmd *cobra.Command, out *output.Writer, result *n
 		return err
 	}
 
-	resolved, err := loadCachedBundleResolve(result.CachePath)
+	resolved, err := loadNavBundleManifest(result)
 	if err != nil {
 		return clierrors.Wrap(clierrors.ExitGeneral, "Failed to read cached bundle manifest", err).
 			WithHint("Re-run the bundle flow to refresh cache")
@@ -70,7 +68,7 @@ func handleBundleLoadNavResult(cmd *cobra.Command, out *output.Writer, result *n
 	}
 
 	session, err := bundle.PrepareLoadSession(
-		cmd.Context(), projectDir, result.CachePath, &resolved.Manifest, spec, mapper,
+		cmd.Context(), projectDir, &resolved.Manifest, spec, mapper,
 	)
 	if err != nil {
 		return clierrors.Wrap(clierrors.ExitGeneral, "Failed to prepare bundle load session", err).
@@ -163,26 +161,27 @@ func validateNavHarness(raw string) (string, error) {
 	return normalized, nil
 }
 
-func loadCachedBundleResolve(cachePath string) (*client.BundleResolveResponse, error) {
-	manifestPath := filepath.Join(cachePath, "manifest.json")
+// loadNavBundleManifest loads a bundle manifest from the store using nav result fields.
+func loadNavBundleManifest(result *nav.Result) (*client.BundleResolveResponse, error) {
+	_, apiClient, _, apiErr := tryAPIClient()
 
-	data, err := safeio.ReadFile(manifestPath)
+	var hostID string
+	if apiErr == nil && apiClient != nil {
+		hostID = paths.HostIDFromURL(apiClient.BaseURL())
+	}
+
+	resolved, err := bundle.LoadManifest(hostID, result.BundleNamespace, result.BundleSlug, result.BundleVer)
 	if err != nil {
-		return nil, clierrors.Wrap(clierrors.ExitGeneral, fmt.Sprintf("read %s", manifestPath), err)
+		return nil, clierrors.Wrap(clierrors.ExitGeneral, "load manifest from store", err)
 	}
 
-	var resolved client.BundleResolveResponse
-	if err := json.Unmarshal(data, &resolved); err != nil {
-		return nil, clierrors.Wrap(clierrors.ExitGeneral, fmt.Sprintf("parse %s", manifestPath), err)
-	}
-
-	return &resolved, nil
+	return resolved, nil
 }
 
 func handleBundleInstallNavResult(_ *cobra.Command, out *output.Writer, result *nav.Result) error {
-	if result.CachePath == "" {
+	if result.BundleNamespace == "" {
 		return &clierrors.CLIError{
-			Message: "Missing bundle cache path from navigation result",
+			Message: "Missing bundle information from navigation result",
 			Hint:    "Re-run the bundle flow and install again",
 			Code:    clierrors.ExitGeneral,
 		}
@@ -193,7 +192,7 @@ func handleBundleInstallNavResult(_ *cobra.Command, out *output.Writer, result *
 		return err
 	}
 
-	resolved, err := loadCachedBundleResolve(result.CachePath)
+	resolved, err := loadNavBundleManifest(result)
 	if err != nil {
 		return clierrors.Wrap(clierrors.ExitGeneral, "Failed to read cached bundle manifest", err).
 			WithHint("Re-run the bundle flow to refresh cache")
@@ -213,7 +212,7 @@ func handleBundleInstallNavResult(_ *cobra.Command, out *output.Writer, result *
 		return clierrors.Wrap(clierrors.ExitGeneral, "Failed to get working directory", err)
 	}
 
-	installed, installErr := bundle.InstallFromCache(workDir, result.CachePath, &resolved.Manifest, mapper, result.Force)
+	installed, installErr := bundle.InstallFromCache(workDir, &resolved.Manifest, mapper, result.Force)
 	if installErr != nil {
 		return clierrors.Wrap(clierrors.ExitGeneral, "Bundle install failed", installErr)
 	}
@@ -250,6 +249,7 @@ func loadRunnerConfigIfAvailable(cmd *cobra.Command, out *output.Writer) *client
 	runnerConfig, cfgErr := c.GetRunnerConfig(cmd.Context())
 	if cfgErr != nil {
 		out.Warning("Runner config unavailable, continuing without MCP provisioning: %v", cfgErr)
+
 		return nil
 	}
 

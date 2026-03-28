@@ -104,7 +104,6 @@ built-in sample bundle with --sample for testing.`,
 
 			if cacheOnly {
 				out.Success("Cached %s/%s:%s", source.Ref.Namespace, source.Ref.Slug, source.Resolved.Version)
-				out.Print("  Cache: %s\n", source.CachePath)
 				logger.Info("bundle cached",
 					slog.String("bundle.namespace", source.Ref.Namespace),
 					slog.String("bundle.slug", source.Ref.Slug),
@@ -144,7 +143,6 @@ func executeBundleLoad(
 			Namespace: source.Ref.Namespace,
 			Slug:      source.Ref.Slug,
 			Version:   source.Resolved.Version,
-			CachePath: source.CachePath,
 		}
 
 		result, navErr := nav.Run(cmd.Context(), deps)
@@ -192,7 +190,7 @@ func executeBundleLoad(
 	}
 
 	session, err := bundle.PrepareLoadSession(
-		cmd.Context(), projectDir, source.CachePath, &source.Resolved.Manifest, spec, mapper,
+		cmd.Context(), projectDir, &source.Resolved.Manifest, spec, mapper,
 	)
 	if err != nil {
 		return clierrors.Wrap(clierrors.ExitGeneral, "Failed to prepare bundle load session", err).
