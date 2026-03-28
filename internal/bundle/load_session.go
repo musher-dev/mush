@@ -29,7 +29,6 @@ func (s *LoadSession) Cleanup() {
 func PrepareLoadSession(
 	ctx context.Context,
 	projectDir string,
-	cachePath string,
 	manifest *client.BundleManifest,
 	spec *harnesstype.ProviderSpec,
 	mapper AssetMapper,
@@ -49,7 +48,7 @@ func PrepareLoadSession(
 
 	switch mode {
 	case "add_dir", "cd_flag":
-		tmpDir, tmpCleanup, err := mapper.PrepareLoad(ctx, cachePath, manifest)
+		tmpDir, tmpCleanup, err := mapper.PrepareLoad(ctx, manifest)
 		if err != nil {
 			return nil, fmt.Errorf("prepare load: %w", err)
 		}
@@ -64,7 +63,7 @@ func PrepareLoadSession(
 			agentManifest := &client.BundleManifest{Layers: agentLayers}
 
 			injected, injectWarnings, injectCleanup, injectErr := InjectAssetsForLoad(
-				projectDir, cachePath, agentManifest, mapper,
+				projectDir, agentManifest, mapper,
 			)
 			if injectErr != nil {
 				if injectCleanup != nil {
@@ -88,7 +87,7 @@ func PrepareLoadSession(
 
 		return session, nil
 	case "cwd":
-		prepared, warnings, cleanup, err := InjectAssetsForLoad(projectDir, cachePath, manifest, mapper)
+		prepared, warnings, cleanup, err := InjectAssetsForLoad(projectDir, manifest, mapper)
 		if err != nil {
 			return nil, err
 		}
@@ -98,7 +97,7 @@ func PrepareLoadSession(
 		session.Warnings = append(session.Warnings, warnings...)
 		session.cleanup = cleanup
 
-		toolPrepared, toolCleanup, toolErr := InjectToolConfigsForLoad(projectDir, cachePath, manifest, mapper)
+		toolPrepared, toolCleanup, toolErr := InjectToolConfigsForLoad(projectDir, manifest, mapper)
 		if toolErr != nil {
 			session.Cleanup()
 			return nil, toolErr

@@ -5,8 +5,6 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -50,57 +48,13 @@ func TestPullFailsWhenResolveLacksDownloadMetadata(t *testing.T) {
 	c := client.NewWithHTTPClient("https://example.test", "test-key", clientHTTP)
 	out := output.NewWriter(&bytes.Buffer{}, &bytes.Buffer{}, &terminal.Info{IsTTY: false})
 
-	_, _, err := Pull(t.Context(), c, "acme", "my-bundle", "", out)
+	_, err := Pull(t.Context(), c, "acme", "my-bundle", "", out)
 	if err == nil {
 		t.Fatal("Pull() expected error, got nil")
 	}
 
 	if !errors.Is(err, ErrNoAssets) {
 		t.Fatalf("Pull() error = %v, want ErrNoAssets", err)
-	}
-}
-
-func TestCleanStalePartials(t *testing.T) {
-	parent := t.TempDir()
-	cachePath := filepath.Join(parent, "1.0.0")
-
-	// Create stale partial dirs.
-	partial1 := filepath.Join(parent, "1.0.0.partial.abc123")
-	partial2 := filepath.Join(parent, "1.0.0.partial.def456")
-
-	if err := os.MkdirAll(partial1, 0o755); err != nil {
-		t.Fatalf("MkdirAll partial1 error = %v", err)
-	}
-
-	if err := os.MkdirAll(partial2, 0o755); err != nil {
-		t.Fatalf("MkdirAll partial2 error = %v", err)
-	}
-
-	// Create a file in one of the partials to verify recursive removal.
-	if err := os.WriteFile(filepath.Join(partial1, "file.txt"), []byte("data"), 0o644); err != nil {
-		t.Fatalf("WriteFile error = %v", err)
-	}
-
-	// Create a non-partial dir that should not be removed.
-	other := filepath.Join(parent, "2.0.0")
-	if err := os.MkdirAll(other, 0o755); err != nil {
-		t.Fatalf("MkdirAll other error = %v", err)
-	}
-
-	cleanStalePartials(cachePath)
-
-	// Partials should be gone.
-	if _, err := os.Stat(partial1); !os.IsNotExist(err) {
-		t.Fatalf("partial1 still exists after cleanup")
-	}
-
-	if _, err := os.Stat(partial2); !os.IsNotExist(err) {
-		t.Fatalf("partial2 still exists after cleanup")
-	}
-
-	// Non-partial dir should remain.
-	if _, err := os.Stat(other); err != nil {
-		t.Fatalf("non-partial dir was incorrectly removed: %v", err)
 	}
 }
 
@@ -140,26 +94,8 @@ func TestPullCleanupOnFailure(t *testing.T) {
 	c := client.NewWithHTTPClient("https://example.test", "test-key", clientHTTP)
 	out := output.NewWriter(&bytes.Buffer{}, &bytes.Buffer{}, &terminal.Info{IsTTY: false})
 
-	_, _, err := Pull(t.Context(), c, "acme", "my-bundle", "", out)
+	_, err := Pull(t.Context(), c, "acme", "my-bundle", "", out)
 	if err == nil {
 		t.Fatal("Pull() expected error, got nil")
-	}
-
-	// Verify no partial staging directories remain.
-	versionDir := filepath.Join(cacheRoot, "musher", "bundles", "acme", "my-bundle")
-
-	entries, readErr := os.ReadDir(versionDir)
-	if readErr != nil {
-		if os.IsNotExist(readErr) {
-			return // parent dir doesn't exist, which is fine
-		}
-
-		t.Fatalf("ReadDir error = %v", readErr)
-	}
-
-	for _, e := range entries {
-		if strings.Contains(e.Name(), ".partial.") {
-			t.Fatalf("staging directory not cleaned up: %s", e.Name())
-		}
 	}
 }

@@ -11,7 +11,6 @@ type BundleSeed struct {
 	Namespace string
 	Slug      string
 	Version   string
-	CachePath string
 }
 
 // Dependencies holds external services needed by the TUI.
@@ -48,7 +47,6 @@ type Result struct {
 	BundleSlug      string
 	BundleVer       string
 	Harness         string
-	CachePath       string
 
 	// Bundle install fields
 	Force bool

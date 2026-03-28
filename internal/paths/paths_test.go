@@ -209,16 +209,6 @@ func TestDerivedPaths(t *testing.T) {
 	if historyDir != wantHistory {
 		t.Fatalf("HistoryDir() = %q, want %q", historyDir, wantHistory)
 	}
-
-	bundleCacheDir, err := BundleCacheDir()
-	if err != nil {
-		t.Fatalf("BundleCacheDir() error = %v", err)
-	}
-
-	wantBundleCache := filepath.Join(cache, "musher", "bundles")
-	if bundleCacheDir != wantBundleCache {
-		t.Fatalf("BundleCacheDir() = %q, want %q", bundleCacheDir, wantBundleCache)
-	}
 }
 
 func TestXDGRelativePathIgnored(t *testing.T) {

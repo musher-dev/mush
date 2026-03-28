@@ -19,13 +19,13 @@ type AssetMapper interface {
 
 	// PrepareLoad creates a temp directory with assets in native structure for `bundle load`.
 	// Returns the temp dir path and a cleanup function.
-	PrepareLoad(ctx context.Context, cachePath string, manifest *client.BundleManifest) (tmpDir string, cleanup func(), err error)
+	PrepareLoad(ctx context.Context, manifest *client.BundleManifest) (tmpDir string, cleanup func(), err error)
 }
 
 // prepareLoadCommon is shared logic for preparing load dirs across mappers.
 // skipTypes, when non-nil, causes layers with matching AssetType to be excluded
 // from the temp directory (e.g. skills/agents that are injected into CWD instead).
-func prepareLoadCommon(mapper AssetMapper, cachePath string, manifest *client.BundleManifest, skipTypes map[string]bool) (tmpDir string, cleanup func(), err error) {
+func prepareLoadCommon(mapper AssetMapper, manifest *client.BundleManifest, skipTypes map[string]bool) (tmpDir string, cleanup func(), err error) {
 	tmpDir, err = os.MkdirTemp("", "mush-bundle-*")
 	if err != nil {
 		return "", nil, fmt.Errorf("create temp dir: %w", err)
@@ -60,10 +60,8 @@ func prepareLoadCommon(mapper AssetMapper, cachePath string, manifest *client.Bu
 			return "", nil, fmt.Errorf("map asset %s: %w", layer.LogicalPath, mapErr)
 		}
 
-		// Read from cache.
-		srcPath := filepath.Join(cachePath, "assets", layer.LogicalPath)
-
-		data, readErr := safeio.ReadFile(srcPath)
+		// Read from blob store.
+		data, readErr := ReadAsset(&layer)
 		if readErr != nil {
 			cleanup()
 			return "", nil, fmt.Errorf("read cached asset %s: %w", layer.LogicalPath, readErr)

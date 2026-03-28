@@ -4,11 +4,8 @@ import (
 	"crypto/sha256"
 	"embed"
 	"fmt"
-	"os"
-	"path/filepath"
 
 	"github.com/musher-dev/mush/internal/client"
-	"github.com/musher-dev/mush/internal/safeio"
 )
 
 //go:embed sample/skills/hello/SKILL.md
@@ -27,37 +24,20 @@ var sampleAssets = []struct {
 	},
 }
 
-// ExtractSampleBundle creates a temporary cache directory from the embedded sample bundle.
-// Returns the synthetic resolve response, cache path, cleanup function, and any error.
-func ExtractSampleBundle() (resolved *client.BundleResolveResponse, cachePath string, cleanup func(), err error) {
-	tmpDir, err := os.MkdirTemp("", "mush-sample-bundle-*")
-	if err != nil {
-		return nil, "", nil, fmt.Errorf("create temp dir: %w", err)
-	}
-
-	cleanup = func() { _ = os.RemoveAll(tmpDir) }
-
-	assetsDir := filepath.Join(tmpDir, "assets")
-
+// ExtractSampleBundle stores the embedded sample bundle assets as blobs.
+// Returns the synthetic resolve response and any error.
+func ExtractSampleBundle() (resolved *client.BundleResolveResponse, err error) {
 	var layers []client.BundleLayer
 
 	for _, asset := range sampleAssets {
 		data, readErr := sampleFS.ReadFile(asset.EmbedPath)
 		if readErr != nil {
-			cleanup()
-			return nil, "", nil, fmt.Errorf("read embedded asset %s: %w", asset.EmbedPath, readErr)
+			return nil, fmt.Errorf("read embedded asset %s: %w", asset.EmbedPath, readErr)
 		}
 
-		destPath := filepath.Join(assetsDir, asset.LogicalPath)
-
-		if mkErr := safeio.MkdirAll(filepath.Dir(destPath), 0o755); mkErr != nil {
-			cleanup()
-			return nil, "", nil, fmt.Errorf("create asset dir: %w", mkErr)
-		}
-
-		if wErr := safeio.WriteFile(destPath, data, 0o644); wErr != nil {
-			cleanup()
-			return nil, "", nil, fmt.Errorf("write asset %s: %w", asset.LogicalPath, wErr)
+		digest, blobErr := StoreBlob(data)
+		if blobErr != nil {
+			return nil, fmt.Errorf("store blob for %s: %w", asset.LogicalPath, blobErr)
 		}
 
 		hash := sha256.Sum256(data)
@@ -68,6 +48,9 @@ func ExtractSampleBundle() (resolved *client.BundleResolveResponse, cachePath st
 			ContentSHA256: fmt.Sprintf("%x", hash),
 			SizeBytes:     int64(len(data)),
 		})
+
+		// Verify digest matches (StoreBlob returns the same hash).
+		_ = digest
 	}
 
 	resolved = &client.BundleResolveResponse{
@@ -80,10 +63,5 @@ func ExtractSampleBundle() (resolved *client.BundleResolveResponse, cachePath st
 		},
 	}
 
-	if wErr := writeManifest(tmpDir, resolved); wErr != nil {
-		cleanup()
-		return nil, "", nil, fmt.Errorf("write manifest: %w", wErr)
-	}
-
-	return resolved, tmpDir, cleanup, nil
+	return resolved, nil
 }

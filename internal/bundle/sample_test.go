@@ -1,18 +1,17 @@
 package bundle
 
 import (
-	"os"
-	"path/filepath"
 	"testing"
 )
 
 func TestExtractSampleBundle(t *testing.T) {
-	resolved, cachePath, cleanup, err := ExtractSampleBundle()
+	clearStoreEnv(t)
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+
+	resolved, err := ExtractSampleBundle()
 	if err != nil {
 		t.Fatalf("ExtractSampleBundle() error = %v", err)
 	}
-
-	defer cleanup()
 
 	if resolved.Namespace != "_local" {
 		t.Errorf("Namespace = %q, want %q", resolved.Namespace, "_local")
@@ -47,21 +46,13 @@ func TestExtractSampleBundle(t *testing.T) {
 		t.Error("ContentSHA256 should be set")
 	}
 
-	// Verify cache structure.
-	assetPath := filepath.Join(cachePath, "assets", "skills", "hello", "SKILL.md")
-	if _, err := os.Stat(assetPath); err != nil {
-		t.Errorf("asset not found at %s: %v", assetPath, err)
+	// Verify asset is readable via ReadAsset.
+	data, readErr := ReadAsset(&layer)
+	if readErr != nil {
+		t.Fatalf("ReadAsset() error = %v", readErr)
 	}
 
-	manifestPath := filepath.Join(cachePath, "manifest.json")
-	if _, err := os.Stat(manifestPath); err != nil {
-		t.Errorf("manifest.json not found: %v", err)
-	}
-
-	// Verify cleanup works.
-	cleanup()
-
-	if _, err := os.Stat(cachePath); !os.IsNotExist(err) {
-		t.Errorf("cleanup did not remove temp dir %s", cachePath)
+	if len(data) == 0 {
+		t.Fatal("ReadAsset() returned empty data")
 	}
 }

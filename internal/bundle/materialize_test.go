@@ -11,39 +11,37 @@ import (
 	"github.com/musher-dev/mush/internal/harness"
 )
 
+// storeTestAsset stores data as a blob and returns the SHA256 digest.
+func storeTestAsset(t *testing.T, data string) string {
+	t.Helper()
+
+	digest, err := StoreBlob([]byte(data))
+	if err != nil {
+		t.Fatalf("StoreBlob() error = %v", err)
+	}
+
+	return digest
+}
+
 func TestInstallFromCache_CodexIndividualAgentsAndToolConfig(t *testing.T) {
+	clearStoreEnv(t)
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+
 	workDir := t.TempDir()
-	cacheDir := t.TempDir()
 
-	assetsDir := filepath.Join(cacheDir, "assets")
-	if err := os.MkdirAll(assetsDir, 0o755); err != nil {
-		t.Fatalf("MkdirAll() error = %v", err)
-	}
-
-	write := func(rel, data string) {
-		path := filepath.Join(assetsDir, rel)
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			t.Fatalf("MkdirAll(%s) error = %v", rel, err)
-		}
-
-		if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
-			t.Fatalf("WriteFile(%s) error = %v", rel, err)
-		}
-	}
-
-	write("skills/web/SKILL.md", "skill")
-	write("agents/researcher.md", "Agent A")
-	write("agents/reviewer.md", "Agent B")
-	write("tools/a.toml", "[mcp_servers.alpha]\ncommand = \"a\"\n")
-	write("tools/b.toml", "[mcp_servers.beta]\ncommand = \"b\"\n")
+	skillDigest := storeTestAsset(t, "skill")
+	agentADigest := storeTestAsset(t, "Agent A")
+	agentBDigest := storeTestAsset(t, "Agent B")
+	toolADigest := storeTestAsset(t, "[mcp_servers.alpha]\ncommand = \"a\"\n")
+	toolBDigest := storeTestAsset(t, "[mcp_servers.beta]\ncommand = \"b\"\n")
 
 	manifest := &client.BundleManifest{
 		Layers: []client.BundleLayer{
-			{LogicalPath: "skills/web/SKILL.md", AssetType: "skill"},
-			{LogicalPath: "agents/researcher.md", AssetType: "agent_definition"},
-			{LogicalPath: "agents/reviewer.md", AssetType: "agent_definition"},
-			{LogicalPath: "tools/a.toml", AssetType: "tool_config"},
-			{LogicalPath: "tools/b.toml", AssetType: "tool_config"},
+			{LogicalPath: "skills/web/SKILL.md", AssetType: "skill", ContentSHA256: skillDigest},
+			{LogicalPath: "agents/researcher.md", AssetType: "agent_definition", ContentSHA256: agentADigest},
+			{LogicalPath: "agents/reviewer.md", AssetType: "agent_definition", ContentSHA256: agentBDigest},
+			{LogicalPath: "tools/a.toml", AssetType: "tool_config", ContentSHA256: toolADigest},
+			{LogicalPath: "tools/b.toml", AssetType: "tool_config", ContentSHA256: toolBDigest},
 		},
 	}
 
@@ -52,9 +50,9 @@ func TestInstallFromCache_CodexIndividualAgentsAndToolConfig(t *testing.T) {
 		t.Fatal("codex provider not found")
 	}
 
-	installed, err := InstallFromCache(workDir, cacheDir, manifest, NewProviderMapper(codexSpec), false)
-	if err != nil {
-		t.Fatalf("InstallFromCache() error = %v", err)
+	installed, installErr := InstallFromCache(workDir, manifest, NewProviderMapper(codexSpec), false)
+	if installErr != nil {
+		t.Fatalf("InstallFromCache() error = %v", installErr)
 	}
 
 	if len(installed) != 4 {
@@ -70,9 +68,9 @@ func TestInstallFromCache_CodexIndividualAgentsAndToolConfig(t *testing.T) {
 		}
 	}
 
-	configData, err := os.ReadFile(filepath.Join(workDir, ".codex", "config.toml"))
-	if err != nil {
-		t.Fatalf("ReadFile(config.toml) error = %v", err)
+	configData, readErr := os.ReadFile(filepath.Join(workDir, ".codex", "config.toml"))
+	if readErr != nil {
+		t.Fatalf("ReadFile(config.toml) error = %v", readErr)
 	}
 
 	config := string(configData)
@@ -82,17 +80,11 @@ func TestInstallFromCache_CodexIndividualAgentsAndToolConfig(t *testing.T) {
 }
 
 func TestInstallFromCache_Conflict(t *testing.T) {
+	clearStoreEnv(t)
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+
 	workDir := t.TempDir()
-	cacheDir := t.TempDir()
-
-	assetsDir := filepath.Join(cacheDir, "assets", "skills", "web")
-	if err := os.MkdirAll(assetsDir, 0o755); err != nil {
-		t.Fatalf("MkdirAll() error = %v", err)
-	}
-
-	if err := os.WriteFile(filepath.Join(assetsDir, "SKILL.md"), []byte("new"), 0o644); err != nil {
-		t.Fatalf("WriteFile(cache) error = %v", err)
-	}
+	skillDigest := storeTestAsset(t, "new")
 
 	existingPath := filepath.Join(workDir, ".claude", "skills", "web", "SKILL.md")
 	if err := os.MkdirAll(filepath.Dir(existingPath), 0o755); err != nil {
@@ -105,7 +97,7 @@ func TestInstallFromCache_Conflict(t *testing.T) {
 
 	manifest := &client.BundleManifest{
 		Layers: []client.BundleLayer{
-			{LogicalPath: "skills/web/SKILL.md", AssetType: "skill"},
+			{LogicalPath: "skills/web/SKILL.md", AssetType: "skill", ContentSHA256: skillDigest},
 		},
 	}
 
@@ -114,43 +106,32 @@ func TestInstallFromCache_Conflict(t *testing.T) {
 		t.Fatal("claude provider not found")
 	}
 
-	_, err := InstallFromCache(workDir, cacheDir, manifest, NewProviderMapper(claudeSpec), false)
-	if err == nil {
+	_, installErr := InstallFromCache(workDir, manifest, NewProviderMapper(claudeSpec), false)
+	if installErr == nil {
 		t.Fatal("InstallFromCache() expected conflict error, got nil")
 	}
 
 	var conflict *InstallConflictError
-	if !errors.As(err, &conflict) {
-		t.Fatalf("InstallFromCache() error type = %T, want *InstallConflictError", err)
+	if !errors.As(installErr, &conflict) {
+		t.Fatalf("InstallFromCache() error type = %T, want *InstallConflictError", installErr)
 	}
 }
 
 func TestInjectAssetsForLoad_HappyPath(t *testing.T) {
+	clearStoreEnv(t)
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+
 	projectDir := t.TempDir()
-	cacheDir := t.TempDir()
 
-	assetsDir := filepath.Join(cacheDir, "assets")
-
-	write := func(rel, data string) {
-		path := filepath.Join(assetsDir, rel)
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			t.Fatalf("MkdirAll(%s) error = %v", rel, err)
-		}
-
-		if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
-			t.Fatalf("WriteFile(%s) error = %v", rel, err)
-		}
-	}
-
-	write("architect.md", "Agent content")
-	write("skills/web/SKILL.md", "Skill content")
-	write("tools/mcp.json", `{"mcpServers":{}}`)
+	agentDigest := storeTestAsset(t, "Agent content")
+	skillDigest := storeTestAsset(t, "Skill content")
+	toolDigest := storeTestAsset(t, `{"mcpServers":{}}`)
 
 	manifest := &client.BundleManifest{
 		Layers: []client.BundleLayer{
-			{LogicalPath: "architect.md", AssetType: "agent_definition"},
-			{LogicalPath: "skills/web/SKILL.md", AssetType: "skill"},
-			{LogicalPath: "tools/mcp.json", AssetType: "tool_config"},
+			{LogicalPath: "architect.md", AssetType: "agent_definition", ContentSHA256: agentDigest},
+			{LogicalPath: "skills/web/SKILL.md", AssetType: "skill", ContentSHA256: skillDigest},
+			{LogicalPath: "tools/mcp.json", AssetType: "tool_config", ContentSHA256: toolDigest},
 		},
 	}
 
@@ -161,7 +142,7 @@ func TestInjectAssetsForLoad_HappyPath(t *testing.T) {
 
 	mapper := NewProviderMapper(claudeSpec)
 
-	injected, _, cleanup, err := InjectAssetsForLoad(projectDir, cacheDir, manifest, mapper)
+	injected, _, cleanup, err := InjectAssetsForLoad(projectDir, manifest, mapper)
 	if err != nil {
 		t.Fatalf("InjectAssetsForLoad() error = %v", err)
 	}
@@ -175,9 +156,9 @@ func TestInjectAssetsForLoad_HappyPath(t *testing.T) {
 
 	agentPath := filepath.Join(projectDir, ".claude", "agents", "architect.md")
 
-	data, err := os.ReadFile(agentPath)
-	if err != nil {
-		t.Fatalf("agent file not found: %v", err)
+	data, readErr := os.ReadFile(agentPath)
+	if readErr != nil {
+		t.Fatalf("agent file not found: %v", readErr)
 	}
 
 	if string(data) != "Agent content" {
@@ -186,9 +167,9 @@ func TestInjectAssetsForLoad_HappyPath(t *testing.T) {
 
 	skillPath := filepath.Join(projectDir, ".claude", "skills", "web", "SKILL.md")
 
-	data, err = os.ReadFile(skillPath)
-	if err != nil {
-		t.Fatalf("skill file not found: %v", err)
+	data, readErr = os.ReadFile(skillPath)
+	if readErr != nil {
+		t.Fatalf("skill file not found: %v", readErr)
 	}
 
 	if string(data) != "Skill content" {
@@ -203,23 +184,11 @@ func TestInjectAssetsForLoad_HappyPath(t *testing.T) {
 }
 
 func TestInjectAssetsForLoad_SkipsExisting(t *testing.T) {
+	clearStoreEnv(t)
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+
 	projectDir := t.TempDir()
-	cacheDir := t.TempDir()
-
-	assetsDir := filepath.Join(cacheDir, "assets")
-
-	write := func(rel, data string) {
-		path := filepath.Join(assetsDir, rel)
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			t.Fatalf("MkdirAll(%s) error = %v", rel, err)
-		}
-
-		if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
-			t.Fatalf("WriteFile(%s) error = %v", rel, err)
-		}
-	}
-
-	write("architect.md", "New agent")
+	agentDigest := storeTestAsset(t, "New agent")
 
 	// Pre-create the agent file in the project directory.
 	existingPath := filepath.Join(projectDir, ".claude", "agents", "architect.md")
@@ -233,7 +202,7 @@ func TestInjectAssetsForLoad_SkipsExisting(t *testing.T) {
 
 	manifest := &client.BundleManifest{
 		Layers: []client.BundleLayer{
-			{LogicalPath: "architect.md", AssetType: "agent_definition"},
+			{LogicalPath: "architect.md", AssetType: "agent_definition", ContentSHA256: agentDigest},
 		},
 	}
 
@@ -244,7 +213,7 @@ func TestInjectAssetsForLoad_SkipsExisting(t *testing.T) {
 
 	mapper := NewProviderMapper(claudeSpec)
 
-	injected, _, cleanup, err := InjectAssetsForLoad(projectDir, cacheDir, manifest, mapper)
+	injected, _, cleanup, err := InjectAssetsForLoad(projectDir, manifest, mapper)
 	if err != nil {
 		t.Fatalf("InjectAssetsForLoad() error = %v", err)
 	}
@@ -257,9 +226,9 @@ func TestInjectAssetsForLoad_SkipsExisting(t *testing.T) {
 	}
 
 	// Original content should be preserved.
-	data, err := os.ReadFile(existingPath)
-	if err != nil {
-		t.Fatalf("ReadFile() error = %v", err)
+	data, readErr := os.ReadFile(existingPath)
+	if readErr != nil {
+		t.Fatalf("ReadFile() error = %v", readErr)
 	}
 
 	if string(data) != "User agent" {
@@ -275,29 +244,18 @@ func TestInjectAssetsForLoad_SkipsExisting(t *testing.T) {
 }
 
 func TestInjectAssetsForLoad_Cleanup(t *testing.T) {
+	clearStoreEnv(t)
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+
 	projectDir := t.TempDir()
-	cacheDir := t.TempDir()
 
-	assetsDir := filepath.Join(cacheDir, "assets")
-
-	write := func(rel, data string) {
-		path := filepath.Join(assetsDir, rel)
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			t.Fatalf("MkdirAll(%s) error = %v", rel, err)
-		}
-
-		if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
-			t.Fatalf("WriteFile(%s) error = %v", rel, err)
-		}
-	}
-
-	write("architect.md", "Agent A")
-	write("reviewer.md", "Agent B")
+	agentADigest := storeTestAsset(t, "Agent A")
+	agentBDigest := storeTestAsset(t, "Agent B")
 
 	manifest := &client.BundleManifest{
 		Layers: []client.BundleLayer{
-			{LogicalPath: "architect.md", AssetType: "agent_definition"},
-			{LogicalPath: "reviewer.md", AssetType: "agent_definition"},
+			{LogicalPath: "architect.md", AssetType: "agent_definition", ContentSHA256: agentADigest},
+			{LogicalPath: "reviewer.md", AssetType: "agent_definition", ContentSHA256: agentBDigest},
 		},
 	}
 
@@ -308,7 +266,7 @@ func TestInjectAssetsForLoad_Cleanup(t *testing.T) {
 
 	mapper := NewProviderMapper(claudeSpec)
 
-	injected, _, cleanup, err := InjectAssetsForLoad(projectDir, cacheDir, manifest, mapper)
+	injected, _, cleanup, err := InjectAssetsForLoad(projectDir, manifest, mapper)
 	if err != nil {
 		t.Fatalf("InjectAssetsForLoad() error = %v", err)
 	}
@@ -320,6 +278,7 @@ func TestInjectAssetsForLoad_Cleanup(t *testing.T) {
 	// Verify files exist before cleanup.
 	for _, rel := range injected {
 		path := filepath.Join(projectDir, rel)
+
 		if _, statErr := os.Stat(path); statErr != nil {
 			t.Fatalf("injected file %s not found before cleanup", rel)
 		}
@@ -331,6 +290,7 @@ func TestInjectAssetsForLoad_Cleanup(t *testing.T) {
 	// Verify files removed after cleanup.
 	for _, rel := range injected {
 		path := filepath.Join(projectDir, rel)
+
 		if _, statErr := os.Stat(path); statErr == nil {
 			t.Fatalf("injected file %s still exists after cleanup", rel)
 		}
@@ -344,24 +304,15 @@ func TestInjectAssetsForLoad_Cleanup(t *testing.T) {
 }
 
 func TestInjectAssetsForLoad_NestedLogicalPath(t *testing.T) {
+	clearStoreEnv(t)
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+
 	projectDir := t.TempDir()
-	cacheDir := t.TempDir()
-
-	assetsDir := filepath.Join(cacheDir, "assets")
-
-	// Create a nested path like "agents/shaping-architect.md".
-	nestedPath := filepath.Join(assetsDir, "agents", "shaping-architect.md")
-	if err := os.MkdirAll(filepath.Dir(nestedPath), 0o755); err != nil {
-		t.Fatalf("MkdirAll() error = %v", err)
-	}
-
-	if err := os.WriteFile(nestedPath, []byte("Nested agent"), 0o644); err != nil {
-		t.Fatalf("WriteFile() error = %v", err)
-	}
+	agentDigest := storeTestAsset(t, "Nested agent")
 
 	manifest := &client.BundleManifest{
 		Layers: []client.BundleLayer{
-			{LogicalPath: "agents/shaping-architect.md", AssetType: "agent_definition"},
+			{LogicalPath: "agents/shaping-architect.md", AssetType: "agent_definition", ContentSHA256: agentDigest},
 		},
 	}
 
@@ -372,7 +323,7 @@ func TestInjectAssetsForLoad_NestedLogicalPath(t *testing.T) {
 
 	mapper := NewProviderMapper(claudeSpec)
 
-	injected, _, cleanup, err := InjectAssetsForLoad(projectDir, cacheDir, manifest, mapper)
+	injected, _, cleanup, err := InjectAssetsForLoad(projectDir, manifest, mapper)
 	if err != nil {
 		t.Fatalf("InjectAssetsForLoad() error = %v", err)
 	}
@@ -386,9 +337,9 @@ func TestInjectAssetsForLoad_NestedLogicalPath(t *testing.T) {
 	// Should be at .claude/agents/shaping-architect.md (agents/ prefix stripped by stripMatchingPrefix).
 	targetPath := filepath.Join(projectDir, ".claude", "agents", "shaping-architect.md")
 
-	data, err := os.ReadFile(targetPath)
-	if err != nil {
-		t.Fatalf("nested agent file not found: %v", err)
+	data, readErr := os.ReadFile(targetPath)
+	if readErr != nil {
+		t.Fatalf("nested agent file not found: %v", readErr)
 	}
 
 	if string(data) != "Nested agent" {
@@ -397,32 +348,21 @@ func TestInjectAssetsForLoad_NestedLogicalPath(t *testing.T) {
 }
 
 func TestInjectAssetsForLoad_SkillFrontmatterWarning(t *testing.T) {
+	clearStoreEnv(t)
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+
 	projectDir := t.TempDir()
-	cacheDir := t.TempDir()
-
-	assetsDir := filepath.Join(cacheDir, "assets")
-
-	write := func(rel, data string) {
-		path := filepath.Join(assetsDir, rel)
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			t.Fatalf("MkdirAll(%s) error = %v", rel, err)
-		}
-
-		if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
-			t.Fatalf("WriteFile(%s) error = %v", rel, err)
-		}
-	}
 
 	// Skill with invalid YAML frontmatter (unquoted colon in value) — repairable.
-	write("skills/bad/SKILL.md", "---\nname: test\ndescription: something: broken\n---\n# Skill\n")
+	badDigest := storeTestAsset(t, "---\nname: test\ndescription: something: broken\n---\n# Skill\n")
 
 	// Skill with valid YAML frontmatter.
-	write("skills/good/SKILL.md", "---\nname: good\ndescription: \"works fine\"\n---\n# Skill\n")
+	goodDigest := storeTestAsset(t, "---\nname: good\ndescription: \"works fine\"\n---\n# Skill\n")
 
 	manifest := &client.BundleManifest{
 		Layers: []client.BundleLayer{
-			{LogicalPath: "skills/bad/SKILL.md", AssetType: "skill"},
-			{LogicalPath: "skills/good/SKILL.md", AssetType: "skill"},
+			{LogicalPath: "skills/bad/SKILL.md", AssetType: "skill", ContentSHA256: badDigest},
+			{LogicalPath: "skills/good/SKILL.md", AssetType: "skill", ContentSHA256: goodDigest},
 		},
 	}
 
@@ -433,19 +373,17 @@ func TestInjectAssetsForLoad_SkillFrontmatterWarning(t *testing.T) {
 
 	mapper := NewProviderMapper(claudeSpec)
 
-	injected, warnings, cleanup, err := InjectAssetsForLoad(projectDir, cacheDir, manifest, mapper)
+	injected, warnings, cleanup, err := InjectAssetsForLoad(projectDir, manifest, mapper)
 	if err != nil {
 		t.Fatalf("InjectAssetsForLoad() error = %v", err)
 	}
 
 	defer cleanup()
 
-	// Both should still be injected (warnings are non-fatal).
 	if len(injected) != 2 {
 		t.Fatalf("InjectAssetsForLoad() injected %d paths, want 2; got %v", len(injected), injected)
 	}
 
-	// Should have exactly one warning for the auto-repaired skill.
 	if len(warnings) != 1 {
 		t.Fatalf("InjectAssetsForLoad() warnings = %d, want 1; got %v", len(warnings), warnings)
 	}
@@ -472,28 +410,17 @@ func TestInjectAssetsForLoad_SkillFrontmatterWarning(t *testing.T) {
 }
 
 func TestInjectAssetsForLoad_SkillFrontmatterUnrepairable(t *testing.T) {
+	clearStoreEnv(t)
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+
 	projectDir := t.TempDir()
-	cacheDir := t.TempDir()
-
-	assetsDir := filepath.Join(cacheDir, "assets")
-
-	write := func(rel, data string) {
-		path := filepath.Join(assetsDir, rel)
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			t.Fatalf("MkdirAll(%s) error = %v", rel, err)
-		}
-
-		if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
-			t.Fatalf("WriteFile(%s) error = %v", rel, err)
-		}
-	}
 
 	// Skill with unrepairable YAML frontmatter (bad indentation).
-	write("skills/broken/SKILL.md", "---\nname: test\n  bad:\n indent\n---\n# Skill\n")
+	brokenDigest := storeTestAsset(t, "---\nname: test\n  bad:\n indent\n---\n# Skill\n")
 
 	manifest := &client.BundleManifest{
 		Layers: []client.BundleLayer{
-			{LogicalPath: "skills/broken/SKILL.md", AssetType: "skill"},
+			{LogicalPath: "skills/broken/SKILL.md", AssetType: "skill", ContentSHA256: brokenDigest},
 		},
 	}
 
@@ -504,19 +431,17 @@ func TestInjectAssetsForLoad_SkillFrontmatterUnrepairable(t *testing.T) {
 
 	mapper := NewProviderMapper(claudeSpec)
 
-	injected, warnings, cleanup, err := InjectAssetsForLoad(projectDir, cacheDir, manifest, mapper)
+	injected, warnings, cleanup, err := InjectAssetsForLoad(projectDir, manifest, mapper)
 	if err != nil {
 		t.Fatalf("InjectAssetsForLoad() error = %v", err)
 	}
 
 	defer cleanup()
 
-	// Should still be injected (warnings are non-fatal).
 	if len(injected) != 1 {
 		t.Fatalf("InjectAssetsForLoad() injected %d paths, want 1; got %v", len(injected), injected)
 	}
 
-	// Should have one warning mentioning strict harnesses.
 	if len(warnings) != 1 {
 		t.Fatalf("InjectAssetsForLoad() warnings = %d, want 1; got %v", len(warnings), warnings)
 	}
@@ -531,29 +456,18 @@ func TestInjectAssetsForLoad_SkillFrontmatterUnrepairable(t *testing.T) {
 }
 
 func TestInjectToolConfigsForLoad_HappyPath(t *testing.T) {
+	clearStoreEnv(t)
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+
 	projectDir := t.TempDir()
-	cacheDir := t.TempDir()
 
-	assetsDir := filepath.Join(cacheDir, "assets")
-
-	write := func(rel, data string) {
-		path := filepath.Join(assetsDir, rel)
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			t.Fatalf("MkdirAll(%s) error = %v", rel, err)
-		}
-
-		if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
-			t.Fatalf("WriteFile(%s) error = %v", rel, err)
-		}
-	}
-
-	write("tools/a.toml", "[mcp_servers.alpha]\ncommand = \"a\"\n")
-	write("tools/b.toml", "[mcp_servers.beta]\ncommand = \"b\"\n")
+	toolADigest := storeTestAsset(t, "[mcp_servers.alpha]\ncommand = \"a\"\n")
+	toolBDigest := storeTestAsset(t, "[mcp_servers.beta]\ncommand = \"b\"\n")
 
 	manifest := &client.BundleManifest{
 		Layers: []client.BundleLayer{
-			{LogicalPath: "tools/a.toml", AssetType: "tool_config"},
-			{LogicalPath: "tools/b.toml", AssetType: "tool_config"},
+			{LogicalPath: "tools/a.toml", AssetType: "tool_config", ContentSHA256: toolADigest},
+			{LogicalPath: "tools/b.toml", AssetType: "tool_config", ContentSHA256: toolBDigest},
 		},
 	}
 
@@ -564,7 +478,7 @@ func TestInjectToolConfigsForLoad_HappyPath(t *testing.T) {
 
 	mapper := NewProviderMapper(codexSpec)
 
-	injected, cleanup, err := InjectToolConfigsForLoad(projectDir, cacheDir, manifest, mapper)
+	injected, cleanup, err := InjectToolConfigsForLoad(projectDir, manifest, mapper)
 	if err != nil {
 		t.Fatalf("InjectToolConfigsForLoad() error = %v", err)
 	}
@@ -578,9 +492,9 @@ func TestInjectToolConfigsForLoad_HappyPath(t *testing.T) {
 	// Verify merged config file.
 	configPath := filepath.Join(projectDir, ".codex", "config.toml")
 
-	data, err := os.ReadFile(configPath)
-	if err != nil {
-		t.Fatalf("ReadFile(config.toml) error = %v", err)
+	data, readErr := os.ReadFile(configPath)
+	if readErr != nil {
+		t.Fatalf("ReadFile(config.toml) error = %v", readErr)
 	}
 
 	config := string(data)
@@ -590,21 +504,10 @@ func TestInjectToolConfigsForLoad_HappyPath(t *testing.T) {
 }
 
 func TestInjectToolConfigsForLoad_BackupRestore(t *testing.T) {
+	clearStoreEnv(t)
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+
 	projectDir := t.TempDir()
-	cacheDir := t.TempDir()
-
-	assetsDir := filepath.Join(cacheDir, "assets")
-
-	write := func(rel, data string) {
-		path := filepath.Join(assetsDir, rel)
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			t.Fatalf("MkdirAll(%s) error = %v", rel, err)
-		}
-
-		if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
-			t.Fatalf("WriteFile(%s) error = %v", rel, err)
-		}
-	}
 
 	// Pre-create an existing config file.
 	existingPath := filepath.Join(projectDir, ".codex", "config.toml")
@@ -618,11 +521,11 @@ func TestInjectToolConfigsForLoad_BackupRestore(t *testing.T) {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	write("tools/new.toml", "[mcp_servers.new_server]\ncommand = \"new\"\n")
+	toolDigest := storeTestAsset(t, "[mcp_servers.new_server]\ncommand = \"new\"\n")
 
 	manifest := &client.BundleManifest{
 		Layers: []client.BundleLayer{
-			{LogicalPath: "tools/new.toml", AssetType: "tool_config"},
+			{LogicalPath: "tools/new.toml", AssetType: "tool_config", ContentSHA256: toolDigest},
 		},
 	}
 
@@ -633,7 +536,7 @@ func TestInjectToolConfigsForLoad_BackupRestore(t *testing.T) {
 
 	mapper := NewProviderMapper(codexSpec)
 
-	injected, cleanup, err := InjectToolConfigsForLoad(projectDir, cacheDir, manifest, mapper)
+	injected, cleanup, err := InjectToolConfigsForLoad(projectDir, manifest, mapper)
 	if err != nil {
 		t.Fatalf("InjectToolConfigsForLoad() error = %v", err)
 	}
@@ -643,9 +546,9 @@ func TestInjectToolConfigsForLoad_BackupRestore(t *testing.T) {
 	}
 
 	// Verify merged content before cleanup.
-	data, err := os.ReadFile(existingPath)
-	if err != nil {
-		t.Fatalf("ReadFile() error = %v", err)
+	data, readErr := os.ReadFile(existingPath)
+	if readErr != nil {
+		t.Fatalf("ReadFile() error = %v", readErr)
 	}
 
 	merged := string(data)
@@ -656,9 +559,9 @@ func TestInjectToolConfigsForLoad_BackupRestore(t *testing.T) {
 	// Run cleanup — should restore original content.
 	cleanup()
 
-	data, err = os.ReadFile(existingPath)
-	if err != nil {
-		t.Fatalf("ReadFile() after cleanup error = %v", err)
+	data, readErr = os.ReadFile(existingPath)
+	if readErr != nil {
+		t.Fatalf("ReadFile() after cleanup error = %v", readErr)
 	}
 
 	if string(data) != originalContent {
@@ -667,30 +570,15 @@ func TestInjectToolConfigsForLoad_BackupRestore(t *testing.T) {
 }
 
 func TestInjectToolConfigsForLoad_NoToolConfigs(t *testing.T) {
+	clearStoreEnv(t)
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+
 	projectDir := t.TempDir()
-	cacheDir := t.TempDir()
-
-	assetsDir := filepath.Join(cacheDir, "assets")
-	if err := os.MkdirAll(assetsDir, 0o755); err != nil {
-		t.Fatalf("MkdirAll() error = %v", err)
-	}
-
-	write := func(rel, data string) {
-		path := filepath.Join(assetsDir, rel)
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			t.Fatalf("MkdirAll(%s) error = %v", rel, err)
-		}
-
-		if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
-			t.Fatalf("WriteFile(%s) error = %v", rel, err)
-		}
-	}
-
-	write("researcher.md", "Agent content")
+	agentDigest := storeTestAsset(t, "Agent content")
 
 	manifest := &client.BundleManifest{
 		Layers: []client.BundleLayer{
-			{LogicalPath: "researcher.md", AssetType: "agent_definition"},
+			{LogicalPath: "researcher.md", AssetType: "agent_definition", ContentSHA256: agentDigest},
 		},
 	}
 
@@ -701,7 +589,7 @@ func TestInjectToolConfigsForLoad_NoToolConfigs(t *testing.T) {
 
 	mapper := NewProviderMapper(codexSpec)
 
-	injected, cleanup, err := InjectToolConfigsForLoad(projectDir, cacheDir, manifest, mapper)
+	injected, cleanup, err := InjectToolConfigsForLoad(projectDir, manifest, mapper)
 	if err != nil {
 		t.Fatalf("InjectToolConfigsForLoad() error = %v", err)
 	}

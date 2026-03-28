@@ -52,7 +52,7 @@ func TestHandleBareRunNavResultRequiresHarness(t *testing.T) {
 	}
 }
 
-func TestHandleBundleLoadNavResultRequiresCachePath(t *testing.T) {
+func TestHandleBundleLoadNavResultRequiresBundleInfo(t *testing.T) {
 	t.Parallel()
 
 	out := output.NewWriter(io.Discard, io.Discard, &terminal.Info{IsTTY: true})
@@ -64,33 +64,32 @@ func TestHandleBundleLoadNavResultRequiresCachePath(t *testing.T) {
 
 	err := handleBundleLoadNavResult(&cobra.Command{}, out, result)
 	if err == nil {
-		t.Fatal("expected error for missing cache path")
+		t.Fatal("expected error for missing bundle information")
 	}
 
-	if !strings.Contains(err.Error(), "Missing bundle cache path") {
-		t.Fatalf("error = %q, want missing cache path message", err.Error())
+	if !strings.Contains(err.Error(), "Missing bundle information") {
+		t.Fatalf("error = %q, want missing bundle information message", err.Error())
 	}
 }
 
-func TestHandleBundleInstallNavResultRequiresCachePath(t *testing.T) {
+func TestHandleBundleInstallNavResultRequiresBundleInfo(t *testing.T) {
 	t.Parallel()
 
 	out := output.NewWriter(io.Discard, io.Discard, &terminal.Info{IsTTY: true})
 	result := &nav.Result{
-		Action:          nav.ActionBundleInstall,
-		Harness:         "claude",
-		BundleNamespace: "acme",
-		BundleSlug:      "test-bundle",
-		BundleVer:       "1.0.0",
+		Action:     nav.ActionBundleInstall,
+		Harness:    "claude",
+		BundleSlug: "test-bundle",
+		BundleVer:  "1.0.0",
 	}
 
 	err := handleBundleInstallNavResult(&cobra.Command{}, out, result)
 	if err == nil {
-		t.Fatal("expected error for missing cache path")
+		t.Fatal("expected error for missing bundle information")
 	}
 
-	if !strings.Contains(err.Error(), "Missing bundle cache path") {
-		t.Fatalf("error = %q, want missing cache path message", err.Error())
+	if !strings.Contains(err.Error(), "Missing bundle information") {
+		t.Fatalf("error = %q, want missing bundle information message", err.Error())
 	}
 }
 
@@ -99,8 +98,10 @@ func TestHandleBundleInstallNavResultRequiresHarness(t *testing.T) {
 
 	out := output.NewWriter(io.Discard, io.Discard, &terminal.Info{IsTTY: true})
 	result := &nav.Result{
-		Action:    nav.ActionBundleInstall,
-		CachePath: "/tmp/test",
+		Action:          nav.ActionBundleInstall,
+		BundleNamespace: "acme",
+		BundleSlug:      "test",
+		BundleVer:       "1.0.0",
 	}
 
 	err := handleBundleInstallNavResult(&cobra.Command{}, out, result)

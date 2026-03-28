@@ -81,7 +81,7 @@ func resolvePathsInfo() PathsInfo {
 	info.RuntimeRoot = resolveOrError(paths.RuntimeRoot)
 	info.LogFile = resolveOrError(paths.DefaultLogFile)
 	info.HistoryDir = resolveOrError(paths.HistoryDir)
-	info.BundleCache = resolveOrError(paths.BundleCacheDir)
+	info.BundleCache = resolveOrError(paths.CacheRoot)
 	info.UpdateState = resolveOrError(paths.UpdateStateFile)
 
 	if cr := info.ConfigRoot; cr != "" {
