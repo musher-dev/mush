@@ -58,8 +58,8 @@ func PrepareLoadSession(
 		session.cleanup = tmpCleanup
 
 		// Claude Code discovers skills from --add-dir but not agents.
-		// Inject agent_definition assets into CWD so the harness finds them.
-		agentLayers := filterLayers(manifest, "agent_definition")
+		// Inject agent assets into CWD so the harness finds them.
+		agentLayers := filterLayers(manifest, "agent_definition", "agent_spec")
 		if len(agentLayers) > 0 {
 			agentManifest := &client.BundleManifest{Layers: agentLayers}
 
@@ -123,11 +123,16 @@ func chainCleanup(cleanups ...func()) func() {
 	}
 }
 
-func filterLayers(manifest *client.BundleManifest, assetType string) []client.BundleLayer {
+func filterLayers(manifest *client.BundleManifest, assetTypes ...string) []client.BundleLayer {
+	typeSet := make(map[string]bool, len(assetTypes))
+	for _, t := range assetTypes {
+		typeSet[t] = true
+	}
+
 	var out []client.BundleLayer
 
 	for _, l := range manifest.Layers {
-		if l.AssetType == assetType {
+		if typeSet[l.AssetType] {
 			out = append(out, l)
 		}
 	}

@@ -121,6 +121,7 @@ func InstallFromCache(
 // injected into the project dir during bundle load so the harness finds them.
 var discoveredAssetTypes = map[string]bool{
 	"agent_definition": true,
+	"agent_spec":       true,
 	"skill":            true,
 }
 

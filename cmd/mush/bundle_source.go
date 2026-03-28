@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 
@@ -98,6 +99,15 @@ func resolveBundleSource(
 	resolved, cachePath, err := bundle.Pull(ctx, apiClient, ref.Namespace, ref.Slug, ref.Version, out)
 	if err != nil {
 		logger.Error("bundle pull failed", slog.String("error", err.Error()))
+
+		if errors.Is(err, bundle.ErrNoAssets) {
+			return nil, &clierrors.CLIError{
+				Message: fmt.Sprintf("Bundle %s/%s has no downloadable assets", ref.Namespace, ref.Slug),
+				Hint:    "This bundle version was published without asset content.\nThe bundle author may need to re-publish with assets included",
+				Cause:   err,
+				Code:    clierrors.ExitGeneral,
+			}
+		}
 
 		if isForbiddenError(err) {
 			if !apiClient.IsAuthenticated() {
